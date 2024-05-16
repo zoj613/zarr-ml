@@ -1,0 +1,15 @@
+(library
+ (name zarr)
+ (public_name zarr)
+ (ocamlopt_flags (:standard -O3))
+ (libraries
+   yojson
+   ppx_deriving_yojson.runtime
+   ezgzip
+   owl
+   stdint
+   checkseum)
+ (preprocess
+   (pps ppx_deriving_yojson)))
+
+(include_subdirs unqualified)

@@ -11,6 +11,8 @@ module type S = sig
   val add_float64 : Buffer.t -> float -> unit
   val add_complex32 : Buffer.t -> Complex.t -> unit
   val add_complex64 : Buffer.t -> Complex.t -> unit
+  val add_int : Buffer.t -> int -> unit
+  val add_nativeint : Buffer.t -> nativeint -> unit
 
   val get_char : string -> int -> char
   val get_int8 : string -> int -> int 
@@ -23,6 +25,8 @@ module type S = sig
   val get_float64 : string -> int -> float
   val get_complex32 : string -> int -> Complex.t
   val get_complex64 : string -> int -> Complex.t
+  val get_int : string -> int -> int
+  val get_nativeint : string -> int -> nativeint
 end
 
 module Little : sig include S end

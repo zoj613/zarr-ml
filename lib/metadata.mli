@@ -13,7 +13,7 @@ module FillValue : sig
   type t =
     | Char of char  (** A single character string. *)
     | Bool of bool  (** Must be a JSON boolean. *)
-    | Int of int  (** Value must be a JSON number with no fractional or exponent part that is within the representable range of the corresponding integer data type. *)
+    | Int of int64  (** Value must be a JSON number with no fractional or exponent part that is within the representable range of the corresponding integer data type. *)
     | Float of float  (** Value representing a JSON float. *)
     | FloatBits of float  (** A JSON string specifying a byte representation of the float a hexstring. *)
     | IntComplex of Complex.t  (** A JSON 2-element array of integers representing a complex number. *)
@@ -37,12 +37,12 @@ module ArrayMetadata : sig
     ?sep:Extensions.separator ->
     ?codecs:Codecs.Chain.t  ->
     shape:int array ->
-    FillValue.t ->
-    Extensions.Datatype.t ->
+    ('a, 'b) Bigarray.kind ->
+    'a ->
     int array ->
     t
-  (** [create ~shape fv dtype cshp] Creates a new array metadata document
-      with shape [shape], fill value [fv], data type [dtype] and chunk shape
+  (** [create ~shape kind fv cshp] Creates a new array metadata document
+      with shape [shape], fill value [fv], data type [kind] and chunk shape
       [cshp]. *)
 
   val encode : t -> string

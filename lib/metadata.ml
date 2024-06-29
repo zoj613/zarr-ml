@@ -5,7 +5,7 @@ module FillValue = struct
   type t =
     | Char of char
     | Bool of bool
-    | Int of int
+    | Int of int64
     | Float of float
     | FloatBits of float
     | IntComplex of Complex.t
@@ -15,11 +15,29 @@ module FillValue = struct
     | BFComplex of Complex.t
     | BBComplex of Complex.t
 
+  let of_kind
+  : type a b. (a, b) Bigarray.kind -> a -> t
+  = fun kind a ->
+    match kind with
+    | Bigarray.Char -> Char a
+    | Bigarray.Int8_signed -> Int (Int64.of_int a)
+    | Bigarray.Int8_unsigned -> Int (Int64.of_int a)
+    | Bigarray.Int16_signed -> Int (Int64.of_int a)
+    | Bigarray.Int16_unsigned -> Int (Int64.of_int a)
+    | Bigarray.Int32 -> Int (Int64.of_int32 a)
+    | Bigarray.Int64 -> Int a
+    | Bigarray.Float32 -> Float a
+    | Bigarray.Float64 -> Float a
+    | Bigarray.Complex32 -> FloatComplex a
+    | Bigarray.Complex64 -> FloatComplex a
+    | Bigarray.Int -> Int (Int64.of_int a)
+    | Bigarray.Nativeint -> Int (Int64.of_nativeint a)
+
   let rec of_yojson x =
     let open Util.Result_syntax in
     match x with
     | `Bool b -> Ok (Bool b)
-    | `Int i -> Ok (Int i)
+    | `Int i -> Result.ok @@ Int (Int64.of_int i)
     | `Float f -> Ok (Float f)
     | `String "Infinity" ->
       Ok (Float Float.infinity)
@@ -55,7 +73,7 @@ module FillValue = struct
 
   let rec to_yojson = function
     | Bool b -> `Bool b
-    | Int i -> `Int i
+    | Int i -> `Int (Int64.to_int i)
     | Char c ->
       `String (String.of_seq @@ List.to_seq [c])
     | Float f when f = Float.infinity ->
@@ -100,14 +118,14 @@ module ArrayMetadata = struct
     ?(sep=Extensions.Slash)
     ?(codecs=Codecs.Chain.default)
     ~shape
-    fill_value
-    data_type
+    kind
+    fv
     chunks
     =
     {shape
     ;codecs
-    ;fill_value
-    ;data_type
+    ;fill_value = FillValue.of_kind kind fv
+    ;data_type = Extensions.Datatype.of_kind kind
     ;chunk_grid = Extensions.RegularGrid.create chunks
     ;chunk_key_encoding = Extensions.ChunkKeyEncoding.create sep
     ;zarr_format = 3
@@ -180,12 +198,12 @@ module ArrayMetadata = struct
     = fun t kind ->
     match kind, t.fill_value with
     | Bigarray.Char, FillValue.Char c -> c
-    | Bigarray.Int8_signed, FillValue.Int i -> i
-    | Bigarray.Int8_unsigned, FillValue.Int i -> i
-    | Bigarray.Int16_signed, FillValue.Int i -> i
-    | Bigarray.Int16_unsigned, FillValue.Int i -> i
-    | Bigarray.Int32, FillValue.Int i -> Int32.of_int i
-    | Bigarray.Int64, FillValue.Int i -> Int64.of_int i
+    | Bigarray.Int8_signed, FillValue.Int i -> Int64.to_int i
+    | Bigarray.Int8_unsigned, FillValue.Int i -> Int64.to_int i
+    | Bigarray.Int16_signed, FillValue.Int i -> Int64.to_int i
+    | Bigarray.Int16_unsigned, FillValue.Int i -> Int64.to_int i
+    | Bigarray.Int32, FillValue.Int i -> Int64.to_int32 i
+    | Bigarray.Int64, FillValue.Int i -> i 
     | Bigarray.Float32, FillValue.Float f -> f 
     | Bigarray.Float32, FillValue.FloatBits f -> f 
     | Bigarray.Float64, FillValue.Float f -> f 

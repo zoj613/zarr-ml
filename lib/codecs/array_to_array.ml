@@ -15,6 +15,39 @@ module TransposeCodec = struct
 
   let compute_encoded_size input_size = input_size
 
+  let compute_encoded_representation
+    : type a b.
+      int array ->
+      (a, b) Util.array_repr ->
+      (a, b) Util.array_repr
+    = fun t decoded ->
+      let shape = Array.(make (length decoded.shape) 0) in
+      Array.iteri (fun i x -> shape.(i) <- decoded.shape.(x)) t;
+      {decoded with shape}
+
+  let parse_order o =
+    let o' = Array.copy o in
+    Array.fast_sort Int.compare o';
+    if o' <> Array.init (Array.length o') Fun.id then
+      Error (`Invalid_transpose_order (o, ""))
+    else
+      Result.ok @@ Transpose o
+
+  let parse
+    : type a b.
+      (a, b) Util.array_repr ->
+      dimension_order ->
+      (unit, [> error]) result
+    = fun repr o ->
+    ignore @@ parse_order o;
+    if Array.length o <> Array.length repr.shape then
+      let msg =
+        "Transpose order must have the same length
+        as the chunk it encodes/decodes." in
+      Result.error @@ `Invalid_transpose_order (o, msg)
+    else
+      Ok ()
+
   let encode o x =
     try Ok (Ndarray.transpose ~axis:o x) with
     | Failure s -> Error (`Invalid_transpose_order (o, s))
@@ -29,14 +62,6 @@ module TransposeCodec = struct
     transpose_to_yojson
       {name = "transpose"; configuration = {order}}
 
-  let parse_order o =
-    let o' = Array.copy o in
-    Array.fast_sort Int.compare o';
-    if o' <> Array.init (Array.length o') Fun.id then
-      Error (`Invalid_transpose_order (o, ""))
-    else
-      Result.ok @@ Transpose o
-
   let of_yojson x =
     let open Util.Result_syntax in
     transpose_of_yojson x >>= fun trans ->
@@ -45,8 +70,21 @@ module TransposeCodec = struct
 end
 
 module ArrayToArray = struct
+  let parse decoded_repr = function
+    | Transpose o -> TransposeCodec.parse decoded_repr o
+
   let compute_encoded_size input_size = function
     | Transpose _ -> TransposeCodec.compute_encoded_size input_size
+
+  let compute_encoded_representation
+    : type a b.
+      array_to_array ->
+      (a, b) Util.array_repr ->
+      (a, b) Util.array_repr
+    = fun t repr ->
+    match t with
+    | Transpose o ->
+      TransposeCodec.compute_encoded_representation o repr
 
   let encode t x =
     match t with

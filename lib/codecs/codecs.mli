@@ -35,12 +35,10 @@ and chain = {
 type error = Array_to_bytes.error
 
 module Chain : sig
-  type t = chain
+  type t
 
   val create
-    : array_to_array list ->
-      array_to_bytes ->
-      bytes_to_bytes list -> t
+    : ('a, 'b) Util.array_repr -> chain -> (t, [> error]) result
 
   val default : t
 

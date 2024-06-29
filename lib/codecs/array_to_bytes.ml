@@ -27,6 +27,7 @@ and chain = {
 type error =
   [ `Bytes_encode_error of string
   | `Bytes_decode_error of string
+  | `Sharding_shape_mismatch of int array * int array
   | Array_to_array.error
   | Bytes_to_bytes.error ]
 
@@ -60,7 +61,8 @@ module BytesCodec = struct
       | Float64 -> Ndarray.iter (add_float64 buf) x; Ok (contents buf)
       | Complex32 -> Ndarray.iter (add_complex32 buf) x; Ok (contents buf) 
       | Complex64 -> Ndarray.iter (add_complex64 buf) x; Ok (contents buf) 
-      | _ -> Error (`Bytes_encode_error "unsupported data kind.")
+      | Int -> Ndarray.iter (add_int buf) x; Ok (contents buf)
+      | Nativeint -> Ndarray.iter (add_nativeint buf) x; Ok (contents buf)
 
   let mk_array kind shape init_fn =
     let x = Array.init (Util.prod shape) init_fn in
@@ -88,7 +90,8 @@ module BytesCodec = struct
       | Float64, s -> mk_array k shp @@ fun i -> get_float64 buf (i*s)
       | Complex32, s -> mk_array k shp @@ fun i -> get_complex32 buf (i*s)
       | Complex64, s -> mk_array k shp @@ fun i -> get_complex64 buf (i*s)
-      | _ -> Error (`Bytes_decode_error "unsupported data kind.")
+      | Int, s -> mk_array k shp @@ fun i -> get_int buf (i*s)
+      | Nativeint, s -> mk_array k shp @@ fun i -> get_nativeint buf (i*s)
 
   let to_yojson = function
     | Little ->
@@ -106,6 +109,10 @@ module BytesCodec = struct
 end
 
 module rec ArrayToBytes : sig
+  val parse
+    : ('a, 'b) Util.array_repr ->
+      array_to_bytes ->
+      (unit, [> error]) result
   val compute_encoded_size : int -> array_to_bytes -> int
   val default : array_to_bytes
   val encode
@@ -122,6 +129,11 @@ module rec ArrayToBytes : sig
 end = struct
 
   let default = Bytes Little
+
+  let parse decoded_repr = function
+    | Bytes _ -> Ok ()
+    | ShardingIndexed c ->
+      ShardingIndexedCodec.parse decoded_repr c
 
   let compute_encoded_size input_size = function
     | Bytes _ ->
@@ -163,6 +175,10 @@ end
 
 and ShardingIndexedCodec : sig
   type t = shard_config
+  val parse
+    : ('a, 'b) Util.array_repr ->
+      t ->
+      (unit, [> error]) result
   val compute_encoded_size : int -> t -> int
   val encode
     : ('a, 'b) Ndarray.t ->
@@ -178,6 +194,21 @@ and ShardingIndexedCodec : sig
 end = struct
 
   type t = shard_config  
+
+  let parse 
+    : type a b.
+      (a, b) Util.array_repr ->
+      shard_config ->
+      (unit, [> error]) result
+    = fun repr t ->
+    match
+      Array.(length repr.shape = length t.chunk_shape),
+      Array.for_all2 (fun x y -> (x mod y) = 0) repr.shape t.chunk_shape
+    with
+    | true, true -> Ok ()
+    | _, false | false, _ ->
+      Result.error @@
+      `Sharding_shape_mismatch (t.chunk_shape, repr.shape)
 
   let compute_encoded_size input_size t =
     List.fold_left BytesToBytes.compute_encoded_size

@@ -38,13 +38,14 @@ module type S = sig
 
   val create_array
     : ?sep:Extensions.separator ->
-      ?codecs:Codecs.Chain.t ->
+      ?codecs:Codecs.chain ->
       shape:int array ->
       chunks:int array ->
-      Metadata.FillValue.t ->
-      Extensions.Datatype.t ->
+      ('a, 'b) Bigarray.kind ->
+      'a ->
       Node.t ->
-      t -> unit
+      t ->
+      (unit, [> error]) result
 
   val array_metadata
     : Node.t -> t -> (ArrayMetadata.t, [> error]) result
@@ -99,10 +100,21 @@ module Make (M : STORE) : S with type t = M.t = struct
       | Error _ -> create_group t n) @@ Node.ancestors node
 
   let create_array
-    ?(sep=Extensions.Slash) ?(codecs=Codecs.Chain.default) ~shape ~chunks fillvalue dtype node t =
-    set t (Node.to_metakey node) @@
-    AM.encode @@ AM.create ~sep ~codecs ~shape fillvalue dtype chunks;
-    make_implicit_groups_explicit t node
+    ?(sep=Extensions.Slash) ?codecs ~shape ~chunks kind fill_value node t =
+    let open Util in
+    let repr =
+      {kind
+      ;fill_value
+      ;shape = chunks}
+    in
+    (match codecs with
+    | Some c -> Codecs.Chain.create repr c
+    | None -> Ok Codecs.Chain.default)
+    >>= fun codecs' ->
+    let meta =
+      AM.create ~sep ~codecs:codecs' ~shape kind fill_value chunks in
+    set t (Node.to_metakey node) (AM.encode meta);
+    Ok (make_implicit_groups_explicit t node)
 
   (* All nodes are explicit upon creation so just check the node's metadata key.*)
   let is_member t node =

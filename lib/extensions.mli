@@ -37,8 +37,11 @@ module Datatype : sig
     | Float64
     | Complex32
     | Complex64
+    | Int
+    | Nativeint
   (** A type for the supported data types of a Zarr array. *)
 
+  val of_kind : ('a, 'b) Bigarray.kind -> t
   val of_yojson : Yojson.Safe.t -> (t, string) result
   val to_yojson : t -> Yojson.Safe.t
 end

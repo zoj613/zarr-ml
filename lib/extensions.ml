@@ -111,6 +111,23 @@ module Datatype = struct
     | Float64
     | Complex32
     | Complex64
+    | Int
+    | Nativeint
+
+  let of_kind : type a b. (a, b) Bigarray.kind -> t = function
+    | Bigarray.Char -> Char
+    | Bigarray.Int8_signed -> Int8
+    | Bigarray.Int8_unsigned -> Uint8
+    | Bigarray.Int16_signed -> Int16
+    | Bigarray.Int16_unsigned -> Uint16
+    | Bigarray.Int32 -> Int32
+    | Bigarray.Int64 -> Int64
+    | Bigarray.Float32 -> Float32
+    | Bigarray.Float64 -> Float64
+    | Bigarray.Complex32 -> Complex32
+    | Bigarray.Complex64 -> Complex64
+    | Bigarray.Int -> Int
+    | Bigarray.Nativeint -> Nativeint
 
   let to_yojson = function
     | Char -> `String "char"
@@ -124,6 +141,8 @@ module Datatype = struct
     | Float64 -> `String "float64"
     | Complex32 -> `String "complex32"
     | Complex64 -> `String "complex64"
+    | Int -> `String "int"
+    | Nativeint -> `String "nativeint"
 
   let of_yojson = function
     | `String "char" -> Ok Char
@@ -137,5 +156,7 @@ module Datatype = struct
     | `String "float64" -> Ok Float64
     | `String "complex32" -> Ok Complex32
     | `String "complex64" -> Ok Complex64
+    | `String "int" -> Ok Int
+    | `String "nativeint" -> Ok Nativeint
     | _ -> Error ("Unsupported metadata data_type")
 end

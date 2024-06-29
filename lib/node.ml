@@ -15,11 +15,9 @@ let rep_ok name =
 
 let root = Root 
 
-let unsafe_create p n = Cons (p, n)
-
 let create parent name =
   if rep_ok name then
-    Ok (unsafe_create parent name)
+    Result.ok @@ Cons (parent, name)
   else
     Error (`Node_invariant_error name)
 
@@ -35,10 +33,10 @@ let of_path = function
       Result.error @@
       `Node_invariant_error "path should not end with a /"
     else 
-      Result.ok @@
+      let open Util.Result_syntax in
       List.fold_left
-        unsafe_create
-        Root (List.tl @@ String.split_on_char '/' str)
+        (fun acc n -> acc >>= fun p -> create p n)
+        (Ok Root) (List.tl @@ String.split_on_char '/' str)
 
 let name = function
   | Root -> ""

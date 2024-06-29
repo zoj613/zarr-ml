@@ -23,10 +23,15 @@ and chain = {
 type error =
   [ `Bytes_encode_error of string
   | `Bytes_decode_error of string
+  | `Sharding_shape_mismatch of int array * int array
   | Array_to_array.error
   | Bytes_to_bytes.error ]
 
 module ArrayToBytes : sig
+  val parse
+    : ('a, 'b) Util.array_repr ->
+      array_to_bytes ->
+      (unit, [> error]) result
   val compute_encoded_size : int -> array_to_bytes -> int
   val default : array_to_bytes
   val encode

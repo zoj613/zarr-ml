@@ -8,13 +8,15 @@ module Ndarray = Owl.Dense.Ndarray.Generic
 module Chain = struct
   type t = chain
 
-  let create a2a a2b b2b = {a2a; a2b; b2b}
-    (*let open Util.Result_syntax in
-    match a2b with
-    | Bytes _ -> {a2a; a2b; b2b}
-    | ShardingIndexed c ->
-      ArrayToBytes.parse_config c >>= fun () ->
-      {a2a; a2b; b2b} *)
+  let create repr {a2a; a2b; b2b} =
+    List.fold_left
+      (fun acc c ->
+         acc >>= fun r ->
+         ArrayToArray.parse r c >>| fun () ->
+         ArrayToArray.compute_encoded_representation c r) (Ok repr) a2a
+    >>= fun repr' ->
+    ArrayToBytes.parse repr' a2b >>| fun () ->
+    {a2a; a2b; b2b}
 
   let default =
     {a2a = []; a2b = ArrayToBytes.default; b2b = []}
@@ -37,9 +39,16 @@ module Chain = struct
     List.fold_right
       (fun c acc -> acc >>= BytesToBytes.decode c) t.b2b (Ok x)
     >>= fun y ->
+    (* compute the last encoded representation of array->array codec chain.
+       This becomes the decoded representation of the array->bytes decode
+       procedure. *)
+    let repr' =
+      List.fold_left
+        (fun acc c -> ArrayToArray.compute_encoded_representation c acc)
+        repr t.a2a in
     List.fold_right
       (fun c acc -> acc >>= ArrayToArray.decode c)
-      t.a2a (ArrayToBytes.decode y repr t.a2b)
+      t.a2a (ArrayToBytes.decode y repr' t.a2b)
 
   let to_yojson t =
     [%to_yojson: Yojson.Safe.t list] @@ 

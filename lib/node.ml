@@ -4,7 +4,7 @@ type t =
 and name = string
 
 type error =
-  [ `Node_invariant_error of string ]
+  [ `Node_invariant of string ]
 
 (* Check if the path's name satisfies path invariants *)
 let rep_ok name =
@@ -19,7 +19,7 @@ let create parent name =
   if rep_ok name then
     Result.ok @@ Cons (parent, name)
   else
-    Error (`Node_invariant_error name)
+    Error (`Node_invariant name)
 
 let ( / ) = create
 
@@ -28,10 +28,10 @@ let of_path = function
   | str ->
     if not String.(starts_with ~prefix:"/" str) then
       Result.error @@
-      `Node_invariant_error "path should start with a /"
+      `Node_invariant "path should start with a /"
     else if String.ends_with ~suffix:"/" str then
       Result.error @@
-      `Node_invariant_error "path should not end with a /"
+      `Node_invariant "path should not end with a /"
     else 
       let open Util.Result_syntax in
       List.fold_left

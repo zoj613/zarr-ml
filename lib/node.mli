@@ -14,7 +14,7 @@ type t
 (** The type of a node. *)
 
 type error =
-  [ `Node_invariant_error of string ]
+  [ `Node_invariant of string ]
 (** The error type for operations on the {!Node.t} type. It is returned by
     functions that create a {!Node.t} type when one or more of a Node's
     invariants are not satisfied as defined in the Zarr V3 specification.*)
@@ -66,5 +66,5 @@ val to_metakey : t -> string
     as defined in the Zarr V3 specification. *)
 
 val is_parent : t -> t -> bool
-(** [is_parent n m] Tests if node [n] is a the immediate parent of
+(** [is_parent m n] Tests if node [n] is a the immediate parent of
     node [m]. Returns [true] when the test passes and [false] otherwise. *)

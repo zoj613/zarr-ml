@@ -1,4 +1,10 @@
-module StrMap = Hashtbl.Make (String)
+module HashableString = struct
+  type t = string
+  let hash = Hashtbl.hash
+  let equal = String.equal
+end
+
+module StrMap = Hashtbl.Make (HashableString)
 
 module Impl = struct
   type t = string StrMap.t

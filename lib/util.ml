@@ -9,14 +9,12 @@ type ('a, 'b) array_repr =
   ;fill_value : 'a}
 
 module HashableArray = struct  
-  include Array
   type t = int array
   let hash = Hashtbl.hash
   let equal x y = Array.for_all2 Int.equal x y
 end
 
 module ComparableArray = struct
-  include Array
   type t = int array
   let compare = Stdlib.compare
 end

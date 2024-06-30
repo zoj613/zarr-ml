@@ -7,13 +7,13 @@
 (source
  (github zoj613/zarr-ml))
 
-(authors "Author Name")
+(authors "Zolisa Bleki")
 
-(maintainers "Maintainer Name")
+(maintainers "Zolisa Bleki")
 
 (license BSD-3-Clause)
 
-(documentation https://url/to/documentation)
+(documentation https://zoj613.github.io/zarr/zarr/Zarr/index.html)
 
 (package
  (name zarr)
@@ -23,10 +23,14 @@
    dune
    (ocaml (>= 4.14.2))
    yojson
-   ppx_derviving_yojson
+   ppx_deriving_yojson
    ezgzip
    checkseum
    stdint
+   (ounit2 :with-test)
+   (odoc :with-doc)
+   (bisect_ppx
+     (and :dev (>= 2.5.0) :with-test))
    owl)
  (tags
   (topics "to describe" your project)))

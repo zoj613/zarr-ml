@@ -1,7 +1,6 @@
 (library
  (name zarr)
  (public_name zarr)
- (ocamlopt_flags (:standard -O3))
  (libraries
    yojson
    ppx_deriving_yojson.runtime
@@ -9,7 +8,11 @@
    owl
    stdint
    checkseum)
+ (ocamlopt_flags
+   (:standard -O3))
  (preprocess
-   (pps ppx_deriving_yojson)))
+   (pps ppx_deriving_yojson))
+ (instrumentation
+   (backend bisect_ppx)))
 
 (include_subdirs unqualified)

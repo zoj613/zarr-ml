@@ -138,8 +138,8 @@ module GroupMetadata : sig
   (** [decode s] decodes a bytes string [s] into a {!GroupMetadata.t}
       type, and returns an {!Metadata.error} error if the decoding process fails. *)
 
-  val update_attributes : Yojson.Safe.t -> t -> t
-  (** [update_attributes json t] returns a new metadata type with an updated
+  val update_attributes : t -> Yojson.Safe.t -> t
+  (** [update_attributes t json] returns a new metadata type with an updated
       attribute field containing contents in [json]. *)
 
   val of_yojson : Yojson.Safe.t -> (t, string) result
@@ -148,4 +148,7 @@ module GroupMetadata : sig
 
   val to_yojson : t -> Yojson.Safe.t
   (** [to_yojson t] serializes a group metadata type into a {!Yojson.Safe.t} object. *)
+
+  val show : t -> string
+  (** [show t] pretty-prints the contents of the group metadata type t. *)
 end

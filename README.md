@@ -111,10 +111,10 @@ FilesystemStore.find_all_nodes store |> List.map Node.to_path;;
 
 FilesystemStore.reshape store array_node [|25; 32; 10|];;
 
-FilesystemStore.array_metadata array_node store
-|> Result.get_ok
-|> ArrayMetadata.shape;;
-(* - : int array = [|25; 32; 10|] *)
+let meta =
+  Result.get_ok @@
+  FilesystemStore.group_metadata group_node store;;
+GroupMetadata.show meta;; (* pretty prints the contents of the metadata *)
 
 FilesystemStore.is_member store shard_node;;
 

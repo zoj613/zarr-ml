@@ -49,8 +49,8 @@ module ArrayMetadata : sig
   (** [encode t] returns a byte string representing a JSON Zarr array metadata. *)
 
   val decode : string -> (t, [> error]) result
-  (** [decode s] decodes a bytes string [s] into a {!Metadata.ArrayMetadata.t}
-      type, and returns an {!Metadata.error} error if the decoding process fails. *)
+  (** [decode s] decodes a bytes string [s] into a {!ArrayMetadata.t}
+      type, and returns an {!error} error if the decoding process fails. *)
 
   val shape : t -> int array
   (** [shape t] returns the shape of the zarr array represented by metadata type [t]. *)
@@ -114,7 +114,7 @@ module ArrayMetadata : sig
       shape [new_shp]. *)
 
   val of_yojson : Yojson.Safe.t -> (t, string) result
-  (** [of_yojson json] converts a {!Yojson.Safe.t} object into a {!Metadata.ArrayMetadata.t}
+  (** [of_yojson json] converts a {!Yojson.Safe.t} object into a {!ArrayMetadata.t}
      and returns an error message upon failure. *)
 
   val to_yojson : t -> Yojson.Safe.t
@@ -135,7 +135,7 @@ module GroupMetadata : sig
   (** [encode t] returns a byte string representing a JSON Zarr group metadata. *)
 
   val decode : string -> (t, [> error]) result
-  (** [decode s] decodes a bytes string [s] into a {!Metadata.GroupMetadata.t}
+  (** [decode s] decodes a bytes string [s] into a {!GroupMetadata.t}
       type, and returns an {!Metadata.error} error if the decoding process fails. *)
 
   val update_attributes : Yojson.Safe.t -> t -> t
@@ -143,7 +143,7 @@ module GroupMetadata : sig
       attribute field containing contents in [json]. *)
 
   val of_yojson : Yojson.Safe.t -> (t, string) result
-  (** [of_yojson json] converts a {!Yojson.Safe.t} object into a {!Metadata.GroupMetadata.t}
+  (** [of_yojson json] converts a {!Yojson.Safe.t} object into a {!GroupMetadata.t}
      and returns an error message upon failure. *)
 
   val to_yojson : t -> Yojson.Safe.t

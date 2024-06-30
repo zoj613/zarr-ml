@@ -9,8 +9,6 @@ Below is a demonstration of the library's basic API.
 open Zarr
 open Zarr.Codecs
 open Zarr.Storage
-open Zarr.Metadata
-open Zarr.Extensions
 
 module Ndarray = Owl.Dense.Ndarray.Generic
 
@@ -102,7 +100,7 @@ FilesystemStore.create_array
   shard_node
   store;;
 ```
-### More functions
+### exploratory functions
 ```ocaml
 FilesystemStore.find_all_nodes store |> List.map Node.to_path;;
 (* - : string list = ["/"; "/some"; "/some/group/another"; "/some/group/name"; "/some/group"] *)

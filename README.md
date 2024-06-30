@@ -1,3 +1,7 @@
+[![codecov][1]](https://codecov.io/gh/zoj613/zarr-ml)
+[![CI][2]](https://github.com/zoj613/zarr-ml/actions/workflows/)
+[![license][3]](https://github.com/zoj613/zarr-ml/blob/main/LICENSE)
+
 # zarr-ml
 An implementation of the Zarr version 3 specification.
 
@@ -118,3 +122,7 @@ FilesystemStore.find_child_nodes store group_node;;
 
 FilesystemStore.erase_node store group_node;;
 ```
+
+[1]: https://codecov.io/gh/zoj613/zarr-ml/graph/badge.svg?token=KOOG2Y1SH5
+[2]: https://img.shields.io/github/actions/workflow/status/zoj613/zarr-ml/build-and-test.yml?branch=main
+[3]: https://img.shields.io/github/license/zoj613/zarr-ml

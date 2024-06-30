@@ -24,9 +24,6 @@ module ArraySet = Set.Make (ComparableArray)
 module Arraytbl = Hashtbl.Make (HashableArray)
 
 module Result_syntax = struct
-  let ( let* ) = Result.bind
-  let ( let+ ) = Result.map
-
   let ( >>= ) = Result.bind
 
   let ( >>| ) x f =  (* infix map *)
@@ -38,11 +35,6 @@ module Result_syntax = struct
     match x with
     | Ok _ as k -> k
     | Error e -> Error (f e)
-
-  let ( and+ ) x y =  (* product *)
-    match x, y with
-    | Ok a, Ok b -> Ok (a, b)
-    | Error e, Ok _ | Ok _, Error e | Error e, Error _ -> Error e
 end
 
 module Indexing = struct
@@ -58,6 +50,7 @@ module Indexing = struct
         | x when x > stop -> None
         | x -> Some (x, x + step)) start
     else
+      let start, stop = stop, start in
       Seq.unfold (function
         | x when x < start -> None
         | x -> Some (x, x + step)) stop
@@ -71,8 +64,11 @@ module Indexing = struct
     | _ -> failwith "Invalid slice index."
 
   let reformat_slice slice shape =
-    Owl_slicing.check_slice_definition
-      (Owl_slicing.sdarray_to_sdarray slice) shape
+    match slice with
+    | [||] -> [||]
+    | xs ->
+      Owl_slicing.check_slice_definition
+        (Owl_slicing.sdarray_to_sdarray xs) shape
 
   let coords_of_slice slice shape =
     (Array.map indices_of_slice @@

@@ -19,18 +19,12 @@ module ArraySet : sig include Set.S with type elt = int array end
 module Result_syntax : sig
   (** Result monad operator syntax. *)
 
-  val ( let* )
-    : ('a, 'e) result -> ('a -> ('b, 'e) result ) -> ('b, 'e) result
   val ( >>= )
     : ('a, 'e) result -> ('a -> ('b, 'e) result ) -> ('b, 'e) result
-  val ( let+ )
-    : ('a -> 'b) -> ('a, 'e) result -> ('b, 'e) result
   val ( >>| )
     : ('a, 'e) result -> ('a -> 'b) -> ('b, 'e) result
   val ( >>? )
     : ('a, 'e) result -> ('e -> 'f) -> ('a, 'f) result
-  val ( and+ )
-    : ('a, 'e) result -> ('b, 'e) result -> (('a * 'b), 'e) result
 end
 
 module Indexing : sig

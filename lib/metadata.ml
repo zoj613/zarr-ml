@@ -227,11 +227,11 @@ module GroupMetadata = struct
   type t =
     {zarr_format : int
     ;node_type : string
-    ;attributes : Yojson.Safe.t option [@yojson.option]}
-  [@@deriving yojson]
+    ;attributes : Yojson.Safe.t [@default `Null]}
+  [@@deriving yojson, show]
 
   let default =
-    {zarr_format = 3; node_type = "group"; attributes = None}
+    {zarr_format = 3; node_type = "group"; attributes = `Null}
 
   let decode s = 
     let open Util.Result_syntax in
@@ -241,6 +241,6 @@ module GroupMetadata = struct
   let encode t =
     Yojson.Safe.to_string @@ to_yojson t
 
-  let update_attributes attrs t =
-    {t with attributes = Some attrs}
+  let update_attributes t attrs =
+    {t with attributes = attrs}
 end

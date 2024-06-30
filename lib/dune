@@ -11,7 +11,9 @@
  (ocamlopt_flags
    (:standard -O3))
  (preprocess
-   (pps ppx_deriving_yojson))
+   (pps
+     ppx_deriving.show
+     ppx_deriving_yojson))
  (instrumentation
    (backend bisect_ppx)))
 

@@ -2,23 +2,25 @@
 opam-version: "2.0"
 synopsis: "A short synopsis"
 description: "A longer description"
-maintainer: ["Maintainer Name"]
-authors: ["Author Name"]
+maintainer: ["Zolisa Bleki"]
+authors: ["Zolisa Bleki"]
 license: "BSD-3-Clause"
 tags: ["topics" "to describe" "your" "project"]
 homepage: "https://github.com/zoj613/zarr-ml"
-doc: "https://url/to/documentation"
+doc: "https://zoj613.github.io/zarr/zarr/Zarr/index.html"
 bug-reports: "https://github.com/zoj613/zarr-ml/issues"
 depends: [
   "dune" {>= "3.15"}
   "ocaml" {>= "4.14.2"}
   "yojson"
-  "ppx_derviving_yojson"
+  "ppx_deriving_yojson"
   "ezgzip"
   "checkseum"
   "stdint"
-  "owl"
+  "ounit2" {with-test}
   "odoc" {with-doc}
+  "bisect_ppx" {dev & >= "2.5.0" & with-test}
+  "owl"
 ]
 build: [
   ["dune" "subst"] {dev}

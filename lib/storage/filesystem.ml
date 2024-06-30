@@ -55,7 +55,7 @@ module Impl = struct
       | Sys_error _ -> acc
     in
     match
-      StrSet.to_list @@
+      StrSet.elements @@
       aux StrSet.empty @@
       key_to_fspath t ""
     with

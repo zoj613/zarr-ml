@@ -35,7 +35,9 @@ module ArrayMetadata : sig
 
   val create :
     ?sep:Extensions.separator ->
-    ?codecs:Codecs.Chain.t  ->
+    ?codecs:Codecs.Chain.t ->
+    ?dimension_names:string option list ->
+    ?attributes:Yojson.Safe.t ->
     shape:int array ->
     ('a, 'b) Bigarray.kind ->
     'a ->
@@ -50,13 +52,10 @@ module ArrayMetadata : sig
 
   val decode : string -> (t, [> error]) result
   (** [decode s] decodes a bytes string [s] into a {!ArrayMetadata.t}
-      type, and returns an {!error} error if the decoding process fails. *)
+      type, and returns an error if the decoding process fails. *)
 
   val shape : t -> int array
   (** [shape t] returns the shape of the zarr array represented by metadata type [t]. *)
-
-  val fill_value : t -> FillValue.t
-  (** [fill_value t] returns the fill value of the zarra array represented by [t]. *)
 
   val ndim : t -> int
   (** [ndim t] returns the number of dimension in a Zarr array. *)
@@ -64,26 +63,25 @@ module ArrayMetadata : sig
   val chunk_shape : t -> int array
   (** [chunk_shape t] returns the shape a chunk in this zarr array. *)
 
-  val dtype : t -> Extensions.Datatype.t
-  (** [dtype t] returns the data type as specified in the array metadata. *)
+  val data_type : t -> string
+  (** [data_type t] returns the data type as specified in the array metadata.*)
 
   val is_valid_kind : t -> ('a, 'b) Bigarray.kind -> bool
-  (** [is_valid_kind t kind] checks if [kind] is a valid {!Bigarray.kind} that
+  (** [is_valid_kind t kind] checks if [kind] is a valid Bigarray kind that
       matches the data type of the zarr array represented by this metadata type. *)
 
   val fillvalue_of_kind : t -> ('a, 'b) Bigarray.kind -> 'a
   (** [fillvalue_of_kind t kind] returns the fill value of uninitialized
-      chunks in this zarr array  given [kind].
+      chunks in this zarr array  given [kind]. Raises Failure if the kind
+      is not compatible with this array's fill value. *)
 
-      @raises [Failure] if the kind is not compatible with this array's fill value. *)
-
-  val attributes : t -> Yojson.Safe.t option
+  val attributes : t -> Yojson.Safe.t
   (** [attributes t] Returns a Yojson type containing user attributes assigned
       to the zarr array represented by [t]. *)
 
-  val dimension_names : t -> string option list option
-  (** [dimension_name t] returns a list of dimension names, if any are
-      defined in the array's JSON metadata document. *)
+  val dimension_names : t -> string option list
+  (** [dimension_name t] returns a list of dimension names. If none are
+      defined then an empty list is returned. *)
 
   val codecs : t -> Codecs.Chain.t
   (** [codecs t] Returns a type representing the chain of codecs applied
@@ -105,20 +103,25 @@ module ArrayMetadata : sig
   val chunk_key : t -> int array -> string
   (** [chunk_key t idx] returns a key encoding of a the chunk index [idx]. *)
 
-  val update_attributes : Yojson.Safe.t -> t -> t
-  (** [update_attributes json t] returns a new metadata type with an updated
+  val update_attributes : t -> Yojson.Safe.t -> t
+  (** [update_attributes t json] returns a new metadata type with an updated
       attribute field containing contents in [json] *)
 
   val update_shape : t -> int array -> t
   (** [update_shape t new_shp] returns a new metadata type containing
       shape [new_shp]. *)
 
+  val equal : t -> t -> bool
+  (** [equal a b] returns true if [a] [b] are equal array metadata documents
+      and false otherwise. *)
+
   val of_yojson : Yojson.Safe.t -> (t, string) result
-  (** [of_yojson json] converts a {!Yojson.Safe.t} object into a {!ArrayMetadata.t}
+  (** [of_yojson json] converts a [Yojson.Safe.t] object into a {!ArrayMetadata.t}
      and returns an error message upon failure. *)
 
   val to_yojson : t -> Yojson.Safe.t
-  (** [to_yojson t] serializes an array metadata type into a {!Yojson.Safe.t} object. *)
+  (** [to_yojson t] serializes an array metadata type into a [Yojson.Safe.t]
+      object. *)
 end
 
 module GroupMetadata : sig
@@ -135,19 +138,19 @@ module GroupMetadata : sig
   (** [encode t] returns a byte string representing a JSON Zarr group metadata. *)
 
   val decode : string -> (t, [> error]) result
-  (** [decode s] decodes a bytes string [s] into a {!GroupMetadata.t}
-      type, and returns an {!Metadata.error} error if the decoding process fails. *)
+  (** [decode s] decodes a bytes string [s] into a {!t} type, and returns
+      an error if the decoding process fails. *)
 
   val update_attributes : t -> Yojson.Safe.t -> t
   (** [update_attributes t json] returns a new metadata type with an updated
       attribute field containing contents in [json]. *)
 
   val of_yojson : Yojson.Safe.t -> (t, string) result
-  (** [of_yojson json] converts a {!Yojson.Safe.t} object into a {!GroupMetadata.t}
+  (** [of_yojson json] converts a [Yojson.Safe.t] object into a {!GroupMetadata.t}
      and returns an error message upon failure. *)
 
   val to_yojson : t -> Yojson.Safe.t
-  (** [to_yojson t] serializes a group metadata type into a {!Yojson.Safe.t} object. *)
+  (** [to_yojson t] serializes a group metadata type into a [Yojson.Safe.t] object. *)
 
   val show : t -> string
   (** [show t] pretty-prints the contents of the group metadata type t. *)

@@ -38,6 +38,8 @@ module type S = sig
 
   val create_array
     : ?sep:Extensions.separator ->
+      ?dimension_names:string option list ->
+      ?attributes:Yojson.Safe.t ->
       ?codecs:Codecs.chain ->
       shape:int array ->
       chunks:int array ->
@@ -100,19 +102,27 @@ module Make (M : STORE) : S with type t = M.t = struct
       | Error _ -> create_group t n) @@ Node.ancestors node
 
   let create_array
-    ?(sep=Extensions.Slash) ?codecs ~shape ~chunks kind fill_value node t =
+    ?(sep=Extensions.Slash)
+    ?(dimension_names=[])
+    ?(attributes=`Null)
+    ?codecs
+    ~shape
+    ~chunks
+    kind
+    fill_value
+    node
+    t
+    =
     let open Util in
-    let repr =
-      {kind
-      ;fill_value
-      ;shape = chunks}
-    in
+    let repr = {kind; fill_value; shape = chunks} in
     (match codecs with
     | Some c -> Codecs.Chain.create repr c
     | None -> Ok Codecs.Chain.default)
-    >>= fun codecs' ->
+    >>= fun codecs ->
     let meta =
-      AM.create ~sep ~codecs:codecs' ~shape kind fill_value chunks in
+      AM.create
+        ~sep ~codecs ~dimension_names ~attributes ~shape kind fill_value chunks
+    in
     set t (Node.to_metakey node) (AM.encode meta);
     Ok (make_implicit_groups_explicit t node)
 

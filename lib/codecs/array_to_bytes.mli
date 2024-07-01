@@ -20,6 +20,9 @@ and chain = {
   b2b: Bytes_to_bytes.bytes_to_bytes list;
 }
 
+val pp_chain : Format.formatter -> chain -> unit
+val show_chain : chain -> string
+
 type error =
   [ `Bytes_encode_error of string
   | `Bytes_decode_error of string

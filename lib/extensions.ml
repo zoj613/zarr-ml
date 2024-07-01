@@ -4,7 +4,7 @@ module RegularGrid = struct
   type config =
     {chunk_shape : int array} [@@deriving yojson]
   type chunk_grid =
-    config Util.ext_point [@@deriving yojson]
+    config Util.ExtPoint.t [@@deriving yojson]
   type t = int array
 
   let chunk_shape t = t
@@ -33,6 +33,8 @@ module RegularGrid = struct
     |> Util.Indexing.cartesian_prod
     |> List.map Array.of_list
 
+  let equal : t -> t -> bool = fun x y -> x = y
+
   let to_yojson t =
     chunk_grid_to_yojson
       {name = "regular"; configuration = {chunk_shape = t}}
@@ -50,7 +52,7 @@ type separator = Dot | Slash
 module ChunkKeyEncoding = struct
   type encoding = Default | V2
   type config = {separator : string} [@@deriving yojson]
-  type key_encoding = config Util.ext_point [@@deriving yojson]
+  type key_encoding = config Util.ExtPoint.t [@@deriving yojson]
   type t = {encoding : encoding; sep : string}
 
   let create = function
@@ -73,6 +75,9 @@ module ChunkKeyEncoding = struct
       else
         String.concat t.sep @@
         Array.fold_right f index []
+
+  let equal x y =
+    x.encoding = y.encoding && x.sep = y.sep
 
   let to_yojson t =
     match t.encoding with
@@ -113,6 +118,8 @@ module Datatype = struct
     | Complex64
     | Int
     | Nativeint
+
+  let equal : t -> t -> bool = fun x y -> x = y
 
   let of_kind : type a b. (a, b) Bigarray.kind -> t = function
     | Bigarray.Char -> Char

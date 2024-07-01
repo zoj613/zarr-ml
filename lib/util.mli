@@ -1,14 +1,21 @@
-type 'a ext_point =
-  {name : string ; configuration : 'a}
-[@@deriving yojson]
-(** The type representing a JSON extension point metadata configuration. *)
-
 type ('a, 'b) array_repr =
   {kind : ('a, 'b) Bigarray.kind
   ;shape : int array
   ;fill_value : 'a}
 (** The type summarizing the decoded/encoded representation of a Zarr array
     or chunk. *)
+
+module ExtPoint : sig
+  (** The type representing a JSON extension point metadata configuration. *)
+
+  type 'a t = {name : string ; configuration : 'a}
+  val equal : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
+  val of_yojson
+    : (Yojson.Safe.t -> ('a, string) result) ->
+      Yojson.Safe.t ->
+      ('a t, string) result
+  val to_yojson : ('a -> Yojson.Safe.t) -> 'a t -> Yojson.Safe.t
+end
 
 module Arraytbl : sig include Hashtbl.S with type key = int array end
 (** A hashtable with integer array keys. *)

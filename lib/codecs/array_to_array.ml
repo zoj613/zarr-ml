@@ -11,7 +11,7 @@ type error =
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/transpose/v1.0.html *)
 module TransposeCodec = struct
   type config = {order : int array} [@@deriving yojson]
-  type transpose = config Util.ext_point  [@@deriving yojson]
+  type transpose = config Util.ExtPoint.t  [@@deriving yojson]
 
   let compute_encoded_size input_size = input_size
 

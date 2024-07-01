@@ -26,7 +26,7 @@ val show_chain : chain -> string
 type error =
   [ `Bytes_encode_error of string
   | `Bytes_decode_error of string
-  | `Sharding_shape_mismatch of int array * int array
+  | `Sharding_shape_mismatch of int array * int array * string
   | Array_to_array.error
   | Bytes_to_bytes.error ]
 

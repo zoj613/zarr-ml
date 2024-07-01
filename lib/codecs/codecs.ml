@@ -70,19 +70,21 @@ module Chain = struct
         | Ok v -> v :: l, r
         | Error _ -> l, c :: r) encoded ([], [])
     in
-    let codecs = Yojson.Safe.Util.to_list x
-    in
-    if List.length codecs = 0 then
-      Error "No codec specified."
-    else
-      let a2b, rest = filter_partition ArrayToBytes.of_yojson codecs in
-      if List.length a2b <> 1 then
-        Error "Must be exactly one array->bytes codec."
-      else
-        let a2a, rest = filter_partition ArrayToArray.of_yojson rest in
-        let b2b, rest = filter_partition BytesToBytes.of_yojson rest in
-        if List.length rest <> 0 then
-          Error ("Unsupported codec: " ^ (Util.get_name @@ List.hd rest))
-        else
-          Ok {a2a; a2b = List.hd a2b; b2b}
+    (match Yojson.Safe.Util.to_list x with
+    | [] -> Error "No codec specified."
+    | y -> Ok y)
+    >>= fun codecs ->
+    (match filter_partition ArrayToBytes.of_yojson codecs with
+    | [x], rest -> Ok (x, rest)
+    | _ -> Error "Must be exactly one array->bytes codec.")
+    >>= fun (a2b, rest) ->
+    let a2a, rest = filter_partition ArrayToArray.of_yojson rest in
+    let b2b, rest = filter_partition BytesToBytes.of_yojson rest in
+    match rest with
+    | [] -> Ok {a2a; a2b; b2b}
+    | x :: _ ->
+      let msg =
+        (Util.get_name x) ^
+        " codec is unsupported or has invalid configuration." in
+      Error msg
 end

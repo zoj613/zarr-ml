@@ -7,7 +7,7 @@ authors: ["Zolisa Bleki"]
 license: "BSD-3-Clause"
 tags: ["topics" "to describe" "your" "project"]
 homepage: "https://github.com/zoj613/zarr-ml"
-doc: "https://zoj613.github.io/zarr/zarr/Zarr/index.html"
+doc: "https://zoj613.github.io/zarr-ml/zarr/Zarr/index.html"
 bug-reports: "https://github.com/zoj613/zarr-ml/issues"
 depends: [
   "dune" {>= "3.15"}

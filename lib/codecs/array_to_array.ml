@@ -22,17 +22,23 @@ module TransposeCodec = struct
       (a, b) Util.array_repr ->
       (a, b) Util.array_repr
     = fun t decoded ->
-      let shape = Array.(make (length decoded.shape) 0) in
-      Array.iteri (fun i x -> shape.(i) <- decoded.shape.(x)) t;
-      {decoded with shape}
+      {decoded with
+        shape = Array.map (fun x -> decoded.shape.(x)) t}
 
   let parse_order o =
-    let o' = Array.copy o in
-    Array.fast_sort Int.compare o';
-    if o' <> Array.init (Array.length o') Fun.id then
-      Error (`Invalid_transpose_order (o, ""))
+    if Array.length o = 0 then
+      let msg = "transpose order cannot be empty." in
+      Result.error @@ `Invalid_transpose_order (o, msg)
     else
-      Result.ok @@ Transpose o
+      let o' = Array.copy o in
+      Array.fast_sort Int.compare o';
+      if o' <> Array.init (Array.length o') Fun.id then
+        let msg =
+          "order must not have any repeated dimensions
+          or negative values." in
+        Result.error @@ `Invalid_transpose_order (o, msg)
+      else
+        Result.ok @@ Transpose o
 
   let parse
     : type a b.
@@ -41,10 +47,16 @@ module TransposeCodec = struct
       (unit, [> error]) result
     = fun repr o ->
     ignore @@ parse_order o;
-    if Array.length o <> Array.length repr.shape then
+    let max = Array.length repr.shape in
+    if Array.length o <> max then
       let msg =
         "Transpose order must have the same length
-        as the chunk it encodes/decodes." in
+        as the decoded representation's number of dims." in
+      Result.error @@ `Invalid_transpose_order (o, msg)
+    else if not @@ Array.for_all (fun x -> x <= max) o then
+      let msg =
+        "Largest value of transpose order must not be larger than
+        then dimensionality of the decoded representation." in
       Result.error @@ `Invalid_transpose_order (o, msg)
     else
       Ok ()

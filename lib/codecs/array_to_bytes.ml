@@ -34,7 +34,7 @@ and chain =
 type error =
   [ `Bytes_encode_error of string
   | `Bytes_decode_error of string
-  | `Sharding_shape_mismatch of int array * int array
+  | `Sharding_shape_mismatch of int array * int array * string
   | Array_to_array.error
   | Bytes_to_bytes.error ]
 
@@ -208,14 +208,25 @@ end = struct
       shard_config ->
       (unit, [> error]) result
     = fun repr t ->
+    (match Array.(length repr.shape = length t.chunk_shape) with
+    | true -> Ok ()
+    | false ->
+      let msg =
+        "sharding chunk_shape length must equal the dimensionality of
+        the decoded representaton of a shard." in
+      Result.error @@
+      `Sharding_shape_mismatch (t.chunk_shape, repr.shape, msg))
+    >>= fun () ->
     match
-      Array.(length repr.shape = length t.chunk_shape),
       Array.for_all2 (fun x y -> (x mod y) = 0) repr.shape t.chunk_shape
     with
-    | true, true -> Ok ()
-    | _, false | false, _ ->
+    | true -> Ok ()
+    | false ->
+      let msg =
+        "sharding chunk_shape must evenly divide the size of the shard shape."
+      in
       Result.error @@
-      `Sharding_shape_mismatch (t.chunk_shape, repr.shape)
+      `Sharding_shape_mismatch (t.chunk_shape, repr.shape, msg)
 
   let compute_encoded_size input_size t =
     List.fold_left BytesToBytes.compute_encoded_size
@@ -441,66 +452,65 @@ end = struct
         | Ok v -> v :: l, r
         | Error _ -> l, c :: r) encoded ([], [])
     in
-    if List.length codecs = 0 then
+    (match codecs with
+    | [] ->
       Error "No codec chain specified for sharding_indexed."
-    else
-      let a2b, rest = filter_partition ArrayToBytes.of_yojson codecs in
-      if List.length a2b <> 1 then
-        Error "Must be exactly one array->bytes codec."
-      else
-        let a2a, rest = filter_partition ArrayToArray.of_yojson rest in
-        let b2b, rest = filter_partition BytesToBytes.of_yojson rest in
-        if List.length rest <> 0 then
-          Error ("Unsupported codec: " ^ (Util.get_name @@ List.hd rest))
-        else
-          Ok {a2a; a2b = List.hd a2b; b2b}
+    | y -> Ok y)
+    >>= fun codecs ->
+    (match filter_partition ArrayToBytes.of_yojson codecs with
+    | [x], rest -> Ok (x, rest)
+    | _ -> Error "Must be exactly one array->bytes codec.")
+    >>= fun (a2b, rest) ->
+    let a2a, rest = filter_partition ArrayToArray.of_yojson rest in
+    let b2b, rest = filter_partition BytesToBytes.of_yojson rest in
+    match rest with
+    | [] -> Ok {a2a; a2b; b2b}
+    | x :: _ ->
+      let msg =
+        (Util.get_name x) ^
+        " codec is unsupported or has invalid configuration." in
+      Error msg
 
   and of_yojson x =
     let assoc =
       Yojson.Safe.Util.(member "configuration" x |> to_assoc)
     in
-    match
+    let extract name =
       Yojson.Safe.Util.filter_map
-        (fun (n, v) -> if n = "chunk_shape" then Some v else None) assoc
-    with
-    | [] -> Error ("sharding_indexed must contain a chunk_shape field")
-    | l ->
+        (fun (n, v) -> if n = name then Some v else None) assoc
+    in
+    (match extract "chunk_shape" with
+    | [] ->
+      Error ("sharding_indexed must contain a chunk_shape field")
+    | x :: _ ->
       List.fold_right (fun a acc ->
         acc >>= fun k ->
         match a with
-        | `Int x -> Ok (x :: k)
+        | `Int i -> Ok (i :: k)
         | _ -> Error "chunk_shape must only contain integers.")
-        (Yojson.Safe.Util.to_list @@ List.hd l) (Ok [])
-      >>= fun l'->
-      let chunk_shape = Array.of_list l'
-      in
-      match
-        Yojson.Safe.Util.filter_map
-          (fun (n, v) -> if n = "index_location" then Some v else None) assoc
-      with
-      | [] -> Error "sharding_indexed must have a index_location field"
-      | l ->
-        (match List.hd l with
-        | `String "end" -> Ok End
-        | `String "start" -> Ok Start
-        | _ -> Error "index_location must only be 'end' or 'start'")
-        >>= fun index_location ->
-        match
-          Yojson.Safe.Util.filter_map
-            (fun (n, v) -> if n = "codecs" then Some v else None) assoc
-        with
-        | [] -> Error "sharding_indexed must have a codecs field"
-        | l ->
-          chain_of_yojson (Yojson.Safe.Util.to_list @@ List.hd l)
-          >>= fun codecs ->
-          match
-            Yojson.Safe.Util.filter_map
-              (fun (n, v) -> if n = "index_codecs" then Some v else None)
-              assoc
-          with
-          | [] -> Error "sharding_indexed must have a index_codecs field"
-          | l ->
-            chain_of_yojson (Yojson.Safe.Util.to_list @@ List.hd l)
-            >>| fun index_codecs ->
-            {index_codecs; index_location; codecs; chunk_shape}
+        (Yojson.Safe.Util.to_list x) (Ok []))
+    >>= fun l'->
+    let chunk_shape = Array.of_list l' in
+    (match extract "index_location" with
+    | [] ->
+      Error "sharding_indexed must have a index_location field"
+    | x :: _ ->
+      match x with
+      | `String "end" -> Ok End
+      | `String "start" -> Ok Start
+      | _ -> Error "index_location must only be 'end' or 'start'")
+    >>= fun index_location ->
+    (match extract "codecs" with
+    | [] ->
+      Error "sharding_indexed must have a codecs field"
+    | x :: _ ->
+      chain_of_yojson @@ Yojson.Safe.Util.to_list x)
+    >>= fun codecs ->
+    (match extract "index_codecs" with
+    | [] ->
+      Error "sharding_indexed must have a index_codecs field"
+    | x :: _ ->
+      chain_of_yojson @@ Yojson.Safe.Util.to_list x)
+    >>| fun index_codecs ->
+    {index_codecs; index_location; codecs; chunk_shape}
 end

@@ -53,6 +53,8 @@ module Chain : sig
       string ->
       (('a, 'b) Ndarray.t, [> error]) result
 
+  val equal : t -> t -> bool
+
   val of_yojson : Yojson.Safe.t -> (t, string) result
 
   val to_yojson : t -> Yojson.Safe.t

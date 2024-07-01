@@ -10,6 +10,9 @@ type bytes_to_bytes =
 type error = 
   [ `Gzip of Ezgzip.error ]
 
+val pp_bytes_to_bytes : Format.formatter -> bytes_to_bytes -> unit
+val show_bytes_to_bytes : bytes_to_bytes -> string
+
 module BytesToBytes : sig
   val compute_encoded_size : int -> bytes_to_bytes -> int
   val encode : bytes_to_bytes -> string -> (string, [> error]) result

@@ -8,6 +8,9 @@ type array_to_array =
 type error =
   [ `Invalid_transpose_order of dimension_order * string ]
 
+val pp_array_to_array : Format.formatter -> array_to_array -> unit
+val show_array_to_array : array_to_array -> string
+
 module ArrayToArray : sig 
   val parse
     : ('a, 'b) Util.array_repr ->

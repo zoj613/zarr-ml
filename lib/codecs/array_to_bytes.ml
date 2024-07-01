@@ -4,13 +4,20 @@ open Util.Result_syntax
 
 module Ndarray = Owl.Dense.Ndarray.Generic
 
-type endianness = Little | Big
+type endianness =
+  | Little
+  | Big
+  [@@deriving show]
 
-type loc = Start | End
+type loc =
+  | Start
+  | End
+  [@@deriving show]
 
 type array_to_bytes =
   | Bytes of endianness
   | ShardingIndexed of shard_config
+  [@@deriving show]
 
 and shard_config =
   {chunk_shape : int array
@@ -18,11 +25,11 @@ and shard_config =
   ;index_codecs : chain
   ;index_location : loc}
 
-and chain = {
-  a2a: array_to_array list;
-  a2b: array_to_bytes;
-  b2b: bytes_to_bytes list;
-}
+and chain =
+  {a2a: array_to_array list
+  ;a2b: array_to_bytes
+  ;b2b: bytes_to_bytes list}
+  [@@deriving show]
 
 type error =
   [ `Bytes_encode_error of string

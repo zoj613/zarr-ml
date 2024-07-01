@@ -8,6 +8,10 @@ module Ndarray = Owl.Dense.Ndarray.Generic
 module Chain = struct
   type t = chain
 
+  let pp = pp_chain
+
+  let show = show_chain
+
   let create repr {a2a; a2b; b2b} =
     List.fold_left
       (fun acc c ->

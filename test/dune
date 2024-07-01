@@ -1,3 +1,7 @@
 (test
  (name test_zarr)
- (libraries ounit2 zarr))
+ (libraries
+   zarr
+   ounit2)
+ (preprocess
+   (pps ppx_deriving.show)))

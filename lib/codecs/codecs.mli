@@ -58,4 +58,8 @@ module Chain : sig
   val of_yojson : Yojson.Safe.t -> (t, string) result
 
   val to_yojson : t -> Yojson.Safe.t
+
+  val pp : Format.formatter -> t -> unit
+
+  val show : t -> string
 end

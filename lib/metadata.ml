@@ -15,6 +15,8 @@ module FillValue = struct
     | BFComplex of Complex.t
     | BBComplex of Complex.t
 
+  let equal x y = x = y
+
   let of_kind
   : type a b. (a, b) Bigarray.kind -> a -> t
   = fun kind a ->
@@ -109,14 +111,16 @@ module ArrayMetadata = struct
     ;fill_value : FillValue.t
     ;chunk_grid : Extensions.RegularGrid.t
     ;chunk_key_encoding : Extensions.ChunkKeyEncoding.t
-    ;attributes : Yojson.Safe.t option [@yojson.option]
-    ;dimension_names : string option list option [@yojson.option]
-    ;storage_transformers : Yojson.Safe.t Util.ext_point list option [@yojson.option]}
-  [@@deriving yojson]
+    ;attributes : Yojson.Safe.t [@default `Null]
+    ;dimension_names : string option list [@default []]
+    ;storage_transformers : Yojson.Safe.t Util.ExtPoint.t list [@default []]}
+  [@@deriving yojson, eq]
 
   let create
     ?(sep=Extensions.Slash)
     ?(codecs=Codecs.Chain.default)
+    ?(dimension_names=[])
+    ?(attributes=`Null)
     ~shape
     kind
     fv
@@ -130,23 +134,23 @@ module ArrayMetadata = struct
     ;chunk_key_encoding = Extensions.ChunkKeyEncoding.create sep
     ;zarr_format = 3
     ;node_type = "array"
-    ;storage_transformers = None
-    ;dimension_names = None
-    ;attributes = None}
+    ;attributes
+    ;dimension_names
+    ;storage_transformers = []}
 
   let shape t = t.shape
 
   let codecs t = t.codecs
 
-  let dtype t = t.data_type
-
-  let fill_value t = t.fill_value
+  let data_type t =
+    Yojson.Safe.to_string @@
+    Extensions.Datatype.to_yojson t.data_type
 
   let ndim t = Array.length @@ shape t
 
   let dimension_names t = t.dimension_names
 
-  let attributes t : Yojson.Safe.t option = t.attributes
+  let attributes t = t.attributes
 
   let chunk_shape t =
     Extensions.RegularGrid.chunk_shape t.chunk_grid
@@ -171,8 +175,8 @@ module ArrayMetadata = struct
     of_yojson @@ Yojson.Safe.from_string b >>? fun s ->
     `Json_decode_error s
 
-  let update_attributes attrs t =
-    {t with attributes = Some attrs}
+  let update_attributes t attrs =
+    {t with attributes = attrs}
 
   let update_shape t shape = {t with shape}
 

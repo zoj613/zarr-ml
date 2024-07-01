@@ -13,7 +13,7 @@
 
 (license BSD-3-Clause)
 
-(documentation https://zoj613.github.io/zarr/zarr/Zarr/index.html)
+(documentation https://zoj613.github.io/zarr-ml/zarr/Zarr/index.html)
 
 (package
  (name zarr)

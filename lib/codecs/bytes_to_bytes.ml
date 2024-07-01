@@ -13,7 +13,7 @@ type error =
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/gzip/v1.0.html *)
 module GzipCodec = struct
   type config = {level : int} [@@deriving yojson]
-  type gzip = config Util.ext_point [@@deriving yojson]
+  type gzip = config Util.ExtPoint.t [@@deriving yojson]
 
   let compute_encoded_size _ =
     failwith "Cannot compute encoded size of Gzip codec."

@@ -34,7 +34,7 @@ type error =
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/bytes/v1.0.html *)
 module BytesCodec = struct
   type config = {endian : string} [@@deriving yojson]
-  type bytes = config Util.ext_point [@@deriving yojson]
+  type bytes = config Util.ExtPoint.t [@@deriving yojson]
   type t = endianness
 
   let compute_encoded_size (input_size : int) = input_size

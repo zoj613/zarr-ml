@@ -1,7 +1,9 @@
-type 'a ext_point =
-  {name : string
-  ;configuration : 'a}
-[@@deriving yojson]
+module ExtPoint = struct
+  type 'a t =
+    {name : string
+    ;configuration : 'a}
+  [@@deriving yojson, eq]
+end
 
 type ('a, 'b) array_repr =
   {kind : ('a, 'b) Bigarray.kind

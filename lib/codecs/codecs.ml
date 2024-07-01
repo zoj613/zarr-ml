@@ -50,6 +50,9 @@ module Chain = struct
       (fun c acc -> acc >>= ArrayToArray.decode c)
       t.a2a (ArrayToBytes.decode y repr' t.a2b)
 
+  let equal x y =
+    x.a2a = y.a2a && x.a2b = y.a2b && x.b2b = y.b2b
+
   let to_yojson t =
     [%to_yojson: Yojson.Safe.t list] @@ 
     List.map ArrayToArray.to_yojson t.a2a @

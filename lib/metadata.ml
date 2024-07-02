@@ -247,4 +247,6 @@ module GroupMetadata = struct
 
   let update_attributes t attrs =
     {t with attributes = attrs}
+
+  let attributes t = t.attributes
 end

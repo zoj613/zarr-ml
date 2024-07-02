@@ -154,4 +154,8 @@ module GroupMetadata : sig
 
   val show : t -> string
   (** [show t] pretty-prints the contents of the group metadata type t. *)
+
+  val attributes : t -> Yojson.Safe.t
+  (** [attributes t] Returns a Yojson type containing user attributes assigned
+      to the zarr group represented by [t]. *)
 end

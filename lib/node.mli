@@ -68,3 +68,9 @@ val to_metakey : t -> string
 val is_parent : t -> t -> bool
 (** [is_parent m n] Tests if node [n] is a the immediate parent of
     node [m]. Returns [true] when the test passes and [false] otherwise. *)
+
+val show : t -> string
+(** [show n] returns a string representation of a node type. *)
+
+val pp : Format.formatter -> t -> unit
+(** [pp fmt t] pretty prints a node type value. *)

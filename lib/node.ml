@@ -1,7 +1,7 @@
 type t =
   | Root
-  | Cons of t * name
-and name = string
+  | Cons of t * string
+  [@@deriving show]
 
 type error =
   [ `Node_invariant of string ]
@@ -85,3 +85,5 @@ let is_parent x y =
   match x, y with
   | Root, _ -> false
   | Cons (parent, _), v -> parent = v
+
+let show n = to_path n

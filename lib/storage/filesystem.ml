@@ -27,7 +27,7 @@ module Impl = struct
         (fun ic -> Ok (In_channel.input_all ic))
     with
     | Sys_error _ | End_of_file ->
-      Error (`Store_read_error fpath)
+      Error (`Store_read fpath)
 
   let set t key value =
     let filename = key_to_fspath t key in
@@ -108,7 +108,7 @@ let open_store ?(file_perm=0o640) path =
     Ok Impl.{dirname; file_perm}
   else
     Result.error @@
-    `Store_read_error (path ^ " is not a Filesystem store.")
+    `Store_read (path ^ " is not a Filesystem store.")
 
 let open_or_create ?(file_perm=0o640) path =
   try open_store ~file_perm path with

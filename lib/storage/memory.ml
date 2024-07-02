@@ -11,8 +11,7 @@ module Impl = struct
 
   let get t key =
     Option.to_result
-      ~none:(`Store_read_error key) @@
-      StrMap.find_opt t key
+      ~none:(`Store_read key) @@ StrMap.find_opt t key
 
   let set t key value =
     StrMap.replace t key value

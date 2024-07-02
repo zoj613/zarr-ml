@@ -5,7 +5,7 @@ type key = string
 type range = ByteRange of int * int option
 
 type error =
-  [ `Store_read_error of string
+  [ `Store_read of string
   | `Invalid_slice of string
   | `Invalid_kind of string
   | `Reshape_error of string
@@ -89,17 +89,21 @@ module Make (M : STORE) : S with type t = M.t = struct
   module GM = GroupMetadata
   include M
 
-  let rec create_group ?metadata t node =
-    match metadata, Node.to_metakey node with
-    | Some m, k -> set t k @@ GM.encode m;
-    | None, k -> set t k @@ GM.(default |> encode);
-    make_implicit_groups_explicit t node
+  (* All nodes are explicit upon creation so just check the node's metadata key.*)
+  let is_member t node =
+    M.is_member t @@ Node.to_metakey node
 
-  and make_implicit_groups_explicit t node =
-    List.iter (fun n ->
-      match get t @@ Node.to_metakey n with
-      | Ok _ -> ()
-      | Error _ -> create_group t n) @@ Node.ancestors node
+  let rec create_group ?metadata t node =
+    if is_member t node then ()
+    else
+      (match metadata, Node.to_metakey node with
+      | Some m, k -> set t k @@ GM.encode m;
+      | None, k -> set t k @@ GM.(default |> encode));
+      make_implicit_groups_explicit t @@ Node.parent node
+
+  and make_implicit_groups_explicit t = function
+    | None -> ()
+    | Some n -> create_group t n
 
   let create_array
     ?(sep=Extensions.Slash)
@@ -121,14 +125,17 @@ module Make (M : STORE) : S with type t = M.t = struct
     >>= fun codecs ->
     let meta =
       AM.create
-        ~sep ~codecs ~dimension_names ~attributes ~shape kind fill_value chunks
+        ~sep
+        ~codecs
+        ~dimension_names
+        ~attributes
+        ~shape
+        kind
+        fill_value
+        chunks
     in
     set t (Node.to_metakey node) (AM.encode meta);
-    Ok (make_implicit_groups_explicit t node)
-
-  (* All nodes are explicit upon creation so just check the node's metadata key.*)
-  let is_member t node =
-    M.is_member t @@ Node.to_metakey node
+    Ok (make_implicit_groups_explicit t @@ Node.parent node)
 
   (* Assumes without checking that [metakey] is a valid node metadata key.*)
   let unsafe_node_type t metakey =
@@ -147,38 +154,47 @@ module Make (M : STORE) : S with type t = M.t = struct
       GM.decode bytes >>= fun meta ->
       Ok (Either.right meta)
     | false, _ ->
-      Error (`Store_read_error (Node.to_path node ^ " is not a store member."))
+      Result.error @@
+      `Store_read (Node.show node ^ " is not a store member.")
 
   let group_metadata node t =
     match get_metadata node t with
-    | Ok x -> Ok (Either.find_right x |> Option.get)
+    | Ok x when Either.is_right x ->
+      Ok (Either.find_right x |> Option.get)
+    | Ok _ ->
+      Result.error @@
+      `Store_read (Node.show node ^ " is not a group node.")
     | Error _ as err -> err
 
   let array_metadata node t =
     match get_metadata node t with
-    | Ok x -> Ok (Either.find_left x |> Option.get)
+    | Ok x when Either.is_left x ->
+      Ok (Either.find_left x |> Option.get)
+    | Ok _ ->
+      Result.error @@
+      `Store_read (Node.show node ^ " is not an array node.")
     | Error _ as err -> err
 
   let find_child_nodes t node =
     match is_member t node, Node.to_metakey node with
     | true, k when unsafe_node_type t k = "group" ->
       Result.ok @@
-      List.fold_left (fun (lacc, racc) pre ->
-        match
-          Node.of_path @@
-          "/" ^ String.(length pre - 1 |> sub pre 0)
-        with
-        | Ok x ->
+      List.fold_left
+        (fun (lacc, racc) pre ->
+          let x =
+            Result.get_ok @@  (* this operation should not fail *)
+            Node.of_path @@
+            "/" ^ String.(length pre - 1 |> sub pre 0)
+          in
           if unsafe_node_type t (pre ^ "zarr.json") = "array" then
             x :: lacc, racc
           else
-            lacc, x :: racc
-        | Error _ -> lacc, racc)
+            lacc, x :: racc)
         ([], []) (snd @@ list_dir t @@ Node.to_prefix node)
     | true, _ ->
-      Error (Node.to_path node ^ " is not a group node.")
+      Error (Node.show node ^ " is not a group node.")
     | false, _ ->
-      Error (Node.to_path node ^ " is not a node in this heirarchy.")
+      Error (Node.show node ^ " is not a node in this heirarchy.")
 
   let find_all_nodes t =
     let rec aux acc p =
@@ -276,7 +292,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     with
     | Assert_failure _ -> 
       Result.error @@
-      `Store_read_error "slice shape is not compatible with node's shape.")
+      `Store_read "slice shape is not compatible with node's shape.")
     >>= fun sshape ->
     let pair = 
       Array.map
@@ -312,7 +328,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     (if "array" = unsafe_node_type t mkey then
       Ok ()
     else
-      Error (`Reshape_error (Node.to_path node ^ " is not an array node.")))
+      Error (`Reshape_error (Node.show node ^ " is not an array node.")))
     >>= fun () ->
     get t mkey >>= fun bytes ->
     AM.decode bytes >>= fun meta ->

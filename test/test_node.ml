@@ -17,11 +17,14 @@ let tests = [
 "creation from path string" >:: (fun _ ->
   let n = Node.of_path "/" in
   assert_bool creation_failure @@ Result.is_ok n;
-  assert_equal "/" @@ Node.to_path @@ Result.get_ok n;
+  assert_equal
+    ~printer:Node.show Node.root @@ Result.get_ok n;
   let msg = "Creation of node should not succeed" in
   List.iter
     (fun x -> assert_bool msg @@ Result.is_error x) @@
-    List.map Node.of_path [""; "na/meas"; "/some/..."; "/root/__name"; "/sd/"])
+    List.map
+      Node.of_path @@
+      [""; "na/meas"; "/some/..."; "/root/__name"; "/sd/"])
 ;
 "exploratory functions" >:: (fun _ ->
   let s = "/some/dir/moredirs/path/pname" in
@@ -31,36 +34,70 @@ let tests = [
 
   assert_equal None @@ Node.parent Node.root;
   match Node.parent n with
-  | None -> assert_bool "A non-root node must have a parent." false;
-  | Some p -> assert_equal "/some/dir/moredirs/path" @@ Node.to_path p;
+  | None ->
+    assert_failure
+      "A non-root node must have a parent.";
+  | Some p ->
+    assert_equal
+      "/some/dir/moredirs/path" @@ Node.show p;
 
-  assert_bool "" Node.(root = root);
-  assert_bool "root node cannot be equal to its child" @@ not Node.(root = n);
-  assert_bool "non-root node cannot have root as child" @@ not Node.(n = root);
+  assert_equal ~printer:Node.show Node.root Node.root;
+  assert_bool
+    "root node cannot be equal to its child" @@
+    not Node.(root = n);
+  assert_bool
+    "non-root node cannot have root as child" @@
+    not Node.(n = root);
 
   assert_equal [] @@ Node.ancestors Node.root;
   assert_equal
-    ["/"; "/some"; "/some/dir"; "/some/dir/moredirs"; "/some/dir/moredirs/path"]
-    (Node.ancestors n |> List.map Node.to_path);
+    ~printer:[%show: string list]
+    ["/"; "/some"; "/some/dir"; "/some/dir/moredirs"
+    ;"/some/dir/moredirs/path"]
+    (Node.ancestors n |> List.map Node.show);
 
   let p = Node.parent n |> Option.get in
-  assert_bool "" @@ Node.is_parent n p;
-  assert_bool "" @@ not @@ Node.is_parent Node.root n;
-  assert_bool "" @@ not @@ Node.is_parent Node.root Node.root;
+  assert_equal
+    ~printer:string_of_bool
+    true @@
+    Node.is_parent n p;
+  assert_equal
+    ~printer:string_of_bool
+    false @@
+    Node.is_parent Node.root n;
+  assert_equal
+    ~printer:string_of_bool
+    false @@
+    Node.is_parent Node.root Node.root;
 
   let exp_parents = Node.ancestors n in
-  let r, l = List.fold_left_map 
+  let r, l = List.fold_left_map
     (fun acc _ ->
       match Node.parent acc with
       | Some acc' -> acc', acc'
-      | None -> acc, acc) n exp_parents in
-  assert_bool "" (exp_parents = List.rev l);
-  assert_equal r Node.root;
+      | None -> acc, acc) n exp_parents
+  in
+  assert_equal
+    ~printer:[%show: Node.t list]
+    exp_parents @@
+    List.rev l;
+  assert_equal ~printer:Node.show r Node.root;
 
-  assert_equal "" @@ Node.to_key Node.root;
-  let exp_key = "some/dir/moredirs/path/pname" in
-  assert_equal exp_key @@ Node.to_key n;
+  assert_equal
+    ~printer:Fun.id "" @@ Node.to_key Node.root;
 
-  assert_equal "zarr.json" @@ Node.to_metakey Node.root;
-  assert_equal (exp_key ^ "/zarr.json") @@ Node.to_metakey n)
+  assert_equal
+    ~printer:Fun.id
+    "some/dir/moredirs/path/pname" @@
+    Node.to_key n;
+
+  assert_equal
+    ~printer:Fun.id
+    "zarr.json" @@
+    Node.to_metakey Node.root;
+
+  assert_equal
+    ~printer:Fun.id
+    ("some/dir/moredirs/path/pname/zarr.json") @@
+    Node.to_metakey n)
 ]

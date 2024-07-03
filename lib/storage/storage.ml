@@ -27,7 +27,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     | Some n -> create_group t n
 
   let create_array
-    ?(sep=Extensions.Slash)
+    ?(sep=`Slash)
     ?(dimension_names=[])
     ?(attributes=`Null)
     ?codecs

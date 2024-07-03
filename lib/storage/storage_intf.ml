@@ -54,7 +54,7 @@ module type S = sig
       is already a member of this store. *)
 
   val create_array
-    : ?sep:Extensions.separator ->
+    : ?sep:[< `Dot | `Slash > `Slash ] ->
       ?dimension_names:string option list ->
       ?attributes:Yojson.Safe.t ->
       ?codecs:Codecs.chain ->

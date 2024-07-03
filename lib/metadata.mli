@@ -34,7 +34,7 @@ module ArrayMetadata : sig
   (** A type representing a parsed array metadata document. *)
 
   val create :
-    ?sep:Extensions.separator ->
+    ?sep:[< `Dot | `Slash > `Slash ] ->
     ?codecs:Codecs.Chain.t ->
     ?dimension_names:string option list ->
     ?attributes:Yojson.Safe.t ->

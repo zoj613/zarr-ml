@@ -117,7 +117,7 @@ module ArrayMetadata = struct
   [@@deriving yojson, eq]
 
   let create
-    ?(sep=Extensions.Slash)
+    ?(sep=`Slash)
     ?(codecs=Codecs.Chain.default)
     ?(dimension_names=[])
     ?(attributes=`Null)

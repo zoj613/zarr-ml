@@ -47,8 +47,6 @@ module RegularGrid = struct
       Ok y.configuration.chunk_shape
 end
 
-type separator = Dot | Slash
-
 module ChunkKeyEncoding = struct
   type encoding = Default | V2
   type config = {separator : string} [@@deriving yojson]
@@ -56,8 +54,8 @@ module ChunkKeyEncoding = struct
   type t = {encoding : encoding; sep : string}
 
   let create = function
-    | Dot -> {encoding = Default; sep = "."}
-    | Slash -> {encoding = Default; sep = "/"}
+    | `Dot -> {encoding = Default; sep = "."}
+    | `Slash -> {encoding = Default; sep = "/"}
 
   (* map a chunk coordinate index to a key. E.g, (2,3,1) maps to c/2/3/1 *)
   let encode t index =

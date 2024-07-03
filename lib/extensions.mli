@@ -10,14 +10,9 @@ module RegularGrid : sig
   val to_yojson : t -> Yojson.Safe.t
 end
 
-type separator = Dot | Slash
-(** A type representing the separator in an array chunk's key encoding.
-    For example, [Dot] is "/", and is used to encode the chunk index
-    [(0, 3, 5)] as [0/3/5]. *) 
-
 module ChunkKeyEncoding : sig
   type t
-  val create : separator -> t
+  val create : [< `Slash | `Dot > `Slash ] -> t
   val encode : t -> int array -> string
   val equal : t -> t -> bool
   val of_yojson : Yojson.Safe.t -> (t, string) result

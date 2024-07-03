@@ -1,4 +1,5 @@
 open Metadata
+open Node
 
 type key = string
 
@@ -7,6 +8,7 @@ type range = ByteRange of int * int option
 type error =
   [ `Store_read of string
   | `Store_write of string
+  | Node.error
   | Metadata.error
   | Codecs.error ]
 
@@ -48,9 +50,9 @@ module type S = sig
   (** The storage type. *)
 
   val create_group
-    : ?metadata:GroupMetadata.t -> t -> Node.t -> unit
+    : ?metadata:GroupMetadata.t -> t -> GroupNode.t -> unit
   (** [create_group ~meta t node] creates a group node in store [t]
-      containing metadata [meta]. This is a no-op if a node [node]
+      containing metadata [meta]. This is a no-op if [node]
       is already a member of this store. *)
 
   val create_array
@@ -62,7 +64,7 @@ module type S = sig
       chunks:int array ->
       ('a, 'b) Bigarray.kind ->
       'a ->
-      Node.t ->
+      ArrayNode.t ->
       t ->
       (unit, [> Codecs.error]) result
   (** [create_array ~sep ~dimension_names ~attributes ~codecs ~shape ~chunks kind fill node t]
@@ -77,43 +79,46 @@ module type S = sig
       This operation can fail if the codec chain is not well defined. *)
 
   val array_metadata
-    : Node.t -> t -> (ArrayMetadata.t, [> error]) result
+    : ArrayNode.t -> t -> (ArrayMetadata.t, [> error]) result
   (** [array_metadata node t] returns the metadata of array node [node].
-      This operation returns an error if:
-      - The node is not a member of store [t].
-      - if node [node] is a group node. *)
+      This operation returns an error if node is not a member of store [t]. *)
 
   val group_metadata
-    : Node.t -> t -> (GroupMetadata.t, [> error]) result
+    : GroupNode.t -> t -> (GroupMetadata.t, [> error]) result
   (** [group_metadata node t] returns the metadata of group node [node].
-      This operation returns an error if:
-      - The node is not a member of store [t].
-      - if node [node] is an array node. *)
+      This operation returns an error if node is not a member of store [t].*)
 
   val find_child_nodes
-    : t -> Node.t -> (Node.t list * Node.t list, [> error]) result
+    : t -> GroupNode.t -> (ArrayNode.t list * GroupNode.t list, [> error]) result
   (** [find_child_nodes t n] returns a tuple of child nodes of group node [n].
-      The first element of the tuple is a list of array child nodes, and the
-      second element a list of child group nodes.
-      This operation can fail if:
-      - Node [n] is not a member of store [t].
-      - Node [n] is an array node of store [t]. *)
+      This operation can fail if [n] is not a member of store [t]. *)
 
-  val find_all_nodes : t -> Node.t list
-  (** [find_all_nodes t] returns a list of all nodes in store [t]. If the
-      store has no nodes, an empty list is returned. *)
+  val find_all_nodes : t -> ArrayNode.t list * GroupNode.t list
+  (** [find_all_nodes t] returns [Some p] where [p] is a pair of lists
+      representing all nodes in store [t]. The first element of the pair
+      is a list of all array nodes, and the second element is a list of
+      all group nodes. If the store has no nodes, [None] is returned. *)
 
-  val erase_node : t -> Node.t -> unit
-  (** [erase_node t n] erases node [n] from store [t]. This function erases
-      all child nodes if [n] is a group node. If node [n] is not a member
+  val erase_group_node : t -> GroupNode.t -> unit
+  (** [erase_group_node t n] erases group node [n] from store [t]. This also
+      erases all child nodes of [n]. If node [n] is not a member
       of store [t] then this is a no-op. *)
 
-  val is_member : t -> Node.t -> bool
-  (** [is_member t n] returns [true] if node [n] is a member of store [t]
-      and [false] otherwise. *)
+  val erase_array_node : t -> ArrayNode.t -> unit
+  (** [erase_array_node t n] erases group node [n] from store [t]. This also
+      erases all child nodes of [n]. If node [n] is not a member
+      of store [t] then this is a no-op. *)
+
+  val group_exists : t -> GroupNode.t -> bool
+  (** [group_exists t n] returns [true] if group node [n] is a member
+      of store [t] and [false] otherwise. *)
     
+  val array_exists : t -> ArrayNode.t -> bool
+  (** [array_exists t n] returns [true] if array node [n] is a member
+      of store [t] and [false] otherwise. *)
+
   val set_array
-    : Node.t ->
+    : ArrayNode.t ->
       Owl_types.index array ->
       ('a, 'b) Ndarray.t ->
       t ->
@@ -126,7 +131,7 @@ module type S = sig
       - If there is a problem decoding/encoding node [n] chunks.*)
 
   val get_array
-    : Node.t ->
+    : ArrayNode.t ->
       Owl_types.index array ->
       ('a, 'b) Bigarray.kind ->
       t ->
@@ -138,12 +143,11 @@ module type S = sig
         in its metadata document.
       - The slice [s] is not a valid slice of array node [n].*)
 
-  val reshape : t -> Node.t -> int array -> (unit, [> error]) result
+  val reshape : t -> ArrayNode.t -> int array -> (unit, [> error]) result
   (** [reshape t n shape] resizes array node [n] of store [t] into new
-      size [shape]. If this operation fails, an error is returned. It
-      can fail if:
-      - Node [n] is not a valid array node.
-      - If [shape] does not have the same dimensions as node [n]'s shape. *)
+      size [shape]. If this operation fails, an error is returned.
+      It can fail if [shape] does not have the same dimensions as [n]'s shape.
+      If node [n] is not a member of store [t] then this is a no-op. *)
 end
 
 module type MAKER = functor (M : STORE) -> S with type t = M.t
@@ -178,57 +182,36 @@ module Base = struct
 
   module StrSet = Set.Make (String)
 
-  let erase_values ~erase_fn t keys =
-    StrSet.iter (erase_fn t) @@ StrSet.of_list keys
-
-  let erase_prefix ~list_fn ~erase_fn t pre =
-    List.iter (fun k ->
-      if String.starts_with ~prefix:pre k
-      then begin
-        erase_fn t k
-      end) @@ list_fn t
-
   let list_prefix ~list_fn t pre =
     List.filter
       (String.starts_with ~prefix:pre) 
       (list_fn t)
 
+  let erase_values ~erase_fn t keys =
+    StrSet.iter (erase_fn t) @@ StrSet.of_list keys
+
+  let erase_prefix ~list_fn ~erase_fn t pre =
+    erase_values ~erase_fn t @@ list_prefix ~list_fn t pre
+
   let list_dir ~list_fn t pre =
-    let paths =
-      List.map
-        (fun k ->
-          Result.get_ok @@
-          Node.of_path @@
-          String.cat "/" k)
-        (list_prefix ~list_fn t pre)
-    in
-    let is_prefix_child k =
-      match Node.parent k with
-      | Some par ->
-        String.equal pre @@ Node.to_prefix par
-      | None -> false in
+    let n = String.length pre in
     let keys, rest =
-      List.partition_map (fun k ->
-        match is_prefix_child k with
-        | true -> Either.left @@ Node.to_key k
-        | false -> Either.right k)
-      paths
+      StrSet.fold
+      (fun k (l, r) ->
+        if not @@ String.contains_from k n '/' then 
+          StrSet.add k l, r
+        else
+          l, StrSet.add k r)
+      (StrSet.of_list @@ list_prefix ~list_fn t pre)
+      (StrSet.empty, StrSet.empty)
     in
     let prefixes =
-      List.fold_left (fun acc k ->
-        match
-          List.find_opt
-            is_prefix_child
-            (Node.ancestors k)
-        with
-        | None -> acc
-        | Some v ->
-          let w = Node.to_prefix v in
-          if List.mem w acc then acc
-          else w :: acc)
-      [] rest
+      StrSet.map
+        (fun k ->
+          String.sub k 0 @@
+          1 + String.index_from k n '/') rest
     in
-    keys, prefixes
+    StrSet.(elements keys, elements prefixes)
 
   let rec get_partial_values ~get_fn t kr_pairs =
     match kr_pairs with

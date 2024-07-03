@@ -1,26 +1,31 @@
 include Storage_intf
 
 open Util.Result_syntax
+open Node
+
+module Ndarray = Owl.Dense.Ndarray.Generic
+module ArraySet = Util.ArraySet
+module Arraytbl = Util.Arraytbl
+module AM = Metadata.ArrayMetadata
+module GM = Metadata.GroupMetadata
 
 module Make (M : STORE) : S with type t = M.t = struct
-  module Ndarray = Owl.Dense.Ndarray.Generic
-  module ArraySet = Util.ArraySet
-  module Arraytbl = Util.Arraytbl
-  module AM = Metadata.ArrayMetadata
-  module GM = Metadata.GroupMetadata
   include M
 
   (* All nodes are explicit upon creation so just check the node's metadata key.*)
-  let is_member t node =
-    M.is_member t @@ Node.to_metakey node
+  let group_exists t node =
+    M.is_member t @@ GroupNode.to_metakey node
+
+  let array_exists t node =
+    M.is_member t @@ ArrayNode.to_metakey node
 
   let rec create_group ?metadata t node =
-    if is_member t node then ()
+    if group_exists t node then ()
     else
-      (match metadata, Node.to_metakey node with
+      (match metadata, GroupNode.to_metakey node with
       | Some m, k -> set t k @@ GM.encode m;
       | None, k -> set t k @@ GM.(default |> encode));
-      make_implicit_groups_explicit t @@ Node.parent node
+      make_implicit_groups_explicit t @@ GroupNode.parent node
 
   and make_implicit_groups_explicit t = function
     | None -> ()
@@ -55,8 +60,26 @@ module Make (M : STORE) : S with type t = M.t = struct
         fill_value
         chunks
     in
-    set t (Node.to_metakey node) (AM.encode meta);
-    Ok (make_implicit_groups_explicit t @@ Node.parent node)
+    set t (ArrayNode.to_metakey node) (AM.encode meta);
+    Result.ok @@
+    make_implicit_groups_explicit t @@
+    Some (ArrayNode.parent node)
+
+  let group_metadata node t =
+    if not @@ group_exists t node then
+      Result.error @@
+      `Store_read (GroupNode.show node ^ " is not a member of this store.")
+    else
+      get t @@ GroupNode.to_metakey node >>= fun bytes ->
+      GM.decode bytes
+
+  let array_metadata node t =
+    if not @@ array_exists t node then
+      Result.error @@
+      `Store_read (ArrayNode.show node ^ " is not a member of this store.")
+    else
+      get t @@ ArrayNode.to_metakey node >>= fun bytes ->
+      AM.decode bytes
 
   (* Assumes without checking that [metakey] is a valid node metadata key.*)
   let unsafe_node_type t metakey =
@@ -64,75 +87,58 @@ module Make (M : STORE) : S with type t = M.t = struct
     get t metakey |> Result.get_ok |> from_string
     |> Util.member "node_type" |> Util.to_string
 
-  let group_metadata node t =
-    if not @@ is_member t node then
-      Result.error @@
-      `Store_read (Node.show node ^ " is not a member of this store.")
-    else
-      get t @@ Node.to_metakey node >>= fun bytes ->
-      match GM.decode bytes with
-      | Ok meta -> Ok meta
-      | Error _ ->
-        Result.error @@
-        `Store_read (Node.show node ^ " is not an array node.")
-
-  let array_metadata node t =
-    if not @@ is_member t node then
-      Result.error @@
-      `Store_read (Node.show node ^ " is not a member of this store.")
-    else
-      get t @@ Node.to_metakey node >>= fun bytes ->
-      match AM.decode bytes with
-      | Ok meta -> Ok meta
-      | Error _ ->
-        Result.error @@
-        `Store_read (Node.show node ^ " is not an array node.")
-
   let find_child_nodes t node =
-    match is_member t node, Node.to_metakey node with
-    | true, k when unsafe_node_type t k = "group" ->
+    if group_exists t node then
       Result.ok @@
       List.fold_left
         (fun (lacc, racc) pre ->
-          let x =
-            Result.get_ok @@  (* this operation should not fail *)
-            Node.of_path @@
-            "/" ^ String.(length pre - 1 |> sub pre 0)
-          in
           if unsafe_node_type t (pre ^ "zarr.json") = "array" then
-            x :: lacc, racc
+            let x =
+              Result.get_ok @@
+              ArrayNode.of_path @@
+              "/" ^ String.(length pre - 1 |> sub pre 0)
+            in
+              x :: lacc, racc
           else
-            lacc, x :: racc)
-        ([], []) (snd @@ list_dir t @@ Node.to_prefix node)
-    | true, _ ->
-      Result.error @@
-      `Store_read (Node.show node ^ " is not a group node.")
-    | false, _ ->
-      Result.error @@
-      `Store_read (Node.show node ^ " is not a node in this heirarchy.")
+            let x =
+              Result.get_ok @@
+              GroupNode.of_path @@
+              "/" ^ String.(length pre - 1 |> sub pre 0)
+            in
+              lacc, x :: racc)
+        ([], []) (snd @@ list_dir t @@ GroupNode.to_prefix node)
+    else
+      let msg =
+        GroupNode.show node ^ " is not a node in this heirarchy." in
+      Result.error @@ `Store_read msg
 
   let find_all_nodes t =
-    let rec aux acc p =
+    let rec aux ((l, r) as acc) p =
       match find_child_nodes t p with
       | Error _ -> acc
-      | Ok ([], []) -> p :: acc
+      | Ok ([], []) -> (l, p :: r)
       | Ok (arrays, groups) ->
-        arrays @ p :: List.concat_map (aux acc) groups
-    in aux [] Node.root
+        let (l', r') =
+          List.map (aux acc) groups |> List.split in
+        arrays @ List.concat l', p :: List.concat r'
+    in aux ([], []) GroupNode.root
 
-  let erase_node t node =
-    erase_prefix t @@ Node.to_prefix node
+  let erase_group_node t node =
+    erase_prefix t @@ GroupNode.to_prefix node
+
+  let erase_array_node t node =
+    erase t @@ ArrayNode.to_metakey node
 
   let set_array
   : type a b.
-    Node.t ->
+    ArrayNode.t ->
     Owl_types.index array ->
     (a, b) Ndarray.t ->
     t ->
     (unit, [> error]) result
   = fun node slice x t ->
     let open Util in
-    get t @@ Node.to_metakey node >>= fun bytes ->
+    get t @@ ArrayNode.to_metakey node >>= fun bytes ->
     AM.decode bytes >>= fun meta ->
     (if Ndarray.shape x = Indexing.slice_shape slice @@ AM.shape meta then 
         Ok ()
@@ -158,7 +164,7 @@ module Make (M : STORE) : S with type t = M.t = struct
       ;fill_value = AM.fillvalue_of_kind meta @@ Ndarray.kind x}
     in
     let codecs = AM.codecs meta in
-    let prefix = Node.to_prefix node in
+    let prefix = ArrayNode.to_key node ^ "/" in
     let cindices = ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl in
     ArraySet.fold (fun idx acc ->
       acc >>= fun () ->
@@ -187,14 +193,14 @@ module Make (M : STORE) : S with type t = M.t = struct
 
   let get_array
   : type a b.
-    Node.t ->
+    ArrayNode.t ->
     Owl_types.index array ->
     (a, b) Bigarray.kind ->
     t ->
     ((a, b) Ndarray.t, [> error]) result
   = fun node slice kind t ->
     let open Util in
-    get t @@ Node.to_metakey node >>= fun bytes ->
+    get t @@ ArrayNode.to_metakey node >>= fun bytes ->
     AM.decode bytes >>= fun meta ->
     (if AM.is_valid_kind meta kind then
         Ok ()
@@ -214,7 +220,7 @@ module Make (M : STORE) : S with type t = M.t = struct
         (AM.index_coord_pair meta)
         (Indexing.coords_of_slice slice @@ AM.shape meta) in
     let tbl = Arraytbl.create @@ Array.length pair in
-    let prefix = Node.to_prefix node in
+    let prefix = ArrayNode.to_key node ^ "/" in
     let chain = AM.codecs meta in
     let repr =
       {kind
@@ -239,20 +245,15 @@ module Make (M : STORE) : S with type t = M.t = struct
     Ndarray.of_array kind (Array.of_list res) sshape
 
   let reshape t node shape =
-    let mkey = Node.to_metakey node in
-    (if "array" = unsafe_node_type t mkey then
-      Ok ()
-    else
-      Error (`Store_write (Node.show node ^ " is not an array node.")))
-    >>= fun () ->
-    get t mkey >>= fun bytes ->
+    let mkey = ArrayNode.to_metakey node in
+    get t mkey  >>= fun bytes ->
     AM.decode bytes >>= fun meta ->
     (if Array.length shape = Array.length @@ AM.shape meta then
       Ok ()
     else
       Error (`Store_write "new shape must have same number of dimensions."))
     >>= fun () ->
-    let pre = Node.to_prefix node in
+    let pre = ArrayNode.to_key node ^ "/" in
     let s =
       ArraySet.of_list @@ AM.chunk_indices meta @@ AM.shape meta in
     let s' =

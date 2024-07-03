@@ -1,5 +1,6 @@
 open OUnit2
 open Zarr
+open Zarr.Node
 open Zarr.Storage
 
 module Ndarray = Owl.Dense.Ndarray.Generic
@@ -8,13 +9,13 @@ let string_of_list = [%show: string list]
 
 let test_store
   (type a) (module M : Zarr.Storage.S with type t = a) (store : a) =
-  let gnode = Node.root in
+  let gnode = GroupNode.root in
 
   M.create_group store gnode;
   assert_equal
     ~printer:string_of_bool
     true @@
-    M.is_member store gnode;
+    M.group_exists store gnode;
 
   (match M.group_metadata gnode store with
   | Ok meta ->
@@ -25,13 +26,13 @@ let test_store
       "group node created with default values should
       have metadata with default values.");
 
-  M.erase_node store gnode;
+  M.erase_group_node store gnode;
   assert_bool
     "Cannot retrive metadata of a node not in the store." @@
     Result.is_error @@ M.group_metadata gnode store;
   assert_equal 
-    ~printer:[%show: Node.t list]
-    [] @@
+    ~printer:[%show: ArrayNode.t list * GroupNode.t list]
+    ([], []) @@
     M.find_all_nodes store;
 
   let attrs = `Assoc [("questions", `String "answer")] in
@@ -50,13 +51,13 @@ let test_store
       "group node created with specified values should
       have metadata with said values.");
 
-  let fake = Node.(gnode / "non-member") |> Result.get_ok in
+  let fake = ArrayNode.(gnode / "non-member") |> Result.get_ok in
   assert_equal
     ~printer:string_of_bool
     false @@
-    M.is_member store fake;
+    M.array_exists store fake;
 
-  let anode = Node.(gnode / "arrnode") |> Result.get_ok in
+  let anode = ArrayNode.(gnode / "arrnode") |> Result.get_ok in
   let r =
     M.create_array
       ~shape:[|100; 100; 50|]
@@ -68,10 +69,6 @@ let test_store
   in
   assert_equal (Ok ()) r;
   
-  assert_bool
-    "Cannot get group metadata from an array node" @@
-    Result.is_error @@ M.group_metadata anode store;
-
   let slice = Owl_types.[|R [0; 20]; I 10; R []|] in
   let expected =
     Ndarray.create Bigarray.Complex64 [|21; 1; 50|] Complex.zero in
@@ -117,30 +114,26 @@ let test_store
     Result.is_error @@
     M.set_array anode slice bad_arr store;
 
-  let child = Node.of_path "/some/child" |> Result.get_ok in
+  let child = GroupNode.of_path "/some/child" |> Result.get_ok in
   M.create_group store child;
   (match M.find_child_nodes store gnode with
   | Ok (arrays, groups) ->
     assert_equal
       ~printer:string_of_list
       ["/arrnode"] @@
-      List.map Node.to_path arrays;
+      List.map ArrayNode.to_path arrays;
     assert_equal
       ~printer:string_of_list
       ["/some"] @@
-      List.map Node.to_path groups
+      List.map GroupNode.to_path groups
   | Error _ ->
     assert_failure
       "a store with more than one node
       should return children for a root node.");
 
-  assert_bool
-    "Array nodes cannot have children"
-    (Result.is_error @@ M.find_child_nodes store anode);
-
+  let ac, gc = M.find_all_nodes store in
   let got =
-    M.find_all_nodes store
-    |> List.map Node.show
+    List.map ArrayNode.show ac @ List.map GroupNode.show gc
     |> List.fast_sort String.compare in
   assert_equal
     ~printer:string_of_list
@@ -158,20 +151,14 @@ let test_store
     new_shape @@
     ArrayMetadata.shape meta;
   assert_bool
-    "Group nodes cannot be reshaped" @@
-    Result.is_error @@ M.reshape store gnode new_shape;
-  assert_bool
     "New shape must have the number of dims as the node." @@
     Result.is_error @@ M.reshape store anode [|25; 10|];
 
   assert_bool
-    "Cannot get array metadata from a group node" @@
-    Result.is_error @@ M.array_metadata gnode store;
-  assert_bool
     "Cannot get array metadata from a node not a member of store" @@
     Result.is_error @@ M.array_metadata fake store;
 
-  M.erase_node store anode
+  M.erase_array_node store anode
 
 
 let tests = [

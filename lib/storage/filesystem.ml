@@ -39,7 +39,7 @@ module Impl = struct
       (fun oc -> Out_channel.output_string oc value)
 
   let list t =
-    let module StrSet = Base.StrSet in
+    let module StrSet = Storage_intf.Base.StrSet in
     let rec aux acc path =
       try
         match Sys.readdir path with
@@ -70,22 +70,26 @@ module Impl = struct
     | Sys_error _ -> ()
 
   let get_partial_values t kr_pairs =
-    Base.get_partial_values ~get_fn:get t kr_pairs
+    Storage_intf.Base.get_partial_values
+      ~get_fn:get t kr_pairs
 
   let set_partial_values t krv_triplet =
-    Base.set_partial_values ~set_fn:set ~get_fn:get t krv_triplet
+    Storage_intf.Base.set_partial_values
+      ~set_fn:set ~get_fn:get t krv_triplet
 
   let erase_values t keys =
-    Base.erase_values ~erase_fn:erase t keys
+    Storage_intf.Base.erase_values
+      ~erase_fn:erase t keys
 
   let erase_prefix t pre =
-    Base.erase_prefix ~list_fn:list ~erase_fn:erase t pre
+    Storage_intf.Base.erase_prefix
+      ~list_fn:list ~erase_fn:erase t pre
 
   let list_prefix pre t =
-    Base.list_prefix ~list_fn:list t pre
+    Storage_intf.Base.list_prefix ~list_fn:list t pre
 
   let list_dir t pre =
-    Base.list_dir ~list_fn:list t pre
+    Storage_intf.Base.list_dir ~list_fn:list t pre
 end
 
 let create ?(file_perm=0o640) path =

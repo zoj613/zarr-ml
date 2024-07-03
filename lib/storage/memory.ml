@@ -6,6 +6,8 @@ end
 
 module StrMap = Hashtbl.Make (HashableString)
 
+let create () = StrMap.create 16
+
 module Impl = struct
   type t = string StrMap.t
 
@@ -32,19 +34,19 @@ module Impl = struct
           Some v) t
 
   let get_partial_values t kr_pairs =
-    Base.get_partial_values ~get_fn:get t kr_pairs
+    Storage_intf.Base.get_partial_values
+      ~get_fn:get t kr_pairs
 
   let set_partial_values t krv_triplet =
-    Base.set_partial_values ~set_fn:set ~get_fn:get t krv_triplet
+    Storage_intf.Base.set_partial_values
+      ~set_fn:set ~get_fn:get t krv_triplet
 
   let erase_values t keys =
-    Base.erase_values ~erase_fn:erase t keys
+    Storage_intf.Base.erase_values ~erase_fn:erase t keys
 
   let list_prefix pre t =
-    Base.list_prefix ~list_fn:list t pre
+    Storage_intf.Base.list_prefix ~list_fn:list t pre
 
   let list_dir t pre =
-    Base.list_dir ~list_fn:list t pre
+    Storage_intf.Base.list_dir ~list_fn:list t pre
 end
-
-let create () = StrMap.create 16

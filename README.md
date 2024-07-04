@@ -11,6 +11,7 @@ Below is a demonstration of the library's basic API.
 ### setup
 ```ocaml
 open Zarr
+open Zarr.Node
 open Zarr.Codecs
 open Zarr.Storage
 
@@ -23,14 +24,14 @@ let store =
 ### create group
 ```ocaml
 let group_node =
-  Result.get_ok @@ Node.of_path "/some/group";;
+  Result.get_ok @@ GroupNode.of_path "/some/group";;
 
 FilesystemStore.create_group store group_node;;
 ```
 ### create an array
 ```ocaml
 let array_node =
-  Result.get_ok @@ Node.(group_node / "name");;
+  Result.get_ok @@ ArrayNode.(group_node / "name");;
 
 let codec_chain =
   {a2a = [Transpose [|2; 0; 1|]]
@@ -78,7 +79,7 @@ R[73,1]    -INF    -INF     -INF     -INF    -INF     -INF *)
 ### create an array with sharding
 ```ocaml
 let config =
-  {chunk_shape = [|10; 3; 5|]
+  {chunk_shape = [|5; 3; 5|]
   ;codecs =
     {a2a = [Transpose [|2; 0; 1|]]
     ;a2b = Bytes Little
@@ -93,7 +94,7 @@ let codec_chain =
   ;a2b = ShardingIndexed config
   ;b2b = [Crc32c]};;
 
-let shard_node = Result.get_ok @@ Node.(group_node / "another");;
+let shard_node = Result.get_ok @@ ArrayNode.(group_node / "another");;
 
 FilesystemStore.create_array
   ~codecs:codec_chain
@@ -106,8 +107,11 @@ FilesystemStore.create_array
 ```
 ### exploratory functions
 ```ocaml
-FilesystemStore.find_all_nodes store |> List.map Node.to_path;;
-(* - : string list = ["/"; "/some"; "/some/group/another"; "/some/group/name"; "/some/group"] *)
+let a, g = FilesystemStore.find_all_nodes store;;
+List.map ArrayNode.to_path a;;
+(*- : string list = ["/some/group/name"; "/some/group/another"] *)
+List.map GroupNode.to_path g;;
+(*- : string list = ["/"; "/some"; "/some/group"] *)
 
 FilesystemStore.reshape store array_node [|25; 32; 10|];;
 
@@ -116,11 +120,18 @@ let meta =
   FilesystemStore.group_metadata group_node store;;
 GroupMetadata.show meta;; (* pretty prints the contents of the metadata *)
 
-FilesystemStore.is_member store shard_node;;
+FilesystemStore.array_exists store shard_node;;
+FilesystemStore.group_exists store group_node;;
 
-FilesystemStore.find_child_nodes store group_node;;
+let a, g =
+  Result.get_ok @@
+  FilesystemStore.find_child_nodes store group_node;;
+List.map ArrayNode.to_path a;;
+(*- : string list = ["/some/group/name"; "/some/group/another"] *)
+List.map GroupNode.to_path g;;
+(*- : string list = [] *)
 
-FilesystemStore.erase_node store group_node;;
+FilesystemStore.erase_group_node store group_node;;
 ```
 
 [1]: https://codecov.io/gh/zoj613/zarr-ml/graph/badge.svg?token=KOOG2Y1SH5

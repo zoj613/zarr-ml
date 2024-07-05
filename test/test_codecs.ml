@@ -12,6 +12,29 @@ let decode_chain ~str ~msg =
   | Error s ->
     assert_equal ~printer:Fun.id msg s)
 
+let bytes_encode_decode
+  : type a b . (a, b) array_repr -> unit
+  = fun decoded_repr ->
+  let chain = {a2a = []; a2b = Bytes Little; b2b = []} in
+  let r = Chain.create decoded_repr chain in
+  assert_bool
+    "creating correct bytes codec chain should not fail." @@
+    Result.is_ok r;
+  let c = Result.get_ok r in
+  let arr =
+    Ndarray.create
+      decoded_repr.kind decoded_repr.shape decoded_repr.fill_value in
+  let encoded = Chain.encode c arr in
+  assert_bool
+    "encoding of well formed chain should not fail." @@
+    Result.is_ok encoded;
+  let decoded =
+    Chain.decode c decoded_repr (Result.get_ok encoded) in
+  assert_equal
+    ~printer:Owl_pretty.dsnda_to_string
+    arr
+    (Result.get_ok decoded)
+
 let tests = [
 "test codec chain" >:: (fun _ ->
   let decoded_repr
@@ -280,4 +303,92 @@ let tests = [
         assert_failure
           "Successfully encoded array should decode without fail")
     [L0; L1; L2; L3; L4; L5; L6; L7; L8; L9])
+;
+"test bytes codec" >:: (fun _ ->
+  (* test decoding of chain with invalid endianness name *)
+  decode_chain
+    ~str:{|[{"name": "bytes", "configuration": {"endian": "HUGE"}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
+  (* test decoding of chain with invalid configuration param. *)
+  decode_chain
+    ~str:{|[{"name": "bytes", "configuration": {"wrong": 5}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
+  
+  (* test encoding/decoding of Char *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Char
+    ;fill_value = '?'};
+
+  (* test encoding/decoding of int8 *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Int8_signed
+    ;fill_value = 0};
+
+  (* test encoding/decoding of uint8 *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Int8_unsigned
+    ;fill_value = 0};
+
+  (* test encoding/decoding of int16 *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Int16_signed
+    ;fill_value = 0};
+
+  (* test encoding/decoding of uint16 *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Int16_unsigned
+    ;fill_value = 0};
+
+  (* test encoding/decoding of int32 *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Int32
+    ;fill_value = 0l};
+
+  (* test encoding/decoding of int64 *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Int64
+    ;fill_value = 0L};
+
+  (* test encoding/decoding of float32 *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Float32
+    ;fill_value = 0.0};
+
+  (* test encoding/decoding of float64 *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Float64
+    ;fill_value = 0.0};
+
+  (* test encoding and decoding of Complex32 *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Complex32
+    ;fill_value = Complex.zero};
+
+  (* test encoding/decoding of complex64 *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Complex64
+    ;fill_value = Complex.zero};
+
+  (* test encoding/decoding of int *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Int
+    ;fill_value = Int.max_int};
+
+  (* test encoding/decoding of int *)
+  bytes_encode_decode
+    {shape = [|2; 2; 2|]
+    ;kind = Bigarray.Nativeint
+    ;fill_value = Nativeint.max_int})
 ]

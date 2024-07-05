@@ -175,19 +175,14 @@ module Make (M : STORE) : S with type t = M.t = struct
       | Error _ ->
         Ok (Ndarray.create repr.kind repr.shape repr.fill_value))
       >>= fun arr ->
-      (* find_all returns bindings in reverse order. To restore the
-       * C-ordering of elements we must call List.rev. *)
-      let coords, vals =
-        List.split @@
-        List.rev @@
-        Arraytbl.find_all tbl idx in
-      let slice' = Indexing.slice_of_coords coords in
-      let shape' = Indexing.slice_shape slice' repr.shape in
-      let x' = Ndarray.of_array repr.kind (Array.of_list vals) shape' in
-      (* Ndarray.set_fancy* unfortunately doesn't work for array kinds
-         other than Float32, Float64, Complex32 and Complex64.
-         See: https://github.com/owlbarn/owl/issues/671 *)
-      Ndarray.set_fancy_ext slice' arr x'; (* possible to rewrite this function? *)
+      (* NOTE: Ndarray.set_fancy* functions unfortunately don't work for array
+         kinds other than Float32, Float64, Complex32 and Complex64.
+         See: https://github.com/owlbarn/owl/issues/671 . As a workaround
+         we manually set each coordinate one-at-time using the basic
+         set function which does not suffer from this bug. It is likely
+         much slower for large Zarr chunks but necessary for usability.*)
+      List.iter
+        (fun (c, v) -> Ndarray.set arr c v) @@ Arraytbl.find_all tbl idx;
       Codecs.Chain.encode codecs arr >>| fun encoded ->
       set t chunkkey encoded) cindices (Ok ())
 

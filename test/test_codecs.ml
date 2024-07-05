@@ -264,11 +264,31 @@ let tests = [
 ;
 
 "test gzip codec" >:: (fun _ ->
+  (* test wrong compression level *)
   decode_chain
     ~str:{|[{"name": "bytes", "configuration": {"endian": "little"}},
             {"name": "gzip", "configuration": {"level": -1}}]|}
     ~msg:"gzip codec is unsupported or has invalid configuration.";
+  (* test incorrect configuration *)
+  decode_chain
+    ~str:{|[{"name": "bytes", "configuration": {"endian": "little"}},
+            {"name": "gzip", "configuration": {"something": -1}}]|}
+    ~msg:"gzip codec is unsupported or has invalid configuration.";
 
+  (* test correct deserialization of gzip compression level *)
+  List.iter
+    (fun level ->
+      let str =
+        Format.sprintf
+        {|[{"name": "bytes", "configuration": {"endian": "little"}},
+           {"name": "gzip", "configuration": {"level": %d}}]|} level 
+      in
+      let r = Chain.of_yojson @@ Yojson.Safe.from_string str in
+      assert_bool
+        "Encoding this chain should not fail" @@ Result.is_ok r)
+    [0; 1; 2; 3; 4; 5; 6; 7; 8; 9];
+
+  (* test encoding/decoding for various compression levels *)
   let decoded_repr
     : (Complex.t, Bigarray.complex64_elt) array_repr =
     {shape = [|10; 15; 10|]
@@ -298,7 +318,7 @@ let tests = [
       let encoded = Result.get_ok enc in
       match Chain.decode c decoded_repr encoded with
       | Ok v ->
-        assert_bool "" @@ Ndarray.equal arr v;
+        assert_equal ~printer:Owl_pretty.dsnda_to_string arr v;
       | Error _ ->
         assert_failure
           "Successfully encoded array should decode without fail")

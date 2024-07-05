@@ -8,24 +8,7 @@ let rep_ok name =
   not (String.for_all (Char.equal '.') name) &&
   not (String.starts_with ~prefix:"__" name)
 
-module rec GroupNode : sig
-  type t
-  val root : t
-  val create : t -> string -> (t, [> error]) result
-  val ( / ) : t -> string -> (t, [> error]) result
-  val of_path : string -> (t, [> error]) result
-  val to_path : t -> string
-  val name : t -> string
-  val parent : t -> t option
-  val ( = ) : t -> t -> bool
-  val ancestors : t -> t list
-  val to_key : t -> string
-  val to_prefix : t -> string
-  val to_metakey : t -> string
-  val is_child_group : t -> t -> bool
-  val show : t -> string
-  val pp : Format.formatter -> t -> unit
-end = struct
+module GroupNode = struct
   type t =
     | Root
     | Cons of t * string
@@ -107,23 +90,11 @@ end = struct
   let show n = to_path n
 end
 
-and ArrayNode : sig
-  type t
-  val create : GroupNode.t -> string -> (t, [> error]) result
-  val ( / ) : GroupNode.t -> string -> (t, [> error]) result
-  val of_path : string -> (t, [> error]) result
-  val to_path : t -> string
-  val name : t -> string
-  val parent : t -> GroupNode.t
-  val ( = ) : t -> t -> bool
-  val ancestors : t -> GroupNode.t list
-  val is_parent : t -> GroupNode.t -> bool
-  val to_key : t -> string
-  val to_metakey : t -> string
-  val show : t -> string
-  val pp : Format.formatter -> t -> unit
-end = struct
-  type t = {parent : GroupNode.t; name :  string} [@@deriving show]
+module ArrayNode = struct
+  type t =
+    {parent : GroupNode.t
+    ;name :  string}
+    [@@deriving show]
 
   let create parent name =
     if rep_ok name then

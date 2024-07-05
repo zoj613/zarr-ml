@@ -27,6 +27,9 @@ let test_store
       have metadata with default values.");
 
   M.erase_group_node store gnode;
+  (* tests deleting a non-existant group *)
+  M.erase_group_node store @@ Result.get_ok @@ GroupNode.(root / "nonexist");
+
   assert_bool
     "Cannot retrive metadata of a node not in the store." @@
     Result.is_error @@ M.group_metadata gnode store;
@@ -60,6 +63,18 @@ let test_store
   let anode = ArrayNode.(gnode / "arrnode") |> Result.get_ok in
   let r =
     M.create_array
+      ~shape:[|100; 100; 50|]
+      ~chunks:[|10; 15; 20|]
+      Bigarray.Complex64
+      Complex.zero
+      anode
+      store
+  in
+  assert_equal (Ok ()) r;
+  (* should work with a custom chain too *)
+  let r =
+    M.create_array
+      ~codecs:{a2a = []; a2b = Bytes Big; b2b = []}
       ~shape:[|100; 100; 50|]
       ~chunks:[|10; 15; 20|]
       Bigarray.Complex64
@@ -131,6 +146,14 @@ let test_store
       "a store with more than one node
       should return children for a root node.");
 
+  (* test getting child nodes of a group not a member of this store. *)
+  let r =
+    M.find_child_nodes store @@
+    (Result.get_ok @@ GroupNode.(root / "fakegroup")) in
+  assert_bool
+    "finding child nodes of a non-store group node should fail." @@
+    Result.is_error r;
+
   let ac, gc = M.find_all_nodes store in
   let got =
     List.map ArrayNode.show ac @ List.map GroupNode.show gc
@@ -158,21 +181,76 @@ let test_store
     "Cannot get array metadata from a node not a member of store" @@
     Result.is_error @@ M.array_metadata fake store;
 
-  M.erase_array_node store anode
-
+  M.erase_array_node store anode;
+  (* test clearing of store *)
+  M.erase_all_nodes store;
+  assert_equal
+    ~printer:[%show: ArrayNode.t list * GroupNode.t list]
+    ([], []) @@
+    M.find_all_nodes store
 
 let tests = [
-  "test in-memory store" >::
-    (fun _ ->
-      test_store
-        (module MemoryStore) @@ MemoryStore.create ())
+
+"test in-memory store" >::
+  (fun _ ->
+    let s = MemoryStore.create () in
+    (* test if store is empty upon creation *)
+    assert_equal
+      ~printer:[%show: ArrayNode.t list * GroupNode.t list]
+      ([], [])
+      (MemoryStore.find_all_nodes s);
+    test_store (module MemoryStore) s)
 ;
-  "test filesystem store" >::
-    (fun _ ->
-      let tmp_dir = Filename.get_temp_dir_name () ^ ".zarr" in
-      Sys.mkdir tmp_dir 0o777;
-      match FilesystemStore.open_or_create ~file_perm:0o777 tmp_dir with
-      | Ok s -> test_store (module FilesystemStore) s
-      | Error _ ->
-        assert_failure "FilesystemStore creation should not fail.")
+
+"test filesystem store" >::
+  (fun _ ->
+    let tmp_dir = Filename.get_temp_dir_name () ^ ".zarr/" in
+    (match FilesystemStore.open_or_create tmp_dir with
+    | Ok s ->
+        (* test if store is empty upon creation *)
+        assert_equal
+          ~printer:[%show: ArrayNode.t list * GroupNode.t list]
+          ([], [])
+          (FilesystemStore.find_all_nodes s);
+        test_store (module FilesystemStore) s
+    | Error _ ->
+      assert_failure "FilesystemStore creation should not fail.");
+
+    let r = FilesystemStore.open_or_create tmp_dir in
+    assert_bool
+      "An existing store should not fail to open."
+      (Result.is_ok r);
+
+    (* test storage creation using named directory that already exists *)
+    let err_msg =
+      Format.sprintf "%s: File exists" tmp_dir in
+    assert_raises
+      (Sys_error err_msg)
+      (fun () -> FilesystemStore.create tmp_dir);
+    (* tests storage creation using a new directory *)
+    let new_dir = Filename.get_temp_dir_name () ^ "newdir12345.zarr" in
+    assert_bool
+      "Creation of new non-existing store should not fail."
+      (try
+        ignore @@ FilesystemStore.create new_dir;
+        true
+        with
+        | Sys_error _ -> false);
+
+    (* test successful opening of an existing store. *)
+    assert_bool
+      "An existing store should not fail to open."
+      (Result.is_ok @@ FilesystemStore.open_store new_dir);
+
+    (* test failure of opening an non-existant store. *)
+    assert_bool
+      "reading a non-existant store should always fail." @@
+      Result.is_error @@
+      FilesystemStore.open_store "non-existant-zarr-store112345.zarr";
+
+    (* test failure of opening a store using a file instead of directory *)
+    let fn = Filename.temp_file "nonexistantfile" ".zarr" in
+    assert_bool
+      "reading a store from a file should always fail." @@
+      Result.is_error @@ FilesystemStore.open_store fn)
 ]

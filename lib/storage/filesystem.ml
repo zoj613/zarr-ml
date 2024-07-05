@@ -26,8 +26,7 @@ module Impl = struct
         fpath
         (fun ic -> Ok (In_channel.input_all ic))
     with
-    | Sys_error _ | End_of_file ->
-      Error (`Store_read fpath)
+    | Sys_error _ -> Error (`Store_read fpath)
 
   let set t key value =
     let filename = key_to_fspath t key in
@@ -41,23 +40,23 @@ module Impl = struct
   let list t =
     let module StrSet = Storage_intf.Base.StrSet in
     let rec aux acc path =
-      try
-        match Sys.readdir path with
-        | [||] -> acc
-        | xs ->
-          Array.fold_left (fun set x ->
-            match path ^ x with
-            | p when Sys.is_directory p ->
-              aux set @@ p ^ "/"
-            | p ->
-              StrSet.add (fspath_to_key t p) set) acc xs 
-      with
-      | Sys_error _ -> acc
+      match Sys.readdir path with
+      | [||] -> acc
+      | xs ->
+        Array.fold_left (fun set x ->
+          match path ^ x with
+          | p when Sys.is_directory p ->
+            aux set @@ p ^ "/"
+          | p ->
+            StrSet.add (fspath_to_key t p) set) acc xs 
     in
+  (* calling aux using the basepath t.dirname should not fail
+     since this path already exists by virtue of being able to
+     access this filestystem store. *)
     match
       StrSet.elements @@
       aux StrSet.empty @@
-      key_to_fspath t ""
+      key_to_fspath t "" 
     with
     | [] -> []
     | xs -> "" :: xs
@@ -92,7 +91,7 @@ module Impl = struct
     Storage_intf.Base.list_dir ~list_fn:list t pre
 end
 
-let create ?(file_perm=0o640) path =
+let create ?(file_perm=0o700) path =
   Impl.create_parent_dir path file_perm;
   Sys.mkdir path file_perm;
   let dirname =
@@ -102,18 +101,23 @@ let create ?(file_perm=0o640) path =
       path ^ "/" in
   Impl.{dirname; file_perm}
 
-let open_store ?(file_perm=0o640) path =
-  if Sys.is_directory path then
-    let dirname =
-      if String.ends_with ~suffix:"/" path then
-        path
-      else
-        path ^ "/" in
-    Ok Impl.{dirname; file_perm}
-  else
-    Result.error @@
-    `Store_read (path ^ " is not a Filesystem store.")
+let open_store ?(file_perm=0o700) path =
+  try
+    if Sys.is_directory path then
+      let dirname =
+        if String.ends_with ~suffix:"/" path then
+          path
+        else
+          path ^ "/" in
+      Ok Impl.{dirname; file_perm}
+    else
+      Result.error @@
+      `Store_read (path ^ " is not a Filesystem store.")
+  with
+  | Sys_error _ ->
+    Result.error @@ `Store_read (path ^ " does not exist.")
 
-let open_or_create ?(file_perm=0o640) path =
-  try open_store ~file_perm path with
-  | Sys_error _ -> Ok (create ~file_perm path)
+let open_or_create ?(file_perm=0o700) path =
+  match open_store ~file_perm path with
+  | Ok v -> Ok v
+  | Error _ -> Ok (create ~file_perm path)

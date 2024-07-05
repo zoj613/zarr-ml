@@ -40,10 +40,6 @@ type error =
 
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/bytes/v1.0.html *)
 module BytesCodec = struct
-  type config = {endian : string} [@@deriving yojson]
-  type bytes = config Util.ExtPoint.t [@@deriving yojson]
-  type t = endianness
-
   let compute_encoded_size (input_size : int) = input_size
 
   let endian_module = function
@@ -51,7 +47,7 @@ module BytesCodec = struct
     | Big -> (module Ebuffer.Big : Ebuffer.S)
 
   let encode
-    : type a b. (a, b) Ndarray.t -> t -> (string, [> error]) result
+    : type a b. (a, b) Ndarray.t -> endianness -> (string, [> error]) result
     = fun x t ->
       let open Bigarray in
       let open (val endian_module t) in
@@ -79,7 +75,7 @@ module BytesCodec = struct
     : type a b.
       string ->
       (a, b) Util.array_repr ->
-      t ->
+      endianness ->
       ((a, b) Ndarray.t, [> error]) result
     = fun buf decoded t ->
       let open Bigarray in
@@ -100,19 +96,25 @@ module BytesCodec = struct
       | Int, s -> mk_array k shp @@ fun i -> get_int buf (i*s)
       | Nativeint, s -> mk_array k shp @@ fun i -> get_nativeint buf (i*s)
 
-  let to_yojson = function
-    | Little ->
-      bytes_to_yojson {name = "bytes"; configuration = {endian = "little"}}
-    | Big ->
-      bytes_to_yojson {name = "bytes"; configuration = {endian = "big"}}
+  let to_yojson e =
+    let endian =
+      match e with
+      | Little -> "little"
+      | Big -> "big"
+    in
+    `Assoc
+    [("name", `String "bytes")
+    ;("configuration", `Assoc ["endian", `String endian])]
 
   let of_yojson x =
-    let open Util.Result_syntax in
-    bytes_of_yojson x >>= fun b ->
-    match b.configuration.endian with
-    | "little" -> Ok Little
-    | "big" -> Ok Big
-    | _ -> Error "unsupported endianness."
+    match Yojson.Safe.Util.(member "configuration" x |> to_assoc) with
+    | [("endian", `String e)] ->
+      (match e with
+      | "little" -> Ok Little
+      | "big" -> Ok Big
+      | s ->
+        Result.error @@ "Unsupported bytes endianness: " ^ s)
+    | _ -> Error "Invalid bytes codec configuration."
 end
 
 module rec ArrayToBytes : sig

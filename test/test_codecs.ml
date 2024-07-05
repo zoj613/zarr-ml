@@ -15,25 +15,27 @@ let decode_chain ~str ~msg =
 let bytes_encode_decode
   : type a b . (a, b) array_repr -> unit
   = fun decoded_repr ->
-  let chain = {a2a = []; a2b = Bytes Little; b2b = []} in
-  let r = Chain.create decoded_repr chain in
-  assert_bool
-    "creating correct bytes codec chain should not fail." @@
-    Result.is_ok r;
-  let c = Result.get_ok r in
-  let arr =
-    Ndarray.create
-      decoded_repr.kind decoded_repr.shape decoded_repr.fill_value in
-  let encoded = Chain.encode c arr in
-  assert_bool
-    "encoding of well formed chain should not fail." @@
-    Result.is_ok encoded;
-  let decoded =
-    Chain.decode c decoded_repr (Result.get_ok encoded) in
-  assert_equal
-    ~printer:Owl_pretty.dsnda_to_string
-    arr
-    (Result.get_ok decoded)
+    List.iter
+      (fun bytes_codec ->
+        let chain = {a2a = []; a2b = bytes_codec; b2b = []} in
+        let r = Chain.create decoded_repr chain in
+        assert_bool
+          "creating correct bytes codec chain should not fail." @@
+          Result.is_ok r;
+        let c = Result.get_ok r in
+        let arr =
+          Ndarray.create
+            decoded_repr.kind decoded_repr.shape decoded_repr.fill_value in
+        let encoded = Chain.encode c arr in
+        assert_bool
+          "encoding of well formed chain should not fail." @@
+          Result.is_ok encoded;
+        let decoded =
+          Chain.decode c decoded_repr (Result.get_ok encoded) in
+        assert_equal
+          ~printer:Owl_pretty.dsnda_to_string
+          arr
+          (Result.get_ok decoded)) [Bytes Little; Bytes Big]
 
 let tests = [
 "test codec chain" >:: (fun _ ->
@@ -209,6 +211,110 @@ let tests = [
 ;
 
 "test sharding indexed codec" >:: (fun _ ->
+  (* test missing chunk_shape field. *)
+  decode_chain
+    ~str:{|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"index_location": "end",
+          "codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}],
+          "index_codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
+  (*test missing index_location field. *)
+  decode_chain
+    ~str:{|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"chunk_shape": [5, 5, 5],
+          "codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}],
+          "index_codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
+  (* test missing codecs field. *)
+  decode_chain
+    ~str:{|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"index_location": "end",
+          "chunk_shape": [5, 5, 5],
+          "index_codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
+  (* tests missing index_codecs field. *)
+  decode_chain
+    ~str:{|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"index_location": "start",
+          "chunk_shape": [5, 5, 5],
+          "codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
+  (* tests incorrect value for index_location field. *)
+  decode_chain
+    ~str:{|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"index_location": "MIDDLE",
+          "chunk_shape": [5, 5, 5],
+          "index_codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}],
+          "codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
+  (* tests incorrect non-integer values for chunk_shape field. *)
+  decode_chain
+    ~str:{|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"index_location": "start",
+          "chunk_shape": [5, -5, 5.5],
+          "index_codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}],
+          "codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
+  (* tests unspecified codecs field. *)
+  decode_chain
+    ~str:{|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"index_location": "start",
+          "chunk_shape": [5, 5, 5],
+          "index_codecs": [],
+          "codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
+  (* tests ill-formed codecs/index_codecs field. In this case, missing
+     the required bytes->bytes codec. *)
+  decode_chain
+    ~str:{|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"index_location": "start",
+          "chunk_shape": [5, 5, 5],
+          "index_codecs": [{"name": "crc32c"}],
+          "codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
+  (* tests ill-formed codecs/index_codecs field. In this case, parsing
+     an unsupported/unknown codec. *)
+  decode_chain
+    ~str:{|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"index_location": "start",
+          "chunk_shape": [5, 5, 5],
+          "index_codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}},
+             {"name": "UNKNOWN_BYTESTOBYTES_CODEC"}],
+          "codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
+
   let decoded_repr
     : (float, Bigarray.float64_elt) array_repr =
     {shape = [|10; 15; 10|]
@@ -257,11 +363,36 @@ let tests = [
   let encoded = Result.get_ok enc in
   (match Chain.decode c decoded_repr encoded with
   | Ok v ->
-    assert_bool "" @@ Ndarray.equal arr v;
+    assert_equal ~printer:Owl_pretty.dsnda_to_string arr v;
   | Error _ ->
     assert_failure
-      "Successfully encoded array should decode without fail"))
+      "Successfully encoded array should decode without fail");
+
+  (* test correctness of decoding nested sharding codecs.*)
+  let str =
+    {|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"index_location": "start",
+          "chunk_shape": [5, 5, 5],
+          "index_codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}],
+          "codecs":
+            [{"name": "sharding_indexed",
+               "configuration":
+                 {"index_location": "end",
+                  "chunk_shape": [5, 5, 5],
+                  "index_codecs":
+                    [{"name": "bytes", "configuration": {"endian": "big"}}],
+                  "codecs":
+                    [{"name": "bytes", "configuration": {"endian": "big"}}]}}]}}]|}
+    in
+    let r = Chain.of_yojson @@ Yojson.Safe.from_string str in
+    assert_bool
+      "Encoding this nested sharding chain should not fail" @@
+      Result.is_ok r)
 ;
+
 
 "test gzip codec" >:: (fun _ ->
   (* test wrong compression level *)

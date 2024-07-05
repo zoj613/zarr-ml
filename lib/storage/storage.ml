@@ -92,20 +92,13 @@ module Make (M : STORE) : S with type t = M.t = struct
       Result.ok @@
       List.fold_left
         (fun (lacc, racc) pre ->
+          let p = "/" ^ String.(length pre - 1 |> sub pre 0) in
           if unsafe_node_type t (pre ^ "zarr.json") = "array" then
-            let x =
-              Result.get_ok @@
-              ArrayNode.of_path @@
-              "/" ^ String.(length pre - 1 |> sub pre 0)
-            in
-              x :: lacc, racc
+            let x = Result.get_ok @@ ArrayNode.of_path p in
+            x :: lacc, racc
           else
-            let x =
-              Result.get_ok @@
-              GroupNode.of_path @@
-              "/" ^ String.(length pre - 1 |> sub pre 0)
-            in
-              lacc, x :: racc)
+            let x = Result.get_ok @@ GroupNode.of_path p in
+            lacc, x :: racc)
         ([], []) (snd @@ list_dir t @@ GroupNode.to_prefix node)
     else
       let msg =
@@ -113,21 +106,32 @@ module Make (M : STORE) : S with type t = M.t = struct
       Result.error @@ `Store_read msg
 
   let find_all_nodes t =
-    let rec aux ((l, r) as acc) p =
-      match find_child_nodes t p with
-      | Error _ -> acc
-      | Ok ([], []) -> (l, p :: r)
-      | Ok (arrays, groups) ->
-        let (l', r') =
-          List.map (aux acc) groups |> List.split in
-        arrays @ List.concat l', p :: List.concat r'
-    in aux ([], []) GroupNode.root
+    let keys =
+      List.filter
+        (String.ends_with ~suffix:"/zarr.json")
+        (list_prefix "" t) in
+    let a, g =
+      List.fold_left
+        (fun (lacc, racc) key ->
+          let p = "/" ^ String.(length key - 10 |> sub key 0) in
+          if unsafe_node_type t key = "array" then
+            (Result.get_ok @@ ArrayNode.of_path p) :: lacc, racc
+          else
+            lacc, (Result.get_ok @@ GroupNode.of_path p) :: racc)
+        ([], []) keys in
+    match a, g with
+    | [], [] -> a, g
+    | l, r -> l, GroupNode.root :: r
 
   let erase_group_node t node =
     erase_prefix t @@ GroupNode.to_prefix node
 
   let erase_array_node t node =
     erase t @@ ArrayNode.to_metakey node
+
+  let erase_all_nodes t =
+    (* [erase_prefix t ""] is surely faster? *)
+    erase_values t @@ list_prefix "" t
 
   let set_array
   : type a b.

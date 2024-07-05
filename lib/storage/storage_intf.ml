@@ -109,6 +109,10 @@ module type S = sig
       erases all child nodes of [n]. If node [n] is not a member
       of store [t] then this is a no-op. *)
 
+  val erase_all_nodes : t -> unit
+  (** [erase_all_nodes t] clears the store [t] by deleting all nodes.
+      If the store is already empty, this is a no-op. *)
+
   val group_exists : t -> GroupNode.t -> bool
   (** [group_exists t n] returns [true] if group node [n] is a member
       of store [t] and [false] otherwise. *)

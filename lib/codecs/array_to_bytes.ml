@@ -488,8 +488,8 @@ end = struct
       List.fold_right (fun a acc ->
         acc >>= fun k ->
         match a with
-        | `Int i -> Ok (i :: k)
-        | _ -> Error "chunk_shape must only contain integers.")
+        | `Int i when i > 0 -> Ok (i :: k)
+        | _ -> Error "chunk_shape must only contain positive integers.")
         (Yojson.Safe.Util.to_list x) (Ok []))
     >>= fun l'->
     let chunk_shape = Array.of_list l' in

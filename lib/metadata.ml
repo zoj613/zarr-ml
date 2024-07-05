@@ -194,7 +194,9 @@ module ArrayMetadata = struct
     | Bigarray.Float32, Extensions.Datatype.Float32
     | Bigarray.Float64, Extensions.Datatype.Float64
     | Bigarray.Complex32, Extensions.Datatype.Complex32
-    | Bigarray.Complex64, Extensions.Datatype.Complex64 -> true
+    | Bigarray.Complex64, Extensions.Datatype.Complex64
+    | Bigarray.Int, Extensions.Datatype.Int
+    | Bigarray.Nativeint, Extensions.Datatype.Nativeint -> true
     | _ -> false
 
   let fillvalue_of_kind
@@ -208,6 +210,8 @@ module ArrayMetadata = struct
     | Bigarray.Int16_unsigned, FillValue.Int i -> Int64.to_int i
     | Bigarray.Int32, FillValue.Int i -> Int64.to_int32 i
     | Bigarray.Int64, FillValue.Int i -> i 
+    | Bigarray.Int, FillValue.Int i -> Int64.to_int i
+    | Bigarray.Nativeint, FillValue.Int i -> Int64.to_nativeint i
     | Bigarray.Float32, FillValue.Float f -> f 
     | Bigarray.Float32, FillValue.FloatBits f -> f 
     | Bigarray.Float64, FillValue.Float f -> f 

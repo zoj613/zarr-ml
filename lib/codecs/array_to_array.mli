@@ -20,7 +20,7 @@ module ArrayToArray : sig
   val compute_encoded_representation
     : array_to_array ->
       ('a, 'b) Util.array_repr ->
-      ('a, 'b) Util.array_repr
+      (('a, 'b) Util.array_repr, [> error]) result
   val encode
     : array_to_array ->
       ('a, 'b) Ndarray.t ->

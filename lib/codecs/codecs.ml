@@ -16,7 +16,7 @@ module Chain = struct
     List.fold_left
       (fun acc c ->
          acc >>= fun r ->
-         ArrayToArray.parse r c >>| fun () ->
+         ArrayToArray.parse r c >>= fun () ->
          ArrayToArray.compute_encoded_representation c r) (Ok repr) a2a
     >>= fun repr' ->
     ArrayToBytes.parse repr' a2b >>| fun () ->
@@ -40,16 +40,17 @@ module Chain = struct
       (ArrayToBytes.encode y t.a2b) t.b2b
 
   let decode t repr x =
-    List.fold_right
-      (fun c acc -> acc >>= BytesToBytes.decode c) t.b2b (Ok x)
-    >>= fun y ->
     (* compute the last encoded representation of array->array codec chain.
        This becomes the decoded representation of the array->bytes decode
        procedure. *)
-    let repr' =
-      List.fold_left
-        (fun acc c -> ArrayToArray.compute_encoded_representation c acc)
-        repr t.a2a in
+    List.fold_left
+      (fun acc c ->
+        acc >>= ArrayToArray.compute_encoded_representation c)
+      (Ok repr) t.a2a
+    >>= fun repr' ->
+    List.fold_right
+      (fun c acc -> acc >>= BytesToBytes.decode c) t.b2b (Ok x)
+    >>= fun y ->
     List.fold_right
       (fun c acc -> acc >>= ArrayToArray.decode c)
       t.a2a (ArrayToBytes.decode y repr' t.a2b)

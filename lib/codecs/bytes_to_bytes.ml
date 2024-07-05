@@ -14,9 +14,6 @@ type error =
 
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/gzip/v1.0.html *)
 module GzipCodec = struct
-  type config = {level : int} [@@deriving yojson]
-  type gzip = config Util.ExtPoint.t [@@deriving yojson]
-
   let compute_encoded_size _ =
     failwith "Cannot compute encoded size of Gzip codec."
 
@@ -36,20 +33,20 @@ module GzipCodec = struct
   let decode x = Ezgzip.decompress x
 
   let to_yojson l =
-    gzip_to_yojson
-      {name = "gzip"; configuration = {level = to_int l}}
+    `Assoc
+    [("name", `String "gzip")
+    ;("configuration", `Assoc ["level", `Int (to_int l)])]
 
   let of_yojson x =
     let open Util.Result_syntax in
-    gzip_of_yojson x >>= fun gzip ->
-    of_int gzip.configuration.level >>| fun level ->
-    Gzip level
+    match Yojson.Safe.Util.(member "configuration" x |> to_assoc) with
+    | [("level", `Int i)] ->
+      of_int i >>| fun level -> Gzip level
+    | _ -> Error "Invalid Gzip configuration."
 end
 
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/crc32c/v1.0.html *)
 module Crc32cCodec = struct
-  type config = {name : string} [@@deriving yojson]
-
   let compute_encoded_size input_size = input_size + 4
 
   let encode x =
@@ -64,11 +61,12 @@ module Crc32cCodec = struct
     Ok String.(length x - 4 |> sub x 0)
 
   let to_yojson =
-    config_to_yojson {name = "crc32c"}
+    `Assoc [("name", `String "crc32c")]
 
-  let of_yojson x =
-    let open Util.Result_syntax in
-    config_of_yojson x >>= fun _ -> Ok Crc32c
+  let of_yojson _ =
+    (* checks for validity of configuration are done via
+       BytesToBytes.of_yojson so just return valid result.*)
+      Ok Crc32c
 end
 
 module BytesToBytes = struct

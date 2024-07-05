@@ -97,6 +97,16 @@ let tests = [
 ;
 
 "test transpose codec" >:: (fun _ ->
+  (* test decoding of chain with misspelled configuration name *)
+  decode_chain
+    ~str:{|[{"name": "transpose", "configuration": {"ordeR": [0, 1]}},
+           {"name": "bytes", "configuration": {"endian": "little"}}]|}
+    ~msg:"transpose codec is unsupported or has invalid configuration.";
+  (* test decoding of chain with empty transpose order *)
+  decode_chain
+    ~str:{|[{"name": "transpose", "configuration": {"order": []}},
+           {"name": "bytes", "configuration": {"endian": "little"}}]|}
+    ~msg:"transpose codec is unsupported or has invalid configuration.";
   (* test decoding of chain with duplicated transpose order *)
   decode_chain
     ~str:{|[{"name": "transpose", "configuration": {"order": [0, 0]}},
@@ -119,6 +129,37 @@ let tests = [
     assert_bool
       "Encoding this chain should not work" @@
       Result.is_error @@ Chain.encode c arr;
+  | Error _ ->
+    assert_failure
+      "Decoding a well formed JSON codec field should not fail.");
+
+  (* test decoding transpose order bigger/smaller than an array's dimensionality. *)
+  let str' =
+    {|[{"name": "transpose", "configuration": {"order": [0, 1, 2]}},
+      {"name": "bytes", "configuration": {"endian": "little"}}]|} in
+  (match Chain.of_yojson @@ Yojson.Safe.from_string str' with
+  | Ok c ->
+    let r = Chain.encode c arr in
+    assert_bool "Encoding this chain should not fail" @@ Result.is_ok r;
+    (* use config with too large order to decode encoded array.*)
+    let cfg =
+      Result.get_ok @@ Chain.of_yojson @@ Yojson.Safe.from_string str in
+    let repr : (Complex.t, Bigarray.complex32_elt) array_repr =
+      {shape = Ndarray.shape arr
+      ;kind = Ndarray.kind arr
+      ;fill_value =
+        Ndarray.get arr @@ Array.make (Ndarray.num_dims arr) 0}
+    in
+    let r2 = Chain.decode cfg repr (Result.get_ok r) in
+    assert_bool "This should never pass" @@ Result.is_error r2;
+    (* use config with too small order to decode encoded array.*)
+    let str =
+      {|[{"name": "transpose", "configuration": {"order": [0, 1]}},
+        {"name": "bytes", "configuration": {"endian": "little"}}]|} in
+    let cfg =
+      Result.get_ok @@ Chain.of_yojson @@ Yojson.Safe.from_string str in
+    let r2 = Chain.decode cfg repr (Result.get_ok r) in
+    assert_bool "This should never pass" @@ Result.is_error r2;
   | Error _ ->
     assert_failure
       "Decoding a well formed JSON codec field should not fail.");

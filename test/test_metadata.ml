@@ -2,12 +2,11 @@ open OUnit2
 open Zarr
 
 let group = [
-
 "group metadata" >:: (fun _ ->
   let meta = GroupMetadata.default in
   let expected = {|{"zarr_format":3,"node_type":"group"}|} in
   let got = GroupMetadata.encode meta in
-  assert_equal expected got;
+  assert_equal ~printer:Fun.id expected got;
 
   (match GroupMetadata.decode got with
   | Ok v ->
@@ -26,17 +25,23 @@ let group = [
   assert_equal expected @@ GroupMetadata.encode meta')
 ]
 
-let array = [
-
-"array metadata" >:: (fun _ ->
-  let shape = [|10; 10; 10|] in
-  let chunks = [|5; 2; 6|] in
-  let grid_shape = [|2; 5; 2|] in
-  let dimension_names = [Some "x"; None; Some "z"] in
-
+let test_array_metadata
+  : type a b c d .
+    ?dimension_names:string option list ->
+    shape:int array ->
+    chunks:int array ->
+    grid_shape:int array ->
+    (a, b) Bigarray.kind ->
+    (c, d) Bigarray.kind ->
+    a ->
+    unit
+  = fun ?dimension_names ~shape ~chunks ~grid_shape kind bad_kind fv ->
   let meta =
-    ArrayMetadata.create
-      ~shape ~dimension_names Bigarray.Float32 32.0 chunks
+    match dimension_names with
+    | Some d ->
+      ArrayMetadata.create ~shape ~dimension_names:d kind fv chunks
+    | None ->
+      ArrayMetadata.create ~shape kind fv chunks
   in
   (match ArrayMetadata.encode meta |> ArrayMetadata.decode with
   | Ok v ->
@@ -99,14 +104,9 @@ let array = [
     ArrayMetadata.chunk_indices meta [|10; 4; 10|];
 
   assert_equal
-    ~printer:Fun.id
-    {|"float32"|} @@
-    ArrayMetadata.data_type meta;
-
-  assert_equal
     ~printer:[%show: string option list]
-    dimension_names @@
-    ArrayMetadata.dimension_names meta;
+    (if dimension_names = None then [] else Option.get dimension_names)
+    (ArrayMetadata.dimension_names meta);
 
   assert_equal
     ~printer:Yojson.Safe.show
@@ -126,21 +126,340 @@ let array = [
     ArrayMetadata.(shape @@ update_shape meta new_shape);
 
   assert_bool
-    "" @@ ArrayMetadata.is_valid_kind meta Bigarray.Float32;
+    "Using the correct kind must not fail this op" @@
+    ArrayMetadata.is_valid_kind meta kind;
 
   assert_bool
     "Float32 is the only valid kind for this metadata"
-    (not @@ ArrayMetadata.is_valid_kind meta Bigarray.Int8_signed);
+    (not @@ ArrayMetadata.is_valid_kind meta bad_kind);
 
-  assert_equal
-    ~printer:string_of_float
-    32. @@
-    ArrayMetadata.fillvalue_of_kind meta Bigarray.Float32;
+  assert_equal fv @@ ArrayMetadata.fillvalue_of_kind meta kind;
 
   assert_raises
     ~msg:"Wrong kind used to extract fill value."
     (Failure "kind is not compatible with node's fill value.")
-    (fun () -> ArrayMetadata.fillvalue_of_kind meta Bigarray.Complex32))
+    (fun () -> ArrayMetadata.fillvalue_of_kind meta bad_kind)
+
+(* test decoding an ill-formed array metadata with an expected error message.*)
+let decode_bad_array_metadata ~str ~msg = 
+  match ArrayMetadata.of_yojson @@ Yojson.Safe.from_string str with
+  | Ok _ ->
+    assert_failure
+      "Impossible to decode an ill-formed JSON array metadata document.";
+  | Error s ->
+    assert_equal ~printer:Fun.id msg s
+
+let test_encode_decode_fill_value fv =
+  let str = Format.sprintf {|{
+    "zarr_format": 3,
+    "shape": [10000, 1000],
+    "node_type": "array",
+    "data_type": "float64",
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": %s,
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}},
+    "chunk_key_encoding":
+      {"name": "default", "configuration": {"separator": "."}}}|} fv
+  in
+  let expected = Yojson.Safe.from_string str in
+  match ArrayMetadata.of_yojson expected with
+  | Ok meta ->
+    assert_equal
+      ~printer:Yojson.Safe.show expected @@ ArrayMetadata.to_yojson meta
+  | Error _ ->
+    assert_failure
+      "Decoding a well formed Array metadata doc should not fail."
+
+let test_decode_encode_chunk_key name sep (key, exp_encode, exp_null) =
+  let str = Format.sprintf {|{
+    "zarr_format": 3,
+    "shape": [10000, 1000],
+    "node_type": "array",
+    "data_type": "float64",
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": 0.0,
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}},
+    "chunk_key_encoding":
+      {"name": %s, "configuration": {"separator": %s}}}|} name sep
+  in
+  let expected = Yojson.Safe.from_string str
+  in
+  match ArrayMetadata.of_yojson expected with
+  | Ok meta ->
+    assert_equal
+      ~printer:Fun.id
+      exp_encode @@
+      ArrayMetadata.chunk_key meta key;
+    assert_equal
+      ~printer:Fun.id
+      exp_null @@
+      ArrayMetadata.chunk_key meta [||];
+    assert_equal
+      ~printer:Yojson.Safe.show
+      expected
+      (ArrayMetadata.to_yojson meta)
+  | Error _ ->
+    assert_failure
+      "Decoding a well formed Array metadata should not fail."
+
+let array = [
+"array metadata" >:: (fun _ ->
+  (* test if the decoding fails if regular grid chunk shape is empty,
+   * has non-positive integer values or the grid name is unsupported *)
+  let template = Format.sprintf {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "shape": [10000, 1000],
+    "dimension_names": ["rows", "columns"],
+    "data_type": "float64",
+    "chunk_grid":
+      {"name": %s, "configuration": {"chunk_shape": %s}},
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "attributes": {"foo": 42, "bar": [1, 2, 3, 4]}}|}
+  in
+  decode_bad_array_metadata
+    ~str:(template {|"regular"|} @@ [%show: (int * int) list] [-4, 4])
+    ~msg:"Regular grid chunk_shape must only contain positive integers.";
+  decode_bad_array_metadata
+    ~str:(template {|"UNKNOWN"|} @@ [%show: (int * int) list] [2, 4])
+    ~msg:"Invalid Chunk grid name or configuration.";
+
+  (* test if the decoding fails if chunk key encoding contains unknown
+   * separator or name. *)
+  let template = Format.sprintf {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "shape": [10000, 1000],
+    "dimension_names": ["rows", "columns"],
+    "data_type": "complex64",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [10, 20]}},
+    "chunk_key_encoding":
+      {"name": %s, "configuration": {"separator": %s}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": ["Infinity", "0x7fc00000"],
+    "attributes": {"foo": 42, "bar": [1, 2, 3, 4]}}|}
+  in
+  decode_bad_array_metadata
+    ~str:(template {|"default"|} {|"_"|})
+    ~msg:"Invalid chunk key encoding configuration.";
+  decode_bad_array_metadata
+    ~str:(template {|"V3"|} {|"."|})
+    ~msg:"Invalid chunk key encoding configuration.";
+
+  (* test if the decoding fails if data type is unsupported *)
+  decode_bad_array_metadata
+    ~str:{|{
+      "zarr_format": 3,
+      "node_type": "array",
+      "shape": [10000, 1000],
+      "dimension_names": ["rows", "columns"],
+      "data_type": "INFINITE_PRECISION",
+      "chunk_grid":
+        {"name": "regular", "configuration": {"chunk_shape": [10, 20]}},
+      "chunk_key_encoding":
+        {"name": "v2", "configuration": {"separator": "/"}},
+      "codecs": [
+        {"name": "bytes", "configuration": {"endian": "big"}}],
+      "fill_value": "NaN",
+      "attributes": {"foo": 42, "bar": [1, 2, 3, 4]}}|}
+    ~msg:"Unsupported metadata data_type";
+
+  (* test if the JSON document fill value form is preserved when decoding
+   * and encoding back into a JSON.
+   * See: https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html#fill-value *)
+  test_encode_decode_fill_value {|false|};
+  test_encode_decode_fill_value {|0|};
+  test_encode_decode_fill_value {|5.9|};
+  test_encode_decode_fill_value {|"Infinity"|};
+  test_encode_decode_fill_value {|"-Infinity"|};
+  test_encode_decode_fill_value {|"NaN"|};
+  test_encode_decode_fill_value {|"?"|};
+  test_encode_decode_fill_value {|"0x7fc00000"|};
+  test_encode_decode_fill_value {|[10, 0]|};
+  test_encode_decode_fill_value {|[10.0, 0.0]|};
+  test_encode_decode_fill_value {|["0x7fc00000", "0x7fc00000"]|};
+  test_encode_decode_fill_value {|["0x7fc00000", "NaN"]|};
+  test_encode_decode_fill_value {|["Infinity", "0x7fc00000"]|};
+  test_encode_decode_fill_value {|["NaN", "Infinity"]|};
+  (* tests decoding failure of unsupported fill value. *)
+  let template = Format.sprintf {|{
+    "zarr_format": 3,
+    "shape": [10000, 1000],
+    "node_type": "array",
+    "data_type": "float64",
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": %s,
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}},
+    "chunk_key_encoding":
+      {"name": "default", "configuration": {"separator": "."}}}|}
+    in
+  (* we dont support float literals as strings *)
+  decode_bad_array_metadata
+    ~str:(template {|["0.5", "5.0"]|})
+    ~msg:"Unsupported fill value.";
+  decode_bad_array_metadata
+    ~str:(template {|["Infinity", "?"]|})
+    ~msg:"Unsupported fill value.";
+  (* a complex number cannot be a list with less or more than 2 elements. *)
+  decode_bad_array_metadata
+    ~str:(template {|[1, 4, 3]|})
+    ~msg:"Unsupported fill value.";
+
+  (* Test correctness of chunk-key encoding of keys. *)
+  test_decode_encode_chunk_key
+    {|"default"|} {|"/"|} ([|5; 32; 4|], "c/5/32/4", "c");
+  test_decode_encode_chunk_key
+    {|"default"|} {|"."|} ([|5; 32; 4|], "c.5.32.4", "c");
+  test_decode_encode_chunk_key
+    {|"v2"|} {|"/"|} ([|5; 32; 4|], "5/32/4", "0");
+  test_decode_encode_chunk_key
+    {|"v2"|} {|"."|} ([|5; 32; 4|], "5.32.4", "0");
+
+  let shape = [|10; 10; 10|] in
+  let chunks = [|5; 2; 6|] in
+  let grid_shape = [|2; 5; 2|] in
+  let dimension_names = [Some "x"; None; Some "z"] in
+
+  (* tests using char data type. *)
+  test_array_metadata
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Char
+    Bigarray.Float32
+    '?';
+
+  (* tests using int8 data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Int8_signed
+    Bigarray.Float32
+    0;
+
+  (* tests using uint8 data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Int8_unsigned
+    Bigarray.Float32
+    0;
+
+  (* tests using int16 data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Int16_signed
+    Bigarray.Float32
+    0;
+
+  (* tests using uint16 data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Int16_unsigned
+    Bigarray.Float32
+    0;
+
+  (* tests using int32 data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Int32
+    Bigarray.Float32
+    Int32.max_int;
+
+  (* tests using int64 data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Int64
+    Bigarray.Float32
+    0L;
+
+  (* tests using float32 data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Float32
+    Bigarray.Int
+    Float.neg_infinity;
+
+  (* tests using float64 data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Float64
+    Bigarray.Int
+    Float.neg_infinity;
+
+  (* tests using complex32 data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Complex32
+    Bigarray.Float32
+    Complex.zero;
+
+  (* tests using complex64 data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Complex64
+    Bigarray.Float32
+    Complex.zero;
+
+  (* tests using int data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Int
+    Bigarray.Float32
+    Int.max_int;
+
+  (* tests using nativeint data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    ~grid_shape
+    Bigarray.Nativeint
+    Bigarray.Float32
+    0n)
 ]
 
 let tests = group @ array

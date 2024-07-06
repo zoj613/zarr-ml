@@ -63,9 +63,6 @@ module ArrayMetadata : sig
   val chunk_shape : t -> int array
   (** [chunk_shape t] returns the shape a chunk in this zarr array. *)
 
-  val data_type : t -> string
-  (** [data_type t] returns the data type as specified in the array metadata.*)
-
   val is_valid_kind : t -> ('a, 'b) Bigarray.kind -> bool
   (** [is_valid_kind t kind] checks if [kind] is a valid Bigarray kind that
       matches the data type of the zarr array represented by this metadata type. *)

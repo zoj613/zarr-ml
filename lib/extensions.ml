@@ -1,10 +1,4 @@
-open Util.Result_syntax
-
 module RegularGrid = struct
-  type config =
-    {chunk_shape : int array} [@@deriving yojson]
-  type chunk_grid =
-    config Util.ExtPoint.t [@@deriving yojson]
   type t = int array
 
   let chunk_shape t = t
@@ -36,69 +30,86 @@ module RegularGrid = struct
   let equal : t -> t -> bool = fun x y -> x = y
 
   let to_yojson t =
-    chunk_grid_to_yojson
-      {name = "regular"; configuration = {chunk_shape = t}}
+    let chunk_shape = 
+      `List (Array.to_list @@ Array.map (fun x -> `Int x) t)
+    in
+    `Assoc
+    [("name", `String "regular")
+    ;("configuration", `Assoc [("chunk_shape", chunk_shape)])]
 
   let of_yojson x =
-    chunk_grid_of_yojson x >>= fun y ->
-    if y.name <> "regular" then
-      Error ("chunk grid name should be 'regular' not: " ^ y.name)
-    else
-      Ok y.configuration.chunk_shape
+    let open Util.Result_syntax in
+    match
+      Util.get_name x,
+      Yojson.Safe.Util.(member "configuration" x |> to_assoc)
+    with
+    | "regular", [("chunk_shape", `List l)] ->
+      List.fold_right
+        (fun a acc ->
+          acc >>= fun k ->
+          match a with
+          | `Int i when i > 0 -> Ok (i :: k)
+          | _ ->
+            let msg =
+              "Regular grid chunk_shape must only
+              contain positive integers." in
+            Error msg) l (Ok [])
+      >>| fun l' -> Array.of_list l'
+    | _ -> Error "Invalid Chunk grid name or configuration."
 end
 
 module ChunkKeyEncoding = struct
-  type encoding = Default | V2
-  type config = {separator : string} [@@deriving yojson]
-  type key_encoding = config Util.ExtPoint.t [@@deriving yojson]
-  type t = {encoding : encoding; sep : string}
+  type kind = Default | V2
+  type t = {name : kind; sep : string}
 
   let create = function
-    | `Dot -> {encoding = Default; sep = "."}
-    | `Slash -> {encoding = Default; sep = "/"}
+    | `Dot -> {name = Default; sep = "."}
+    | `Slash -> {name = Default; sep = "/"}
 
   (* map a chunk coordinate index to a key. E.g, (2,3,1) maps to c/2/3/1 *)
-  let encode t index =
+  let encode {name; sep} index =
     let f i acc =
       string_of_int i :: acc
     in
-    match t.encoding with
+    match name with
     | Default ->
-      String.concat t.sep @@
+      String.concat sep @@
       "c" :: Array.fold_right f index []
     | V2 ->
       if Array.length index = 0 
       then
         "0"
       else
-        String.concat t.sep @@
+        String.concat sep @@
         Array.fold_right f index []
 
   let equal x y =
-    x.encoding = y.encoding && x.sep = y.sep
+    x.name = y.name && x.sep = y.sep
 
-  let to_yojson t =
-    match t.encoding with
-    | Default ->
-      key_encoding_to_yojson
-        {name = "default"; configuration = {separator = t.sep}}
-    | V2 ->
-      key_encoding_to_yojson
-        {name = "v2"; configuration = {separator = t.sep}}
+  let to_yojson {name; sep} =
+    let str =
+      match name with
+      | Default -> "default"
+      | V2 -> "v2"
+    in
+    `Assoc
+    [("name", `String str)
+    ;("configuration", `Assoc [("separator", `String sep)])]
 
   let of_yojson x =
-    key_encoding_of_yojson x >>= fun y ->
-    match y with
-    | {name = "default"; configuration = {separator = "/"}} ->
-      Ok {encoding = Default; sep = "/"}
-    | {name = "default"; configuration = {separator = "."}} ->
-      Ok {encoding = Default; sep = "."}
-    | {name = "v2"; configuration = {separator = "."}} ->
-      Ok {encoding = V2; sep = "."}
-    | {name = "v2"; configuration = {separator = "/"}} ->
-      Ok {encoding = V2; sep = "/"}
-    | {name = e; configuration = {separator = s}} ->
-      Error ("Unsupported chunk key configuration: " ^ e ^ ", " ^ s)
+    match
+      Util.get_name x,
+      Yojson.Safe.Util.(member "configuration" x |> to_assoc)
+    with
+    | "default", [("separator", `String "/")] ->
+      Ok {name = Default; sep = "/"}
+    | "default", [("separator", `String ".")] ->
+      Ok {name = Default; sep = "."}
+    | "v2", [("separator", `String "/")] ->
+      Ok {name = V2; sep = "/"}
+    | "v2", [("separator", `String ".")] ->
+      Ok {name = V2; sep = "."}
+    | _ -> Error "Invalid chunk key encoding configuration."
 end
 
 module Datatype = struct

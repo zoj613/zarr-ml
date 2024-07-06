@@ -27,7 +27,7 @@ module RegularGrid = struct
     |> Util.Indexing.cartesian_prod
     |> List.map Array.of_list
 
-  let equal : t -> t -> bool = fun x y -> x = y
+  let equal x y = x = y
 
   let to_yojson t =
     let chunk_shape = 
@@ -43,17 +43,17 @@ module RegularGrid = struct
       Util.get_name x,
       Yojson.Safe.Util.(member "configuration" x |> to_assoc)
     with
-    | "regular", [("chunk_shape", `List l)] ->
+    | "regular", [("chunk_shape", `List xs)] ->
       List.fold_right
         (fun a acc ->
-          acc >>= fun k ->
-          match a with
-          | `Int i when i > 0 -> Ok (i :: k)
-          | _ ->
-            let msg =
-              "Regular grid chunk_shape must only
-              contain positive integers." in
-            Error msg) l (Ok [])
+            acc >>= fun k ->
+            match a with
+            | `Int i when i > 0 -> Ok (i :: k)
+            | _ ->
+              let msg =
+                "Regular grid chunk_shape must only contain positive integers."
+              in
+              Error msg) xs (Ok [])
       >>| fun l' -> Array.of_list l'
     | _ -> Error "Invalid Chunk grid name or configuration."
 end

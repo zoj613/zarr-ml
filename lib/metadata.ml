@@ -40,13 +40,10 @@ module FillValue = struct
     match x with
     | `Bool b -> Ok (Bool b)
     | `Int i -> Result.ok @@ Int (Int64.of_int i)
+    | `String "Infinity" -> Ok (Float Float.infinity)
+    | `String "-Infinity" -> Ok (Float Float.neg_infinity)
+    | `String "NaN" -> Ok (Float Float.nan)
     | `Float f -> Ok (Float f)
-    | `String "Infinity" ->
-      Ok (Float Float.infinity)
-    | `String "-Infinity" ->
-      Ok (Float Float.neg_infinity)
-    | `String "NaN" ->
-      Ok (Float Float.nan)
     | `String s when String.length s = 1 ->
       Ok (Char (String.get s 0))
     | `String s when String.starts_with ~prefix:"0x" s ->
@@ -70,7 +67,7 @@ module FillValue = struct
           Ok (BFComplex Complex.{re; im})
         | FloatBits re, FloatBits im ->
           Ok (BBComplex Complex.{re; im})
-        | _ -> Error "Unsupported fill value")
+        | _ -> Error "Unsupported fill value.")
     | _ -> Error "Unsupported fill value."
 
   let rec to_yojson = function
@@ -78,12 +75,12 @@ module FillValue = struct
     | Int i -> `Int (Int64.to_int i)
     | Char c ->
       `String (String.of_seq @@ List.to_seq [c])
+    | Float f when Float.is_nan f ->
+      `String "NaN"
     | Float f when f = Float.infinity ->
       `String "Infinity"
     | Float f when f = Float.neg_infinity ->
       `String "-Infinity"
-    | Float f when f = Float.nan ->
-      `String "NaN"
     | Float f -> `Float f
     | FloatBits f ->
       `String (Stdint.Int64.to_string_hex @@ Int64.bits_of_float f)
@@ -141,10 +138,6 @@ module ArrayMetadata = struct
   let shape t = t.shape
 
   let codecs t = t.codecs
-
-  let data_type t =
-    Yojson.Safe.to_string @@
-    Extensions.Datatype.to_yojson t.data_type
 
   let ndim t = Array.length @@ shape t
 

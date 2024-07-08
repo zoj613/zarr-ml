@@ -3,7 +3,6 @@
  (public_name zarr)
  (libraries
    yojson
-   ppx_deriving_yojson.runtime
    ezgzip
    owl
    stdint
@@ -12,9 +11,7 @@
    (:standard -O3))
  (preprocess
    (pps
-     ppx_deriving.eq
-     ppx_deriving.show
-     ppx_deriving_yojson))
+     ppx_deriving.show))
  (instrumentation
    (backend bisect_ppx)))
 

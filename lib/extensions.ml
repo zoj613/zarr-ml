@@ -1,9 +1,25 @@
+type grid_info =
+  {msg : string
+  ;chunk_shape : int array
+  ;array_shape : int array}
+
+type error =
+  [ `Grid of grid_info ]
+
 module RegularGrid = struct
   type t = int array
 
   let chunk_shape t = t
 
-  let create chunk_shape = chunk_shape
+  let create ~array_shape chunk_shape =
+    match chunk_shape, array_shape with
+    | c, a when Array.(length c <> length a) ->
+      let msg = "grid chunk and array shape must have the same the length." in
+      Result.error @@ `Grid {msg; array_shape; chunk_shape}
+    | c, a when Util.(max c > max a) -> 
+      let msg = "grid chunk dimension size must not be larger than array's." in
+      Result.error @@ `Grid {msg; array_shape; chunk_shape}
+    | c, _ -> Ok c
 
   let ceildiv x y =
     Float.(to_int @@ ceil (of_int x /. of_int y))
@@ -27,7 +43,7 @@ module RegularGrid = struct
     |> Util.Indexing.cartesian_prod
     |> List.map Array.of_list
 
-  let equal x y = x = y
+  let ( = ) x y = x = y
 
   let to_yojson t =
     let chunk_shape = 
@@ -54,7 +70,7 @@ module RegularGrid = struct
                 "Regular grid chunk_shape must only contain positive integers."
               in
               Error msg) xs (Ok [])
-      >>| fun l' -> Array.of_list l'
+      >>| Array.of_list
     | _ -> Error "Invalid Chunk grid name or configuration."
 end
 
@@ -83,7 +99,7 @@ module ChunkKeyEncoding = struct
         String.concat sep @@
         Array.fold_right f index []
 
-  let equal x y =
+  let ( = ) x y =
     x.name = y.name && x.sep = y.sep
 
   let to_yojson {name; sep} =
@@ -128,7 +144,7 @@ module Datatype = struct
     | Int
     | Nativeint
 
-  let equal : t -> t -> bool = fun x y -> x = y
+  let ( = ) : t -> t -> bool = fun x y -> x = y
 
   let of_kind : type a b. (a, b) Bigarray.kind -> t = function
     | Bigarray.Char -> Char

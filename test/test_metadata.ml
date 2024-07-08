@@ -1,6 +1,14 @@
 open OUnit2
 open Zarr
 
+let decode_bad_group_metadata ~str ~msg = 
+  match GroupMetadata.of_yojson @@ Yojson.Safe.from_string str with
+  | Ok _ ->
+    assert_failure
+      "Impossible to decode an ill-formed JSON group metadata document.";
+  | Error s ->
+    assert_equal ~printer:Fun.id msg s
+
 let group = [
 "group metadata" >:: (fun _ ->
   let meta = GroupMetadata.default in
@@ -22,7 +30,20 @@ let group = [
   let expected =
     {|{"zarr_format":3,"node_type":"group","attributes":{"spam":"ham","eggs":42}}|}
   in
-  assert_equal expected @@ GroupMetadata.encode meta')
+  assert_equal expected @@ GroupMetadata.encode meta';
+
+  (* test bad zarr_format field value. *)
+  decode_bad_group_metadata
+    ~str:{|{"zarr_format":[],"node_type":"group"}|}
+    ~msg:"zarr_format field must be the integer 3.";
+
+  (* test missing node_type field or bad value. *)
+  decode_bad_group_metadata
+    ~str:{|{"zarr_format":3,"node_type":"ARRAY"}|}
+    ~msg:"node_type field must be 'group.";
+  decode_bad_group_metadata
+    ~str:{|{"zarr_format":3}|}
+    ~msg:"group metadata must contain a node_type field.")
 ]
 
 let test_array_metadata
@@ -39,13 +60,15 @@ let test_array_metadata
   let meta =
     match dimension_names with
     | Some d ->
+      Result.get_ok @@
       ArrayMetadata.create ~shape ~dimension_names:d kind fv chunks
     | None ->
+      Result.get_ok @@
       ArrayMetadata.create ~shape kind fv chunks
   in
   (match ArrayMetadata.encode meta |> ArrayMetadata.decode with
   | Ok v ->
-    assert_bool "should not fail" @@ ArrayMetadata.equal v meta;
+    assert_bool "should not fail" @@ ArrayMetadata.(v = meta);
   | Error _ ->
     assert_failure "Decoding well formed metadata should not fail");
 
@@ -161,7 +184,8 @@ let test_encode_decode_fill_value fv =
     "chunk_grid":
       {"name": "regular", "configuration": {"chunk_shape": [100, 10]}},
     "chunk_key_encoding":
-      {"name": "default", "configuration": {"separator": "."}}}|} fv
+      {"name": "default", "configuration": {"separator": "."}},
+    "attributes": {"question": 7}}|} fv
   in
   let expected = Yojson.Safe.from_string str in
   match ArrayMetadata.of_yojson expected with
@@ -208,13 +232,221 @@ let test_decode_encode_chunk_key name sep (key, exp_encode, exp_null) =
 
 let array = [
 "array metadata" >:: (fun _ ->
+
+  (* test missing zarr_format field and non-specific value. *)
+  let str = {|{
+    "node_type": "array",
+    "shape": [10000, 1000],
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}}}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"array metadata must contain a zarr_format field.";
+  let str = {|{
+    "zarr_format": "3",
+    "node_type": "array",
+    "shape": [10000, 1000],
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}}}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"zarr_format field must be the integer 3.";
+
+  (* test missing node_type field or wrong value. *)
+  let str = {|{
+    "zarr_format": 3,
+    "shape": [10000, 1000],
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}}}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"array metadata must contain a node_type field.";
+  let str = {|{
+    "zarr_format": 3,
+    "node_type": "group",
+    "shape": [10000, 1000],
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}}}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"node_type field must be 'array'.";
+
+  (* test missing shape field, and incorrect values *)
+  let str = {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "shape": [10000, -1000],
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}}}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"shape field list must only contain positive integers.";
+  let str = {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "shape": 5,
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}}}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"shape field must be a list of integers.";
+  let str = {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}}}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"array metadata must contain a shape field.";
+
+  (* test missing codecs field or wrong codec config. *)
+  let str = {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "shape": [10000, 1000],
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": 
+      {"name": "bytes", "configuration": {"endian": "big"}},
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}}}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"codecs field must be a list of objects.";
+  let str = {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "shape": [10000, 1000],
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}}}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"array metadata must contain a codecs field.";
+
+  (* tests incorrect dimension_name field values and incorrect size. *)
+  let str = {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "shape": [10000, 1000],
+    "dimension_names": ["rows", 12345],
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}}}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"dimension_names must contain strings or null values.";
+  let str = {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "shape": [10000, 1000],
+    "dimension_names": ["rows", null, null],
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}}}|} in
+  decode_bad_array_metadata
+    ~str:str
+    ~msg:"dimension_names length and array dimensionality must be equal.";
+  let str = {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "shape": [10000, 1000],
+    "dimension_names": "rows",
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}}}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"dimension_names field must be a list.";
+
+  (* test if storage transformer unsupported error is reported. *) 
+  let str = {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "shape": [10000, 1000],
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [100, 10]}},
+    "storage_transformers": ["CACHE"]}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"storage_transformers field is not yet supported.";
+
+  (* test missing chunk grid field. *)
+  let str = {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "shape": [10000, 1000],
+    "data_type": "float64",
+    "chunk_key_encoding":
+      {"name": "v2", "configuration": {"separator": "."}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000"}|} in
+  decode_bad_array_metadata
+    ~str:str ~msg:"array metadata must contain a chunk_grid field.";
+
   (* test if the decoding fails if regular grid chunk shape is empty,
    * has non-positive integer values or the grid name is unsupported *)
   let template = Format.sprintf {|{
     "zarr_format": 3,
     "node_type": "array",
     "shape": [10000, 1000],
-    "dimension_names": ["rows", "columns"],
     "data_type": "float64",
     "chunk_grid":
       {"name": %s, "configuration": {"chunk_shape": %s}},
@@ -222,23 +454,40 @@ let array = [
       {"name": "v2", "configuration": {"separator": "."}},
     "codecs": [
       {"name": "bytes", "configuration": {"endian": "big"}}],
-    "fill_value": "0x7fc00000",
-    "attributes": {"foo": 42, "bar": [1, 2, 3, 4]}}|}
+    "fill_value": "0x7fc00000"}|}
   in
   decode_bad_array_metadata
-    ~str:(template {|"regular"|} @@ [%show: (int * int) list] [-4, 4])
+    ~str:(template {|"regular"|} {|[1, 20, 20]|})
+    ~msg:"grid chunk and array shape must have the same the length.";
+  decode_bad_array_metadata
+    ~str:(template {|"regular"|} {|[100000, 20]|})
+    ~msg:"grid chunk dimension size must not be larger than array's.";
+  decode_bad_array_metadata
+    ~str:(template {|"regular"|} {|[-4, 4]|})
     ~msg:"Regular grid chunk_shape must only contain positive integers.";
   decode_bad_array_metadata
-    ~str:(template {|"UNKNOWN"|} @@ [%show: (int * int) list] [2, 4])
+    ~str:(template {|"UNKNOWN"|} {|[2, 4]|})
     ~msg:"Invalid Chunk grid name or configuration.";
 
   (* test if the decoding fails if chunk key encoding contains unknown
    * separator or name. *)
+  let str = {|{
+    "zarr_format": 3,
+    "node_type": "array",
+    "shape": [10000, 1000],
+    "data_type": "float64",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [10, 10]}},
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000"}|} in
+  decode_bad_array_metadata
+    ~str ~msg:"array metadata must contain a chunk_key_encoding field.";
+
   let template = Format.sprintf {|{
     "zarr_format": 3,
     "node_type": "array",
     "shape": [10000, 1000],
-    "dimension_names": ["rows", "columns"],
     "data_type": "complex64",
     "chunk_grid":
       {"name": "regular", "configuration": {"chunk_shape": [10, 20]}},
@@ -246,8 +495,7 @@ let array = [
       {"name": %s, "configuration": {"separator": %s}},
     "codecs": [
       {"name": "bytes", "configuration": {"endian": "big"}}],
-    "fill_value": ["Infinity", "0x7fc00000"],
-    "attributes": {"foo": 42, "bar": [1, 2, 3, 4]}}|}
+    "fill_value": ["Infinity", "0x7fc00000"]}|}
   in
   decode_bad_array_metadata
     ~str:(template {|"default"|} {|"_"|})
@@ -256,13 +504,40 @@ let array = [
     ~str:(template {|"V3"|} {|"."|})
     ~msg:"Invalid chunk key encoding configuration.";
 
-  (* test if the decoding fails if data type is unsupported *)
+  (* test if the decoding fails if data type is missing not
+     a string or unsupported *)
   decode_bad_array_metadata
     ~str:{|{
       "zarr_format": 3,
       "node_type": "array",
       "shape": [10000, 1000],
-      "dimension_names": ["rows", "columns"],
+      "data_type": 0,
+      "chunk_grid":
+        {"name": "regular", "configuration": {"chunk_shape": [10, 20]}},
+      "chunk_key_encoding":
+        {"name": "v2", "configuration": {"separator": "/"}},
+      "codecs": [
+        {"name": "bytes", "configuration": {"endian": "big"}}],
+      "fill_value": "NaN"}|}
+    ~msg:"data_type field must be a string.";
+  decode_bad_array_metadata
+    ~str:{|{
+      "zarr_format": 3,
+      "node_type": "array",
+      "shape": [10000, 1000],
+      "chunk_grid":
+        {"name": "regular", "configuration": {"chunk_shape": [10, 20]}},
+      "chunk_key_encoding":
+        {"name": "v2", "configuration": {"separator": "/"}},
+      "codecs": [
+        {"name": "bytes", "configuration": {"endian": "big"}}],
+      "fill_value": "NaN"}|}
+    ~msg:"array metadata must contain a data_type field.";
+  decode_bad_array_metadata
+    ~str:{|{
+      "zarr_format": 3,
+      "node_type": "array",
+      "shape": [10000, 1000],
       "data_type": "INFINITE_PRECISION",
       "chunk_grid":
         {"name": "regular", "configuration": {"chunk_shape": [10, 20]}},
@@ -270,10 +545,23 @@ let array = [
         {"name": "v2", "configuration": {"separator": "/"}},
       "codecs": [
         {"name": "bytes", "configuration": {"endian": "big"}}],
-      "fill_value": "NaN",
-      "attributes": {"foo": 42, "bar": [1, 2, 3, 4]}}|}
+      "fill_value": "NaN"}|}
     ~msg:"Unsupported metadata data_type";
 
+  (* test missing fill_value field. *)
+  decode_bad_array_metadata
+    ~str:{|{
+      "zarr_format": 3,
+      "node_type": "array",
+      "shape": [10000, 1000],
+      "data_type": "nativeint",
+      "chunk_grid":
+        {"name": "regular", "configuration": {"chunk_shape": [10, 20]}},
+      "chunk_key_encoding":
+        {"name": "v2", "configuration": {"separator": "/"}},
+      "codecs": [
+        {"name": "bytes", "configuration": {"endian": "big"}}]}|}
+    ~msg:"array metadata must contain a fill_value field.";
   (* test if the JSON document fill value form is preserved when decoding
    * and encoding back into a JSON.
    * See: https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html#fill-value *)

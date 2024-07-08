@@ -35,6 +35,7 @@ type error =
   [ `Bytes_encode_error of string
   | `Bytes_decode_error of string
   | `Sharding_shape_mismatch of int array * int array * string
+  | Extensions.error
   | Array_to_array.error
   | Bytes_to_bytes.error ]
 
@@ -259,21 +260,21 @@ end = struct
       (string, [> error]) result
     = fun x t ->
     let open Util in
+    let open Extensions in
     let open Util.Result_syntax in
     let shard_shape = Ndarray.shape x in
     let cps = Array.map2 (/) shard_shape t.chunk_shape in
     let idx_shp = Array.append cps [|2|] in
-    let shard_idx = 
-      Ndarray.create Bigarray.Int64 idx_shp Int64.max_int in
-    let sg =
-      Extensions.RegularGrid.create t.chunk_shape in
+    let shard_idx = Ndarray.create Bigarray.Int64 idx_shp Int64.max_int in
+    RegularGrid.create ~array_shape:shard_shape t.chunk_shape
+    >>= fun grid ->
     let slice =
       Array.make
         (Ndarray.num_dims x) (Owl_types.R []) in
     let coords = Indexing.coords_of_slice slice shard_shape in
     let tbl = Arraytbl.create @@ Array.length coords in
     Ndarray.iteri (fun i y ->
-      let k, c = Extensions.RegularGrid.index_coord_pair sg coords.(i) in
+      let k, c = RegularGrid.index_coord_pair grid coords.(i) in
       Arraytbl.add tbl k (c, y)) x;
     let fill_value = 
       Arraytbl.to_seq_values tbl
@@ -378,7 +379,8 @@ end = struct
     if Ndarray.for_all (Int64.equal Int64.max_int) shard_idx then
       Ok (Ndarray.create repr.kind repr.shape repr.fill_value)
     else
-      let sg = RegularGrid.create t.chunk_shape in
+      RegularGrid.create ~array_shape:repr.shape t.chunk_shape
+      >>= fun sg ->
       let slice =
         Array.make
           (Array.length repr.shape)
@@ -416,10 +418,10 @@ end = struct
       inner.kind (Array.of_list res) repr.shape
 
   let rec chain_to_yojson chain =
-    [%to_yojson: Yojson.Safe.t list] @@
-    List.map ArrayToArray.to_yojson chain.a2a @
-    (ArrayToBytes.to_yojson chain.a2b) ::
-    List.map BytesToBytes.to_yojson chain.b2b
+    `List
+      (List.map ArrayToArray.to_yojson chain.a2a @
+      (ArrayToBytes.to_yojson chain.a2b) ::
+      List.map BytesToBytes.to_yojson chain.b2b)
 
   and to_yojson t =
     let codecs = chain_to_yojson t.codecs

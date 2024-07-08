@@ -49,17 +49,16 @@ module Make (M : STORE) : S with type t = M.t = struct
     | Some c -> Codecs.Chain.create repr c
     | None -> Ok Codecs.Chain.default)
     >>= fun codecs ->
-    let meta =
-      AM.create
-        ~sep
-        ~codecs
-        ~dimension_names
-        ~attributes
-        ~shape
-        kind
-        fill_value
-        chunks
-    in
+    AM.create
+      ~sep
+      ~codecs
+      ~dimension_names
+      ~attributes
+      ~shape
+      kind
+      fill_value
+      chunks
+    >>= fun meta ->
     set t (ArrayNode.to_metakey node) (AM.encode meta);
     Result.ok @@
     make_implicit_groups_explicit t @@

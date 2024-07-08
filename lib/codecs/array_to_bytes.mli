@@ -24,11 +24,12 @@ val pp_chain : Format.formatter -> chain -> unit
 val show_chain : chain -> string
 
 type error =
-  [ `Bytes_encode_error of string
-  | `Bytes_decode_error of string
-  | `Sharding_shape_mismatch of int array * int array * string
+  [ Extensions.error
   | Array_to_array.error
-  | Bytes_to_bytes.error ]
+  | Bytes_to_bytes.error
+  | `Bytes_encode_error of string
+  | `Bytes_decode_error of string
+  | `Sharding_shape_mismatch of int array * int array * string ]
 
 module ArrayToBytes : sig
   val parse

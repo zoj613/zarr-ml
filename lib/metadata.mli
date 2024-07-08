@@ -6,7 +6,8 @@
     [zarr.json] within the prefix of a group or array.*)
 
 type error =
-  [ `Json_decode_error of string ]
+  [ Extensions.error
+  | `Json_decode of string ]
 (** A type for JSON decoding errors. *)
 
 module FillValue : sig
@@ -42,15 +43,15 @@ module ArrayMetadata : sig
     ('a, 'b) Bigarray.kind ->
     'a ->
     int array ->
-    t
+    (t, [> error ]) result
   (** [create ~shape kind fv cshp] Creates a new array metadata document
       with shape [shape], fill value [fv], data type [kind] and chunk shape
-      [cshp]. *)
+      [cshp]. This operation returns an error if chunk shape is invalid. *)
 
   val encode : t -> string
   (** [encode t] returns a byte string representing a JSON Zarr array metadata. *)
 
-  val decode : string -> (t, [> error]) result
+  val decode : string -> (t, [> error ]) result
   (** [decode s] decodes a bytes string [s] into a {!ArrayMetadata.t}
       type, and returns an error if the decoding process fails. *)
 
@@ -108,8 +109,8 @@ module ArrayMetadata : sig
   (** [update_shape t new_shp] returns a new metadata type containing
       shape [new_shp]. *)
 
-  val equal : t -> t -> bool
-  (** [equal a b] returns true if [a] [b] are equal array metadata documents
+  val ( = ) : t -> t -> bool
+  (** [a = b] returns true if [a] [b] are equal array metadata documents
       and false otherwise. *)
 
   val of_yojson : Yojson.Safe.t -> (t, string) result
@@ -134,7 +135,7 @@ module GroupMetadata : sig
   val encode : t -> string
   (** [encode t] returns a byte string representing a JSON Zarr group metadata. *)
 
-  val decode : string -> (t, [> error]) result
+  val decode : string -> (t, [> error ]) result
   (** [decode s] decodes a bytes string [s] into a {!t} type, and returns
       an error if the decoding process fails. *)
 

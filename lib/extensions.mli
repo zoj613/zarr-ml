@@ -1,11 +1,19 @@
+type grid_info =
+  {msg : string
+  ;chunk_shape : int array
+  ;array_shape : int array}
+
+type error =
+  [ `Grid of grid_info ]
+
 module RegularGrid : sig
   type t
-  val create : int array -> t
+  val create : array_shape:int array -> int array -> (t, [> error]) result
   val chunk_shape : t -> int array
   val grid_shape : t -> int array -> int array
   val indices : t -> int array -> int array list
   val index_coord_pair : t -> int array -> int array * int array
-  val equal : t -> t -> bool
+  val ( = ) : t -> t -> bool
   val of_yojson : Yojson.Safe.t -> (t, string) result
   val to_yojson : t -> Yojson.Safe.t
 end
@@ -14,7 +22,7 @@ module ChunkKeyEncoding : sig
   type t
   val create : [< `Slash | `Dot > `Slash ] -> t
   val encode : t -> int array -> string
-  val equal : t -> t -> bool
+  val ( = ) : t -> t -> bool
   val of_yojson : Yojson.Safe.t -> (t, string) result
   val to_yojson : t -> Yojson.Safe.t
 end
@@ -38,7 +46,7 @@ module Datatype : sig
     | Nativeint
   (** A type for the supported data types of a Zarr array. *)
 
-  val equal : t -> t -> bool
+  val ( = ) : t -> t -> bool
   val of_kind : ('a, 'b) Bigarray.kind -> t
   val of_yojson : Yojson.Safe.t -> (t, string) result
   val to_yojson : t -> Yojson.Safe.t

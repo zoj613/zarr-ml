@@ -9,12 +9,7 @@ module ExtPoint : sig
   (** The type representing a JSON extension point metadata configuration. *)
 
   type 'a t = {name : string ; configuration : 'a}
-  val equal : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
-  val of_yojson
-    : (Yojson.Safe.t -> ('a, string) result) ->
-      Yojson.Safe.t ->
-      ('a t, string) result
-  val to_yojson : ('a -> Yojson.Safe.t) -> 'a t -> Yojson.Safe.t
+  val ( = ) : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
 end
 
 module Arraytbl : sig include Hashtbl.S with type key = int array end
@@ -67,3 +62,6 @@ val get_name : Yojson.Safe.t -> string
 
 val prod : int array -> int
 (** [prod x] returns the product of the elements of [x]. *)
+
+val max : int array -> int
+(** [max x] returns the maximum element of an integer array [x]. *)

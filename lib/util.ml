@@ -2,7 +2,10 @@ module ExtPoint = struct
   type 'a t =
     {name : string
     ;configuration : 'a}
-  [@@deriving yojson, eq]
+
+  let ( = ) cmp x y =
+    (x.name = y.name) &&
+    cmp x.configuration y.configuration
 end
 
 type ('a, 'b) array_repr =
@@ -101,3 +104,8 @@ let get_name j =
 
 let prod x =
   Array.fold_left Int.mul 1 x
+
+let max x =
+  Array.fold_left
+    (fun acc v ->
+      if v <= acc then acc else v) Int.min_int x

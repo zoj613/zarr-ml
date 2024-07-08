@@ -66,7 +66,7 @@ module type S = sig
       'a ->
       ArrayNode.t ->
       t ->
-      (unit, [> Codecs.error]) result
+      (unit, [> error ]) result
   (** [create_array ~sep ~dimension_names ~attributes ~codecs ~shape ~chunks kind fill node t]
       creates an array node in store [t] where:
       - Separator [sep] is used in the array's chunk key encoding.

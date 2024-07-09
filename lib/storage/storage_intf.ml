@@ -7,10 +7,7 @@ type range = ByteRange of int * int option
 
 type error =
   [ `Store_read of string
-  | `Store_write of string
-  | Node.error
-  | Metadata.error
-  | Codecs.error ]
+  | `Store_write of string ]
 
 module type STORE = sig
   (** The abstract STORE interface that stores should implement.
@@ -31,7 +28,7 @@ module type STORE = sig
 
   type t
   val get : t -> key -> (string, [> error]) result
-  val get_partial_values : t -> (key * range) list -> string option list
+  val get_partial_values : t -> (key * range) list -> (string list, [> error ]) result
   val set : t -> key -> string -> unit
   val set_partial_values : t -> (key * int * string) list -> (unit, [> error]) result
   val erase : t -> key -> unit
@@ -66,7 +63,7 @@ module type S = sig
       'a ->
       ArrayNode.t ->
       t ->
-      (unit, [> error ]) result
+      (unit, [> Codecs.error | Extensions.error | Metadata.error ]) result
   (** [create_array ~sep ~dimension_names ~attributes ~codecs ~shape ~chunks kind fill node t]
       creates an array node in store [t] where:
       - Separator [sep] is used in the array's chunk key encoding.
@@ -79,19 +76,20 @@ module type S = sig
       This operation can fail if the codec chain is not well defined. *)
 
   val array_metadata
-    : ArrayNode.t -> t -> (ArrayMetadata.t, [> error]) result
+    : ArrayNode.t -> t -> (ArrayMetadata.t, [> error ]) result
   (** [array_metadata node t] returns the metadata of array node [node].
       This operation returns an error if node is not a member of store [t]. *)
 
   val group_metadata
-    : GroupNode.t -> t -> (GroupMetadata.t, [> error]) result
+    : GroupNode.t -> t -> (GroupMetadata.t, [> error ]) result
   (** [group_metadata node t] returns the metadata of group node [node].
       This operation returns an error if node is not a member of store [t].*)
 
   val find_child_nodes
-    : t -> GroupNode.t -> (ArrayNode.t list * GroupNode.t list, [> error]) result
+    : t -> GroupNode.t -> ArrayNode.t list * GroupNode.t list
   (** [find_child_nodes t n] returns a tuple of child nodes of group node [n].
-      This operation can fail if [n] is not a member of store [t]. *)
+      This operation returns a pair of empty lists if node [n] has no
+      children or is not a member of store [t]. *)
 
   val find_all_nodes : t -> ArrayNode.t list * GroupNode.t list
   (** [find_all_nodes t] returns [Some p] where [p] is a pair of lists
@@ -126,7 +124,7 @@ module type S = sig
       Owl_types.index array ->
       ('a, 'b) Ndarray.t ->
       t ->
-      (unit, [> error]) result
+      (unit, [> error | Node.error | Codecs.error ]) result
   (** [set_array n s x t] writes n-dimensional array [x] to the slice [s]
       of array node [n] in store [t]. This operation fails if:
       - the ndarray [x] size does not equal slice [s].
@@ -139,7 +137,7 @@ module type S = sig
       Owl_types.index array ->
       ('a, 'b) Bigarray.kind ->
       t ->
-      (('a, 'b) Ndarray.t, [> error]) result
+      (('a, 'b) Ndarray.t, [> error | Node.error | Codecs.error ]) result
   (** [get_array n s k t] reads an n-dimensional array of size determined
       by slice [s] from array node [n]. This operation fails if:
       - If there is a problem decoding/encoding node [n] chunks.
@@ -217,39 +215,29 @@ module Base = struct
     in
     StrSet.(elements keys, elements prefixes)
 
-  let rec get_partial_values ~get_fn t kr_pairs =
-    match kr_pairs with
-    | [] -> [None]
-    | (k, r) :: xs ->
-      match get_fn t k with
-      | Error _ ->
-        None :: (get_partial_values ~get_fn t xs)
-      | Ok v ->
-        try
-          let sub = match r with
-            | ByteRange (rs, None) ->
-              String.sub v rs @@ String.length v 
-            | ByteRange (rs, Some rl) ->
-              String.sub v rs rl in
-          Some sub :: (get_partial_values ~get_fn t xs)
-        with
-        | Invalid_argument _ ->
-          None :: (get_partial_values ~get_fn t xs)
-    
-  let rec set_partial_values ~set_fn ~get_fn t = function
-    | [] -> Ok ()
-    | (k, rs, v) :: xs ->
-      match get_fn t k with
-      | Error _ ->
-        set_fn t k v;
-        set_partial_values ~set_fn ~get_fn t xs
-      | Ok ov ->
-        try
-          let ov' = Bytes.of_string ov in
-          String.(length v |> blit v 0 ov' rs);
-          set_fn t k @@ Bytes.to_string ov';
-          set_partial_values ~set_fn ~get_fn t xs
-        with
-        | Invalid_argument s ->
-          Error (`Store_read s)
+  let get_partial_values ~get_fn t kr_pairs =
+    let open Util.Result_syntax in
+    List.fold_right
+      (fun (k, ByteRange (rs, len)) acc ->
+        acc >>= fun xs ->
+        get_fn t k >>| fun v ->
+        (match len with
+        | None -> String.sub v rs @@ String.length v - rs
+        | Some l -> String.sub v rs l) :: xs) kr_pairs (Ok [])
+
+  let set_partial_values ~set_fn ~get_fn t krv =
+    let open Util.Result_syntax in
+    let module StrMap = Util.StrMap in
+    let tbl = StrMap.create @@ List.length krv in
+    List.fold_right
+      (fun (k, rs, v) acc ->
+        acc >>= fun () ->
+        (match StrMap.find_opt tbl k with
+        | None ->
+          get_fn t k
+        | Some ov -> Ok ov)
+        >>| fun ov ->
+        let ov' = Bytes.of_string ov in
+        String.(length v |> blit v 0 ov' rs);
+        set_fn t k @@ Bytes.to_string ov') krv (Ok ())
 end

@@ -1,10 +1,4 @@
-module HashableString = struct
-  type t = string
-  let hash = Hashtbl.hash
-  let equal = String.equal
-end
-
-module StrMap = Hashtbl.Make (HashableString)
+module StrMap = Util.StrMap
 
 let create () = StrMap.create 16
 
@@ -13,7 +7,8 @@ module Impl = struct
 
   let get t key =
     Option.to_result
-      ~none:(`Store_read key) @@ StrMap.find_opt t key
+      ~none:(`Store_read (key ^ " not found.")) @@
+      StrMap.find_opt t key
 
   let set t key value =
     StrMap.replace t key value

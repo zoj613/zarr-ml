@@ -1,10 +1,5 @@
-type grid_info =
-  {msg : string
-  ;chunk_shape : int array
-  ;array_shape : int array}
-
 type error =
-  [ `Grid of grid_info ]
+  [ `Extension of string ]
 
 module RegularGrid = struct
   type t = int array
@@ -15,10 +10,10 @@ module RegularGrid = struct
     match chunk_shape, array_shape with
     | c, a when Array.(length c <> length a) ->
       let msg = "grid chunk and array shape must have the same the length." in
-      Result.error @@ `Grid {msg; array_shape; chunk_shape}
+      Result.error @@ `Extension msg
     | c, a when Util.(max c > max a) -> 
       let msg = "grid chunk dimension size must not be larger than array's." in
-      Result.error @@ `Grid {msg; array_shape; chunk_shape}
+      Result.error @@ `Extension msg
     | c, _ -> Ok c
 
   let ceildiv x y =

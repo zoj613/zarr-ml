@@ -6,9 +6,8 @@
     [zarr.json] within the prefix of a group or array.*)
 
 type error =
-  [ Extensions.error
-  | `Json_decode of string ]
-(** A type for JSON decoding errors. *)
+  [ `Metadata of string ]
+(** A type for Metadata operation errors. *)
 
 module FillValue : sig
   type t =
@@ -51,7 +50,7 @@ module ArrayMetadata : sig
   val encode : t -> string
   (** [encode t] returns a byte string representing a JSON Zarr array metadata. *)
 
-  val decode : string -> (t, [> error ]) result
+  val decode : string -> (t, string) result
   (** [decode s] decodes a bytes string [s] into a {!ArrayMetadata.t}
       type, and returns an error if the decoding process fails. *)
 
@@ -135,7 +134,7 @@ module GroupMetadata : sig
   val encode : t -> string
   (** [encode t] returns a byte string representing a JSON Zarr group metadata. *)
 
-  val decode : string -> (t, [> error ]) result
+  val decode : string -> (t, string) result
   (** [decode s] decodes a bytes string [s] into a {!t} type, and returns
       an error if the decoding process fails. *)
 

@@ -32,12 +32,10 @@ and chain =
   [@@deriving show]
 
 type error =
-  [ `Bytes_encode_error of string
-  | `Bytes_decode_error of string
-  | `Sharding_shape_mismatch of int array * int array * string
-  | Extensions.error
+  [ Extensions.error
   | Array_to_array.error
-  | Bytes_to_bytes.error ]
+  | Bytes_to_bytes.error
+  | `Sharding of int array * int array * string ]
 
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/bytes/v1.0.html *)
 module BytesCodec = struct
@@ -217,8 +215,7 @@ end = struct
       let msg =
         "sharding chunk_shape length must equal the dimensionality of
         the decoded representaton of a shard." in
-      Result.error @@
-      `Sharding_shape_mismatch (t.chunk_shape, repr.shape, msg))
+      Result.error @@ `Sharding (t.chunk_shape, repr.shape, msg))
     >>= fun () ->
     match
       Array.for_all2 (fun x y -> (x mod y) = 0) repr.shape t.chunk_shape
@@ -228,8 +225,7 @@ end = struct
       let msg =
         "sharding chunk_shape must evenly divide the size of the shard shape."
       in
-      Result.error @@
-      `Sharding_shape_mismatch (t.chunk_shape, repr.shape, msg)
+      Result.error @@ `Sharding (t.chunk_shape, repr.shape, msg)
 
   let compute_encoded_size input_size t =
     List.fold_left BytesToBytes.compute_encoded_size

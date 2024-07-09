@@ -1,10 +1,5 @@
-type grid_info =
-  {msg : string
-  ;chunk_shape : int array
-  ;array_shape : int array}
-
 type error =
-  [ `Grid of grid_info ]
+  [ `Extension of string ]
 
 module RegularGrid : sig
   type t

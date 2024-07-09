@@ -203,6 +203,15 @@ end = struct
 
   type t = shard_config  
 
+  let parse_chain repr chain =
+    List.fold_left
+      (fun acc c ->
+         acc >>= fun r ->
+         ArrayToArray.parse r c >>= fun () ->
+         ArrayToArray.compute_encoded_representation c r) (Ok repr) chain.a2a
+    >>= fun repr' ->
+    ArrayToBytes.parse repr' chain.a2b
+
   let parse 
     : type a b.
       (a, b) Util.array_repr ->
@@ -217,7 +226,7 @@ end = struct
         the decoded representaton of a shard." in
       Result.error @@ `Sharding (t.chunk_shape, repr.shape, msg))
     >>= fun () ->
-    match
+    (match
       Array.for_all2 (fun x y -> (x mod y) = 0) repr.shape t.chunk_shape
     with
     | true -> Ok ()
@@ -225,7 +234,10 @@ end = struct
       let msg =
         "sharding chunk_shape must evenly divide the size of the shard shape."
       in
-      Result.error @@ `Sharding (t.chunk_shape, repr.shape, msg)
+      Result.error @@ `Sharding (t.chunk_shape, repr.shape, msg))
+    >>= fun () ->
+    parse_chain repr t.codecs >>= fun () ->
+    parse_chain repr t.index_codecs
 
   let compute_encoded_size input_size t =
     List.fold_left BytesToBytes.compute_encoded_size

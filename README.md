@@ -90,9 +90,7 @@ let config =
     ;b2b = [Crc32c]}
   ;index_location = Start};;
 let codec_chain =
-  {a2a = []
-  ;a2b = ShardingIndexed config
-  ;b2b = [Crc32c]};;
+  {a2a = []; a2b = ShardingIndexed config; b2b = []};;
 
 let shard_node = Result.get_ok @@ ArrayNode.(group_node / "another");;
 
@@ -124,7 +122,6 @@ FilesystemStore.array_exists store shard_node;;
 FilesystemStore.group_exists store group_node;;
 
 let a, g =
-  Result.get_ok @@
   FilesystemStore.find_child_nodes store group_node;;
 List.map ArrayNode.to_path a;;
 (*- : string list = ["/some/group/name"; "/some/group/another"] *)

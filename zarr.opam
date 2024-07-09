@@ -13,14 +13,14 @@ depends: [
   "dune" {>= "3.15"}
   "ocaml" {>= "4.14.2"}
   "yojson"
-  "ppx_deriving_yojson"
+  "ppx_deriving"
   "ezgzip"
-  "checkseum"
+  "owl"
   "stdint"
+  "checkseum"
   "ounit2" {with-test}
   "odoc" {with-doc}
   "bisect_ppx" {dev & >= "2.5.0" & with-test}
-  "owl"
 ]
 build: [
   ["dune" "subst"] {dev}

@@ -129,7 +129,7 @@ let array_node = [
   let s = "/some/dir/moredirs/path/pname" in
   let n = ArrayNode.of_path s |> Result.get_ok in
   assert_equal "pname" @@ ArrayNode.name n;
-  assert_equal ~printer:Fun.id s @@ ArrayNode.to_path n;
+  assert_equal ~printer:Fun.id s @@ ArrayNode.show n;
 
   (* parent tests *)
   assert_equal
@@ -138,8 +138,10 @@ let array_node = [
     ArrayNode.parent (ArrayNode.of_path "/nodename" |> Result.get_ok);
 
   (* equality tests *)
+  let n' = (ArrayNode.of_path s |> Result.get_ok) in
   assert_equal
-    true @@ ArrayNode.(n = (ArrayNode.of_path s |> Result.get_ok));
+    ~printer:ArrayNode.show n n';
+  assert_equal true ArrayNode.(n = n');
   assert_equal
     false @@
     ArrayNode.(n = Result.get_ok @@ ArrayNode.of_path (s ^ "/more"));

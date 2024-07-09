@@ -12,7 +12,6 @@ module GroupNode = struct
   type t =
     | Root
     | Cons of t * string
-    [@@deriving show]
 
   let create parent name =
     if rep_ok name then
@@ -87,14 +86,16 @@ module GroupNode = struct
     | _, Root -> false
     | v, Cons (parent, _) -> parent = v
 
-  let show n = to_path n
+  let show = to_path
+
+  let pp fmt t =
+    Format.fprintf fmt "%s" @@ show t
 end
 
 module ArrayNode = struct
   type t =
     {parent : GroupNode.t
     ;name :  string}
-    [@@deriving show]
 
   let create parent name =
     if rep_ok name then
@@ -145,4 +146,7 @@ module ArrayNode = struct
   let to_metakey p = to_key p ^ "/zarr.json"
   
   let show = to_path
+
+  let pp fmt t =
+    Format.fprintf fmt "%s" @@ show t
 end

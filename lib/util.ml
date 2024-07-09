@@ -1,13 +1,3 @@
-module ExtPoint = struct
-  type 'a t =
-    {name : string
-    ;configuration : 'a}
-
-  let ( = ) cmp x y =
-    (x.name = y.name) &&
-    cmp x.configuration y.configuration
-end
-
 type ('a, 'b) array_repr =
   {kind : ('a, 'b) Bigarray.kind
   ;shape : int array

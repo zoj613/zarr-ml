@@ -12,6 +12,9 @@ module ExtPoint : sig
   val ( = ) : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
 end
 
+module StrMap : sig include Hashtbl.S with type key = string end
+(** A hashtable with string keys. *)
+
 module Arraytbl : sig include Hashtbl.S with type key = int array end
 (** A hashtable with integer array keys. *)
 

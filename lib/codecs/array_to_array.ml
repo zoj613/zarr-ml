@@ -7,7 +7,7 @@ type array_to_array =
   [@@deriving show]
 
 type error =
-  [ `Invalid_transpose_order of dimension_order * string ]
+  [ `Transpose_order of dimension_order * string ]
 
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/transpose/v1.0.html *)
 module TransposeCodec = struct
@@ -26,7 +26,7 @@ module TransposeCodec = struct
           let msg =
             "transpose order leads to a change in encoded
             representation size, which is prohibited." in
-          Result.error @@ `Invalid_transpose_order (t, msg)
+          Result.error @@ `Transpose_order (t, msg)
         else
           Ok {decoded with shape}
       with
@@ -34,13 +34,13 @@ module TransposeCodec = struct
         let msg =
           "transpose order max element is larger than
           the decoded representation dimensionality." in
-        Result.error @@ `Invalid_transpose_order (t, msg)
+        Result.error @@ `Transpose_order (t, msg)
 
 
   let parse_order o =
     if Array.length o = 0 then
       let msg = "transpose order cannot be empty." in
-      Result.error @@ `Invalid_transpose_order (o, msg)
+      Result.error @@ `Transpose_order (o, msg)
     else
       let o' = Array.copy o in
       Array.fast_sort Int.compare o';
@@ -48,7 +48,7 @@ module TransposeCodec = struct
         let msg =
           "order must not have any repeated dimensions
           or negative values." in
-        Result.error @@ `Invalid_transpose_order (o, msg)
+        Result.error @@ `Transpose_order (o, msg)
       else
         Result.ok @@ Transpose o
 
@@ -64,18 +64,18 @@ module TransposeCodec = struct
       let msg =
         "Transpose order must have the same length
         as the decoded representation's number of dims." in
-      Result.error @@ `Invalid_transpose_order (o, msg)
+      Result.error @@ `Transpose_order (o, msg)
     else if not @@ Array.for_all (fun x -> x <= max) o then
       let msg =
         "Largest value of transpose order must not be larger than
         then dimensionality of the decoded representation." in
-      Result.error @@ `Invalid_transpose_order (o, msg)
+      Result.error @@ `Transpose_order (o, msg)
     else
       Ok ()
 
   let encode o x =
     try Ok (Ndarray.transpose ~axis:o x) with
-    | Failure s -> Error (`Invalid_transpose_order (o, s))
+    | Failure s -> Error (`Transpose_order (o, s))
 
   let decode o x =
     let inv_order = Array.(make (length o) 0) in

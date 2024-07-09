@@ -6,7 +6,7 @@ type array_to_array =
   | Transpose of dimension_order
 
 type error =
-  [ `Invalid_transpose_order of dimension_order * string ]
+  [ `Transpose_order of dimension_order * string ]
 
 val pp_array_to_array : Format.formatter -> array_to_array -> unit
 val show_array_to_array : array_to_array -> string

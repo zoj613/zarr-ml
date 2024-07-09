@@ -133,7 +133,7 @@ let test_store
   let child = GroupNode.of_path "/some/child" |> Result.get_ok in
   M.create_group store child;
   (match M.find_child_nodes store gnode with
-  | Ok (arrays, groups) ->
+  | arrays, groups ->
     assert_equal
       ~printer:string_of_list
       ["/arrnode"] @@
@@ -141,19 +141,11 @@ let test_store
     assert_equal
       ~printer:string_of_list
       ["/some"] @@
-      List.map GroupNode.to_path groups
-  | Error _ ->
-    assert_failure
-      "a store with more than one node
-      should return children for a root node.");
+      List.map GroupNode.to_path groups);
 
   (* test getting child nodes of a group not a member of this store. *)
-  let r =
-    M.find_child_nodes store @@
-    (Result.get_ok @@ GroupNode.(root / "fakegroup")) in
-  assert_bool
-    "finding child nodes of a non-store group node should fail." @@
-    Result.is_error r;
+  let g = (Result.get_ok @@ GroupNode.(root / "fakegroup")) in
+  assert_equal ([], []) @@ M.find_child_nodes store g;
 
   let ac, gc = M.find_all_nodes store in
   let got =

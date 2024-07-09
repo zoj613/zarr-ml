@@ -65,20 +65,12 @@ module Make (M : STORE) : S with type t = M.t = struct
     Some (ArrayNode.parent node)
 
   let group_metadata node t =
-    if not @@ group_exists t node then
-      Result.error @@
-      `Store_read (GroupNode.show node ^ " is not a member of this store.")
-    else
-      get t @@ GroupNode.to_metakey node >>= fun bytes ->
-      GM.decode bytes
+    get t @@ GroupNode.to_metakey node >>= fun bytes ->
+    GM.decode bytes >>? fun msg -> `Store_read msg
 
   let array_metadata node t =
-    if not @@ array_exists t node then
-      Result.error @@
-      `Store_read (ArrayNode.show node ^ " is not a member of this store.")
-    else
-      get t @@ ArrayNode.to_metakey node >>= fun bytes ->
-      AM.decode bytes
+    get t @@ ArrayNode.to_metakey node >>= fun bytes ->
+    AM.decode bytes >>? fun msg -> `Store_read msg
 
   (* Assumes without checking that [metakey] is a valid node metadata key.*)
   let unsafe_node_type t metakey =
@@ -87,22 +79,16 @@ module Make (M : STORE) : S with type t = M.t = struct
     |> Util.member "node_type" |> Util.to_string
 
   let find_child_nodes t node =
-    if group_exists t node then
-      Result.ok @@
-      List.fold_left
-        (fun (lacc, racc) pre ->
-          let p = "/" ^ String.(length pre - 1 |> sub pre 0) in
-          if unsafe_node_type t (pre ^ "zarr.json") = "array" then
-            let x = Result.get_ok @@ ArrayNode.of_path p in
-            x :: lacc, racc
-          else
-            let x = Result.get_ok @@ GroupNode.of_path p in
-            lacc, x :: racc)
-        ([], []) (snd @@ list_dir t @@ GroupNode.to_prefix node)
-    else
-      let msg =
-        GroupNode.show node ^ " is not a node in this heirarchy." in
-      Result.error @@ `Store_read msg
+    List.fold_left
+      (fun (lacc, racc) pre ->
+        let p = "/" ^ String.(length pre - 1 |> sub pre 0) in
+        if unsafe_node_type t (pre ^ "zarr.json") = "array" then
+          let x = Result.get_ok @@ ArrayNode.of_path p in
+          x :: lacc, racc
+        else
+          let x = Result.get_ok @@ GroupNode.of_path p in
+          lacc, x :: racc)
+      ([], []) (snd @@ list_dir t @@ GroupNode.to_prefix node)
 
   let find_all_nodes t =
     let keys =
@@ -138,11 +124,11 @@ module Make (M : STORE) : S with type t = M.t = struct
     Owl_types.index array ->
     (a, b) Ndarray.t ->
     t ->
-    (unit, [> error]) result
+    (unit, [> error ]) result
   = fun node slice x t ->
     let open Util in
     get t @@ ArrayNode.to_metakey node >>= fun bytes ->
-    AM.decode bytes >>= fun meta ->
+    AM.decode bytes >>? (fun msg -> `Store_write msg) >>= fun meta ->
     (if Ndarray.shape x = Indexing.slice_shape slice @@ AM.shape meta then 
         Ok ()
       else
@@ -199,7 +185,7 @@ module Make (M : STORE) : S with type t = M.t = struct
   = fun node slice kind t ->
     let open Util in
     get t @@ ArrayNode.to_metakey node >>= fun bytes ->
-    AM.decode bytes >>= fun meta ->
+    AM.decode bytes >>? (fun msg -> `Store_read msg) >>= fun meta ->
     (if AM.is_valid_kind meta kind then
         Ok ()
       else
@@ -245,7 +231,8 @@ module Make (M : STORE) : S with type t = M.t = struct
   let reshape t node shape =
     let mkey = ArrayNode.to_metakey node in
     get t mkey  >>= fun bytes ->
-    AM.decode bytes >>= fun meta ->
+    AM.decode bytes >>? (fun msg -> `Store_write msg)
+    >>= fun meta ->
     (if Array.length shape = Array.length @@ AM.shape meta then
       Ok ()
     else

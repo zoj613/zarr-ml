@@ -2,8 +2,7 @@ open Extensions
 open Util.Result_syntax
 
 type error =
-  [ Extensions.error
-  | `Json_decode of string ]
+  [ `Metadata of string ]
 
 module FillValue = struct
   type t =
@@ -126,6 +125,7 @@ module ArrayMetadata = struct
     chunks
     =
     RegularGrid.create ~array_shape:shape chunks
+    >>? (fun (`Extension msg) -> `Metadata msg)
     >>| fun chunk_grid ->
     {shape
     ;codecs
@@ -223,7 +223,7 @@ module ArrayMetadata = struct
     | xs ->
       RegularGrid.of_yojson xs >>= fun grid -> 
       RegularGrid.(create ~array_shape:shape @@ chunk_shape grid)
-      >>? fun (`Grid {msg; _}) -> msg)
+      >>? fun (`Extension msg) -> msg)
     >>= fun chunk_grid ->
 
     (match member "chunk_key_encoding" x with 
@@ -305,8 +305,7 @@ module ArrayMetadata = struct
     Yojson.Safe.to_string @@ to_yojson t
 
   let decode b = 
-    of_yojson @@ Yojson.Safe.from_string b >>? fun s ->
-    `Json_decode s
+    of_yojson @@ Yojson.Safe.from_string b
 
   let update_attributes t attrs =
     {t with attributes = attrs}
@@ -404,8 +403,7 @@ module GroupMetadata = struct
     Ok {zarr_format; node_type; attributes}
 
   let decode s = 
-    of_yojson @@ Yojson.Safe.from_string s >>? fun b ->
-    `Json_decode b
+    of_yojson @@ Yojson.Safe.from_string s
 
   let encode t =
     Yojson.Safe.to_string @@ to_yojson t

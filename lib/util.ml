@@ -24,9 +24,17 @@ module ComparableArray = struct
   let compare = Stdlib.compare
 end
 
+module HashableString = struct
+  type t = string
+  let hash = Hashtbl.hash
+  let equal = String.equal
+end
+
 module ArraySet = Set.Make (ComparableArray)
 
 module Arraytbl = Hashtbl.Make (HashableArray)
+
+module StrMap = Hashtbl.Make (HashableString)
 
 module Result_syntax = struct
   let ( >>= ) = Result.bind

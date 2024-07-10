@@ -340,12 +340,20 @@ end = struct
       (a, b) Util.array_repr ->
       ((a, b) Ndarray.t, [> error]) result
     = fun t x repr ->
+    (* compute the last encoded representation of array->array codec chain.
+       This becomes the decoded representation of the array->bytes decode
+       procedure. *)
+    List.fold_left
+      (fun acc c ->
+        acc >>= ArrayToArray.compute_encoded_representation c)
+      (Ok repr) t.a2a
+    >>= fun repr' ->
     List.fold_right
       (fun c acc -> acc >>= BytesToBytes.decode c) t.b2b (Ok x)
     >>= fun y ->
     List.fold_right
       (fun c acc -> acc >>= ArrayToArray.decode c)
-      t.a2a (ArrayToBytes.decode y repr t.a2b)
+      t.a2a (ArrayToBytes.decode y repr' t.a2b)
 
   and decode_index
     : string ->
@@ -384,7 +392,7 @@ end = struct
     let open Extensions in
     let open Util.Result_syntax in
     decode_index b repr.shape t >>= fun (shard_idx, b') ->
-    if Ndarray.for_all (Int64.equal Int64.max_int) shard_idx then
+    if Ndarray.equal_scalar shard_idx Int64.max_int then
       Ok (Ndarray.create repr.kind repr.shape repr.fill_value)
     else
       RegularGrid.create ~array_shape:repr.shape t.chunk_shape
@@ -403,27 +411,24 @@ end = struct
         {kind = repr.kind
         ;shape = t.chunk_shape
         ;fill_value = repr.fill_value}
-    in
-    Array.fold_right (fun (idx, coord) acc ->
-      acc >>= fun l ->
-      match Arraytbl.find_opt tbl idx with
-      | Some arr ->
-        Ok (Ndarray.get arr coord :: l)
-      | None ->
-        match Ndarray.(slice_left shard_idx idx) with
-        | pair when Ndarray.for_all (Int64.equal Int64.max_int) pair ->
-          let x = Ndarray.create inner.kind inner.shape inner.fill_value in
-          Arraytbl.add tbl idx x;
-          Ok (Ndarray.get x coord :: l)
-        | pair ->
-          let p = Bigarray.array1_of_genarray pair in
-          let c = String.sub b' (Int64.to_int p.{0}) (Int64.to_int p.{1}) in
-          decode_chain t.codecs c inner >>= fun x ->
-          Arraytbl.add tbl idx x;
-          Ok (Ndarray.get x coord :: l)) pair (Ok [])
-    >>| fun res -> 
-    Ndarray.of_array
-      inner.kind (Array.of_list res) repr.shape
+      in
+      Array.fold_right (fun (idx, coord) acc ->
+        acc >>= fun l ->
+        match Arraytbl.find_opt tbl idx with
+        | Some arr ->
+          Ok (Ndarray.get arr coord :: l)
+        | None ->
+          match Ndarray.(slice_left shard_idx idx) with
+          | pair when Ndarray.equal_scalar pair Int64.max_int ->
+            Ok (inner.fill_value :: l)
+          | pair ->
+            let p = Bigarray.array1_of_genarray pair in
+            let c = String.sub b' (Int64.to_int p.{0}) (Int64.to_int p.{1}) in
+            decode_chain t.codecs c inner >>= fun x ->
+            Arraytbl.add tbl idx x;
+            Ok (Ndarray.get x coord :: l)) pair (Ok [])
+      >>| fun res -> 
+      Ndarray.of_array inner.kind (Array.of_list res) repr.shape
 
   let rec chain_to_yojson chain =
     `List

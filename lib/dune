@@ -9,9 +9,6 @@
    checkseum)
  (ocamlopt_flags
    (:standard -O3))
- (preprocess
-   (pps
-     ppx_deriving.show))
  (instrumentation
    (backend bisect_ppx)))
 

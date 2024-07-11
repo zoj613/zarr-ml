@@ -77,10 +77,6 @@ and variable_to_internal_b2b b2b =
 module Chain = struct
   type t = chain
 
-  let pp = pp_chain
-
-  let show = show_chain
-
   let create : 
     type a b. (a, b) Util.array_repr -> codec_chain -> (t, [> error ]) result
     = fun repr cc ->

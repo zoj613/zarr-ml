@@ -114,8 +114,7 @@ let tests = [
 
   let str = Chain.to_yojson c |> Yojson.Safe.to_string in
   (match Chain.of_yojson @@ Yojson.Safe.from_string str with
-  | Ok v ->
-    assert_equal ~printer:Chain.show v c;
+  | Ok v -> assert_equal v c;
   | Error _ ->
     assert_failure
       "a serialized chain should successfully deserialize"))

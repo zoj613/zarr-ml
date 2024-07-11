@@ -1,10 +1,9 @@
 module Ndarray = Owl.Dense.Ndarray.Generic
 
-type dimension_order = int array [@@deriving show]
+type dimension_order = int array
 
 type array_to_array =
   | Transpose of dimension_order
-  [@@deriving show]
 
 type error =
   [ `Transpose_order of dimension_order * string ]

@@ -80,7 +80,6 @@ let test_array_metadata
     ~printer:show_int_array shape @@ ArrayMetadata.shape meta;
 
   assert_equal
-    ~printer:Codecs.Chain.show
     Codecs.Chain.default @@
     ArrayMetadata.codecs meta;
 

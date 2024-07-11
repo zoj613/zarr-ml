@@ -39,34 +39,31 @@ type codec_chain = {
   b2b: bytestobytes list;
 }
 
-type error = Array_to_bytes.error
+type error =
+  [ `Extension of string 
+  | `Gzip of Ezgzip.error
+  | `Transpose_order of int array * string
+  | `Sharding of int array * int array * string ]
 
 module Chain : sig
   type t
 
-  val create
-    : ('a, 'b) Util.array_repr -> codec_chain -> (t, [> error]) result
+  val create :
+    ('a, 'b) Util.array_repr -> codec_chain -> (t, [> error ]) result
 
   val default : t
 
   val compute_encoded_size : int -> t -> int
 
-  val encode
-    : t -> ('a, 'b) Ndarray.t -> (string, [> error]) result
+  val encode :
+    t -> ('a, 'b) Ndarray.t -> (string, [> error ]) result
 
-  val decode
-    : t ->
-      ('a, 'b) Util.array_repr ->
-      string ->
-      (('a, 'b) Ndarray.t, [> error]) result
+  val decode :
+    t -> ('a, 'b) Util.array_repr -> string -> (('a, 'b) Ndarray.t, [> error]) result
 
   val ( = ) : t -> t -> bool
 
   val of_yojson : Yojson.Safe.t -> (t, string) result
 
   val to_yojson : t -> Yojson.Safe.t
-
-  val pp : Format.formatter -> t -> unit
-
-  val show : t -> string
 end

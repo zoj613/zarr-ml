@@ -2,12 +2,10 @@ module Ndarray = Owl.Dense.Ndarray.Generic
 
 type compression_level =
   | L0 | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9
-  [@@deriving show]
 
 type bytes_to_bytes =
   | Crc32c
   | Gzip of compression_level
-  [@@deriving show]
 
 type error = 
   [ `Gzip of Ezgzip.error ]

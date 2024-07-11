@@ -35,7 +35,7 @@ let bytes_encode_decode
         assert_equal
           ~printer:Owl_pretty.dsnda_to_string
           arr
-          (Result.get_ok decoded)) [Bytes Little; Bytes Big]
+          (Result.get_ok decoded)) [`Bytes Little; `Bytes Big]
 
 let tests = [
 "test codec chain" >:: (fun _ ->
@@ -48,20 +48,20 @@ let tests = [
   let shard_cfg =
     {chunk_shape = [|2; 5; 5|]
     ;index_location = End
-    ;index_codecs = {a2a = []; a2b = Bytes Little; b2b = [Crc32c]}
-    ;codecs = {a2a = [Transpose [|0; 1; 2|]]; a2b = Bytes Big; b2b = [Gzip L1]}}
+    ;index_codecs = {a2a = []; a2b = `Bytes Little; b2b = [`Crc32c]}
+    ;codecs = {a2a = [`Transpose [|0; 1; 2|]]; a2b = `Bytes Big; b2b = [`Gzip L1]}}
   in
   let chain =
-    {a2a = [Transpose [|2; 1; 0; 3|]]
-    ;a2b = ShardingIndexed shard_cfg
-    ;b2b = [Crc32c; Gzip L9]}
+    {a2a = [`Transpose [|2; 1; 0; 3|]]
+    ;a2b = `ShardingIndexed shard_cfg
+    ;b2b = [`Crc32c; `Gzip L9]}
   in
   assert_bool
     "" @@
     Result.is_error @@
     Chain.create decoded_repr chain; 
 
-  let chain = {chain with a2a = [Transpose [|2; 1; 0|]]} in
+  let chain = {chain with a2a = [`Transpose [|2; 1; 0|]]} in
   let c = Chain.create decoded_repr chain in
   assert_bool "" @@ Result.is_ok c;
   let c = Result.get_ok c in
@@ -72,7 +72,7 @@ let tests = [
 
   let c' =
     Result.get_ok @@
-    Chain.create decoded_repr {chain with b2b = [Crc32c]}
+    Chain.create decoded_repr {chain with b2b = [`Crc32c]}
   in
   let init_size = 
     (Array.fold_left Int.mul 1 decoded_repr.shape) *
@@ -197,7 +197,7 @@ let tests = [
     ;fill_value = Complex.zero}
   in
   let chain =
-    {a2a = [Transpose [||]]; a2b = Bytes Little; b2b = []}
+    {a2a = [`Transpose [||]]; a2b = `Bytes Little; b2b = []}
   in
   assert_bool
     "" @@ 
@@ -207,7 +207,7 @@ let tests = [
     "" @@ 
     Result.is_error @@
     Chain.create decoded_repr
-    {chain with a2a = [Transpose [|4; 0; 1|]]})
+    {chain with a2a = [`Transpose [|4; 0; 1|]]})
 ;
 
 "test sharding indexed codec" >:: (fun _ ->
@@ -324,11 +324,11 @@ let tests = [
   let cfg =
     {chunk_shape = [|3; 5; 5|]
     ;index_location = Start
-    ;index_codecs = {a2a = []; a2b = Bytes Little; b2b = []}
-    ;codecs = {a2a = []; a2b = Bytes Big; b2b = []}}
+    ;index_codecs = {a2a = []; a2b = `Bytes Little; b2b = []}
+    ;codecs = {a2a = []; a2b = `Bytes Big; b2b = []}}
   in
   let chain =
-    {a2a = []; a2b = ShardingIndexed cfg; b2b = []} in
+    {a2a = []; a2b = `ShardingIndexed cfg; b2b = []} in
   (*test failure for chunk shape not evenly dividing shard. *)
   assert_bool
     "chunk shape must always evenly divide a shard" @@
@@ -337,11 +337,11 @@ let tests = [
   assert_bool
     "chunk shape must have same size as shard dimensionality" @@
     Result.is_error @@ Chain.create decoded_repr @@ 
-    {a2a = []; a2b = ShardingIndexed {cfg with chunk_shape = [|5|]}; b2b = []};
+    {a2a = []; a2b = `ShardingIndexed {cfg with chunk_shape = [|5|]}; b2b = []};
 
   let chain =
     {a2a = []
-    ;a2b = ShardingIndexed {cfg with chunk_shape = [|5; 5; 5|]}
+    ;a2b = `ShardingIndexed {cfg with chunk_shape = [|5; 5; 5|]}
     ;b2b = []}
   in
   let c = Chain.create decoded_repr chain in
@@ -432,14 +432,14 @@ let tests = [
       decoded_repr.shape
       decoded_repr.fill_value
   in
-  let chain = {a2a = []; a2b = Bytes Little; b2b = []}
+  let chain = {a2a = []; a2b = `Bytes Little; b2b = []}
   in
   List.iter
     (fun level ->
       let c =
-        Chain.create decoded_repr {chain with b2b = [Gzip level]} in
+        Chain.create decoded_repr {chain with b2b = [`Gzip level]} in
       assert_bool
-        "Creating Gzip chain should not fail." @@
+        "Creating `Gzip chain should not fail." @@
         Result.is_ok c;
       let c = Result.get_ok c in
       let enc = Chain.encode c arr in

@@ -56,7 +56,7 @@ module type S = sig
     : ?sep:[< `Dot | `Slash > `Slash ] ->
       ?dimension_names:string option list ->
       ?attributes:Yojson.Safe.t ->
-      ?codecs:Codecs.chain ->
+      ?codecs:Codecs.codec_chain ->
       shape:int array ->
       chunks:int array ->
       ('a, 'b) Bigarray.kind ->

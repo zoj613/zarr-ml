@@ -23,13 +23,13 @@
    dune
    (ocaml (>= 4.14.2))
    yojson
-   ppx_deriving
    ezgzip
    owl
    stdint
    checkseum
-   (ounit2 :with-test)
    (odoc :with-doc)
+   (ounit2 :with-test)
+   (ppx_deriving :with-test)
    (bisect_ppx
      (and :dev (>= 2.5.0) :with-test)))
  (tags

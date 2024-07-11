@@ -71,14 +71,14 @@ end
 
 module ChunkKeyEncoding = struct
   type kind = Default | V2
-  type t = {name : kind; sep : string}
+  type t = {name : kind; sep : string; is_default : bool}
 
   let create = function
-    | `Dot -> {name = Default; sep = "."}
-    | `Slash -> {name = Default; sep = "/"}
+    | `Dot -> {name = Default; sep = "."; is_default = false}
+    | `Slash -> {name = Default; sep = "/"; is_default = false}
 
   (* map a chunk coordinate index to a key. E.g, (2,3,1) maps to c/2/3/1 *)
-  let encode {name; sep} index =
+  let encode {name; sep; _} index =
     let f i acc =
       string_of_int i :: acc
     in
@@ -95,31 +95,37 @@ module ChunkKeyEncoding = struct
         Array.fold_right f index []
 
   let ( = ) x y =
-    x.name = y.name && x.sep = y.sep
+    x.name = y.name && x.sep = y.sep && x.is_default = y.is_default
 
-  let to_yojson {name; sep} =
+  let to_yojson {name; sep; is_default} =
     let str =
       match name with
       | Default -> "default"
       | V2 -> "v2"
     in
-    `Assoc
-    [("name", `String str)
-    ;("configuration", `Assoc [("separator", `String sep)])]
+    if is_default then
+      `Assoc [("name", `String str)]
+    else
+      `Assoc
+      [("name", `String str)
+      ;("configuration", `Assoc [("separator", `String sep)])]
 
   let of_yojson x =
     match
-      Util.get_name x,
-      Yojson.Safe.Util.(member "configuration" x |> to_assoc)
+      Util.get_name x, Yojson.Safe.Util.member "configuration" x
     with
-    | "default", [("separator", `String "/")] ->
-      Ok {name = Default; sep = "/"}
-    | "default", [("separator", `String ".")] ->
-      Ok {name = Default; sep = "."}
-    | "v2", [("separator", `String "/")] ->
-      Ok {name = V2; sep = "/"}
-    | "v2", [("separator", `String ".")] ->
-      Ok {name = V2; sep = "."}
+    | "default", `Null ->
+      Ok {name = Default; sep = "/"; is_default = true}
+    | "default", `Assoc [("separator", `String "/")] ->
+      Ok {name = Default; sep = "/"; is_default = false}
+    | "default", `Assoc [("separator", `String ".")] ->
+      Ok {name = Default; sep = "."; is_default = false}
+    | "v2", `Null ->
+      Ok {name = V2; sep = "."; is_default = true}
+    | "v2", `Assoc [("separator", `String "/")] ->
+      Ok {name = V2; sep = "/"; is_default = false}
+    | "v2", `Assoc [("separator", `String ".")] ->
+      Ok {name = V2; sep = "."; is_default = false}
     | _ -> Error "Invalid chunk key encoding configuration."
 end
 

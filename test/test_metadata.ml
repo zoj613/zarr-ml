@@ -183,8 +183,7 @@ let test_encode_decode_fill_value fv =
     "fill_value": %s,
     "chunk_grid":
       {"name": "regular", "configuration": {"chunk_shape": [100, 10]}},
-    "chunk_key_encoding":
-      {"name": "default", "configuration": {"separator": "."}},
+    "chunk_key_encoding": {"name": "default"},
     "attributes": {"question": 7}}|} fv
   in
   let expected = Yojson.Safe.from_string str in
@@ -267,8 +266,7 @@ let array = [
     "zarr_format": 3,
     "shape": [10000, 1000],
     "data_type": "float64",
-    "chunk_key_encoding":
-      {"name": "v2", "configuration": {"separator": "."}},
+    "chunk_key_encoding": {"name": "v2"},
     "codecs": [
       {"name": "bytes", "configuration": {"endian": "big"}}],
     "fill_value": "0x7fc00000",
@@ -340,8 +338,7 @@ let array = [
     "node_type": "array",
     "shape": [10000, 1000],
     "data_type": "float64",
-    "chunk_key_encoding":
-      {"name": "v2", "configuration": {"separator": "."}},
+    "chunk_key_encoding": {"name": "v2"},
     "codecs": 
       {"name": "bytes", "configuration": {"endian": "big"}},
     "fill_value": "0x7fc00000",
@@ -468,6 +465,34 @@ let array = [
   decode_bad_array_metadata
     ~str:(template {|"UNKNOWN"|} {|[2, 4]|})
     ~msg:"Invalid Chunk grid name or configuration.";
+
+  (* test if decoding a chunk  key encoding field without a configuration
+     leads to a default value being used. *)
+  let str = {|{
+    "zarr_format": 3,
+    "shape": [10000, 1000],
+    "node_type": "array",
+    "data_type": "float64",
+    "codecs": [
+      {"name": "bytes", "configuration": {"endian": "big"}}],
+    "fill_value": "0x7fc00000",
+    "chunk_grid":
+      {"name": "regular", "configuration": {"chunk_shape": [10, 10]}},
+    "chunk_key_encoding": {"name": "v2"}}|} in
+  (match ArrayMetadata.of_yojson @@ Yojson.Safe.from_string str with
+  | Ok meta ->
+    (* we except it to use the default "." separator. *)
+    assert_equal
+      ~printer:Fun.id "2.0.1" @@ ArrayMetadata.chunk_key meta [|2; 0; 1|];
+    (* we expect the default (unspecified) config seperator to be
+       dropped when serializing the metadata to JSON format. *)
+    assert_equal
+      ~printer:Fun.id
+      Yojson.Safe.(from_string str |> to_string) @@
+      ArrayMetadata.encode meta;
+  | Error _ ->
+    assert_failure
+      "Decoding a well formed array JSON metadata should not fail.");
 
   (* test if the decoding fails if chunk key encoding contains unknown
    * separator or name. *)

@@ -46,3 +46,30 @@ module Datatype : sig
   val of_yojson : Yojson.Safe.t -> (t, string) result
   val to_yojson : t -> Yojson.Safe.t
 end
+
+type tf_error =
+  [ `Store_read of string
+  | `Store_write of string ]
+
+module type STF = sig
+  type t
+  val get : t -> string -> (string, [> tf_error]) result
+  val set : t -> string -> string -> unit
+  val erase : t -> string -> unit
+end
+
+module StorageTransformers : sig
+  type transformer =
+    | Identity
+  type t = transformer list
+
+  val default : t
+  val get :
+    (module STF with type t = 'a) -> 'a -> t -> string -> (string, [> tf_error ]) result
+  val set :
+    (module STF with type t = 'a) -> 'a -> t -> string -> string -> unit
+  val erase :
+    (module STF with type t = 'a) -> 'a -> t -> string -> unit
+  val to_yojson : t -> Yojson.Safe.t
+  val of_yojson : Yojson.Safe.t -> (t, string) result
+end

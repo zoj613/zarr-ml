@@ -5,13 +5,6 @@ type ('a, 'b) array_repr =
 (** The type summarizing the decoded/encoded representation of a Zarr array
     or chunk. *)
 
-module ExtPoint : sig
-  (** The type representing a JSON extension point metadata configuration. *)
-
-  type 'a t = {name : string ; configuration : 'a}
-  val ( = ) : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
-end
-
 module StrMap : sig include Hashtbl.S with type key = string end
 (** A hashtable with string keys. *)
 

@@ -193,3 +193,88 @@ module Datatype = struct
     | `String "nativeint" -> Ok Nativeint
     | _ -> Error ("Unsupported metadata data_type")
 end
+
+type tf_error =
+  [ `Store_read of string
+  | `Store_write of string ]
+
+module type STF = sig
+  type t
+  val get : t -> string -> (string, [> tf_error]) result
+  val set : t -> string -> string -> unit
+  val erase : t -> string -> unit
+end
+
+module StorageTransformers = struct
+  type transformer =
+    | Identity
+  type t = transformer list
+
+  let default = [Identity]
+
+  let deserialize x =
+    match
+      Util.get_name x,
+      Yojson.Safe.Util.(member "configuration" x)
+    with
+    | "identity", `Null -> Ok Identity
+    | _ ->
+      Error "Unsupported storage transformer name or configuration."
+
+  let of_yojson x =
+    let open Util.Result_syntax in
+    List.fold_right
+      (fun x acc ->
+        acc >>= fun l ->
+        deserialize x >>| fun s ->
+        s :: l)  (Yojson.Safe.Util.to_list x) (Ok [])
+
+  let to_yojson x =
+    `List
+      (List.fold_right
+        (fun x acc ->
+          match x with
+          | Identity -> acc) x [])
+
+  let get
+    (type a)
+    (module M : STF with type t = a)
+    (store : a)
+    (transformers : t)
+    (key : string)
+    =
+    let open Util.Result_syntax in
+    M.get store key >>| fun raw ->
+    snd @@
+    List.fold_right
+      (fun x (k, v) ->
+        match x with
+        | Identity -> (k, v)) transformers (key, raw)
+
+  let set
+    (type a)
+    (module M : STF with type t = a)
+    (store : a)
+    (transformers : t)
+    (key : string)
+    (value : string)
+    =
+    let k', v' =
+      List.fold_left
+        (fun (k, v) -> function
+          | Identity -> (k, v)) (key, value) transformers
+    in
+    M.set store k' v'
+
+  let erase
+    (type a)
+    (module M : STF with type t = a)
+    (store : a)
+    (transformers : t)
+    (key : string)
+    =
+    M.erase store @@
+      List.fold_left
+        (fun k -> function
+          | Identity -> k) key transformers
+end

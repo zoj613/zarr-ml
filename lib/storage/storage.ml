@@ -8,6 +8,7 @@ module ArraySet = Util.ArraySet
 module Arraytbl = Util.Arraytbl
 module AM = Metadata.ArrayMetadata
 module GM = Metadata.GroupMetadata
+module ST = Extensions.StorageTransformers
 
 module Make (M : STORE) : S with type t = M.t = struct
   include M
@@ -35,6 +36,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     ?(sep=`Slash)
     ?(dimension_names=[])
     ?(attributes=`Null)
+    ?(storage_transformers=[])
     ?codecs
     ~shape
     ~chunks
@@ -54,6 +56,7 @@ module Make (M : STORE) : S with type t = M.t = struct
       ~codecs
       ~dimension_names
       ~attributes
+      ~storage_transformers
       ~shape
       kind
       fill_value
@@ -154,11 +157,12 @@ module Make (M : STORE) : S with type t = M.t = struct
     in
     let codecs = AM.codecs meta in
     let prefix = ArrayNode.to_key node ^ "/" in
+    let tf = AM.storage_transformers meta in
     let cindices = ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl in
     ArraySet.fold (fun idx acc ->
       acc >>= fun () ->
       let chunkkey = prefix ^ AM.chunk_key meta idx in
-      (match get t chunkkey with
+      (match ST.get (module M) t tf chunkkey with
       | Ok b ->
         Codecs.Chain.decode codecs repr b
       | Error _ ->
@@ -173,7 +177,7 @@ module Make (M : STORE) : S with type t = M.t = struct
       List.iter
         (fun (c, v) -> Ndarray.set arr c v) @@ Arraytbl.find_all tbl idx;
       Codecs.Chain.encode codecs arr >>| fun encoded ->
-      set t chunkkey encoded) cindices (Ok ())
+      ST.set (module M) t tf chunkkey encoded) cindices (Ok ())
 
   let get_array
   : type a b.
@@ -206,6 +210,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     let tbl = Arraytbl.create @@ Array.length pair in
     let prefix = ArrayNode.to_key node ^ "/" in
     let chain = AM.codecs meta in
+    let tf = AM.storage_transformers meta in
     let repr =
       {kind
       ;shape = AM.chunk_shape meta
@@ -217,7 +222,7 @@ module Make (M : STORE) : S with type t = M.t = struct
       | Some arr ->
         Ok (Ndarray.get arr coord :: l)
       | None ->
-        (match get t @@ prefix ^ AM.chunk_key meta idx with
+        (match ST.get (module M) t tf @@ prefix ^ AM.chunk_key meta idx with
         | Ok b ->
           Codecs.Chain.decode chain repr b
         | Error _ ->
@@ -243,8 +248,9 @@ module Make (M : STORE) : S with type t = M.t = struct
       ArraySet.of_list @@ AM.chunk_indices meta @@ AM.shape meta in
     let s' =
       ArraySet.of_list @@ AM.chunk_indices meta shape in
+    let tf = AM.storage_transformers meta in
     ArraySet.iter
-      (fun v -> erase t @@ pre ^ AM.chunk_key meta v)
+      (fun v -> ST.erase (module M) t tf @@ pre ^ AM.chunk_key meta v)
       ArraySet.(diff s s');
     Ok (set t mkey @@ AM.encode @@ AM.update_shape meta shape)
 end

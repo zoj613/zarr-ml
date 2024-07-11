@@ -38,6 +38,7 @@ module ArrayMetadata : sig
     ?codecs:Codecs.Chain.t ->
     ?dimension_names:string option list ->
     ?attributes:Yojson.Safe.t ->
+    ?storage_transformers:Extensions.StorageTransformers.t ->
     shape:int array ->
     ('a, 'b) Bigarray.kind ->
     'a ->
@@ -75,6 +76,10 @@ module ArrayMetadata : sig
   val attributes : t -> Yojson.Safe.t
   (** [attributes t] Returns a Yojson type containing user attributes assigned
       to the zarr array represented by [t]. *)
+
+  val storage_transformers : t -> Extensions.StorageTransformers.t
+  (** [storage_transformers t] Returns the storage transformers to be applied
+      to the keys and values of this store. *)
 
   val dimension_names : t -> string option list
   (** [dimension_name t] returns a list of dimension names. If none are

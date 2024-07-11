@@ -112,13 +112,14 @@ module ArrayMetadata = struct
     ;chunk_key_encoding : ChunkKeyEncoding.t
     ;attributes : Yojson.Safe.t
     ;dimension_names : string option list
-    ;storage_transformers : Yojson.Safe.t Util.ExtPoint.t list}
+    ;storage_transformers : StorageTransformers.t}
 
   let create
     ?(sep=`Slash)
     ?(codecs=Codecs.Chain.default)
     ?(dimension_names=[])
     ?(attributes=`Null)
+    ?(storage_transformers=[])
     ~shape
     kind
     fv
@@ -134,7 +135,7 @@ module ArrayMetadata = struct
     ;dimension_names
     ;zarr_format = 3
     ;node_type = "array"
-    ;storage_transformers = []
+    ;storage_transformers
     ;fill_value = FillValue.of_kind kind fv
     ;data_type = Datatype.of_kind kind
     ;chunk_key_encoding = ChunkKeyEncoding.create sep}
@@ -168,6 +169,12 @@ module ArrayMetadata = struct
             | None -> `Null) xs
         in
         l @ [("dimension_names", `List xs')]
+    in
+    let l =
+      match t.storage_transformers with
+      | [] | [StorageTransformers.Identity] -> l
+      | xs ->
+        l @ [("storage_transformers", StorageTransformers.to_yojson xs)]
     in `Assoc l
 
   let of_yojson x =
@@ -256,8 +263,9 @@ module ArrayMetadata = struct
     >>= fun dimension_names ->
 
     (match member "storage_transformers" x with
-    | `Null -> Ok []
-    | _ -> Error "storage_transformers field is not yet supported.")
+    | `Null | `List [] -> Ok []
+    | _ ->
+      Error "storage_transformers field is not yet supported.")
     >>| fun storage_transformers ->
 
     {zarr_format; shape; node_type; data_type; codecs; fill_value; chunk_grid
@@ -285,6 +293,8 @@ module ArrayMetadata = struct
   let dimension_names t = t.dimension_names
 
   let attributes t = t.attributes
+
+  let storage_transformers t = t.storage_transformers
 
   let chunk_shape t =
     RegularGrid.chunk_shape t.chunk_grid

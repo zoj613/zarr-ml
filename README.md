@@ -34,9 +34,9 @@ let array_node =
   Result.get_ok @@ ArrayNode.(group_node / "name");;
 
 let codec_chain =
-  {a2a = [Transpose [|2; 0; 1|]]
-  ;a2b = Bytes Big
-  ;b2b = [Gzip L2]};;
+  {a2a = [`Transpose [|2; 0; 1|]]
+  ;a2b = `Bytes Big
+  ;b2b = [`Gzip L2]};;
 
 FilesystemStore.create_array
   ~codecs:codec_chain
@@ -81,16 +81,16 @@ R[73,1]    -INF    -INF     -INF     -INF    -INF     -INF *)
 let config =
   {chunk_shape = [|5; 3; 5|]
   ;codecs =
-    {a2a = [Transpose [|2; 0; 1|]]
-    ;a2b = Bytes Little
-    ;b2b = [Gzip L5]}
+    {a2a = [`Transpose [|2; 0; 1|]]
+    ;a2b = `Bytes Little
+    ;b2b = [`Gzip L5]}
   ;index_codecs =
     {a2a = []
-    ;a2b = Bytes Big
-    ;b2b = [Crc32c]}
+    ;a2b = `Bytes Big
+    ;b2b = [`Crc32c]}
   ;index_location = Start};;
 let codec_chain =
-  {a2a = []; a2b = ShardingIndexed config; b2b = []};;
+  {a2a = []; a2b = `ShardingIndexed config; b2b = []};;
 
 let shard_node = Result.get_ok @@ ArrayNode.(group_node / "another");;
 

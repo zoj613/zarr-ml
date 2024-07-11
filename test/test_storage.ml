@@ -75,7 +75,7 @@ let test_store
   let r =
     M.create_array
       ~sep:`Dot
-      ~codecs:{a2a = []; a2b = Bytes Big; b2b = []}
+      ~codecs:{a2a = []; a2b = `Bytes Big; b2b = []}
       ~shape:[|100; 100; 50|]
       ~chunks:[|10; 15; 20|]
       Bigarray.Complex64

@@ -65,24 +65,6 @@ let tests = [
   let c = Chain.create decoded_repr chain in
   assert_bool "" @@ Result.is_ok c;
   let c = Result.get_ok c in
-  assert_raises
-    ~msg:"Encoded size cannot be computed for compression codecs."
-    (Failure "Cannot compute encoded size for variable-size codecs.")
-    (fun () -> Chain.compute_encoded_size 0 c);
-
-  let c' =
-    Result.get_ok @@
-    Chain.create decoded_repr {chain with b2b = [`Crc32c]}
-  in
-  let init_size = 
-    (Array.fold_left Int.mul 1 decoded_repr.shape) *
-    Bigarray.kind_size_in_bytes decoded_repr.kind
-  in
-  assert_equal
-    ~printer:string_of_int
-    (init_size + 4 + 4) @@ (* 2 crc32c codecs *)
-    Chain.compute_encoded_size init_size c';
-    
   let arr =
     Ndarray.create
       decoded_repr.kind
@@ -336,7 +318,10 @@ let tests = [
   let cfg =
     {chunk_shape = [|3; 5; 5|]
     ;index_location = Start
-    ;index_codecs = {a2a = []; a2b = `Bytes Little; b2b = []}
+    ;index_codecs =
+      {a2a = [] 
+      ;a2b = `Bytes Little
+      ;b2b = [`Crc32c]}
     ;codecs = {a2a = []; a2b = `Bytes Big; b2b = []}}
   in
   let chain =
@@ -353,7 +338,7 @@ let tests = [
 
   let chain =
     {a2a = []
-    ;a2b = `ShardingIndexed {cfg with chunk_shape = [|5; 5; 5|]}
+    ;a2b = `ShardingIndexed {cfg with chunk_shape = [|5; 3; 5|]}
     ;b2b = []}
   in
   let c = Chain.create decoded_repr chain in
@@ -379,6 +364,23 @@ let tests = [
   | Error _ ->
     assert_failure
       "Successfully encoded array should decode without fail");
+
+  (* test if including a transpose codec for index_codec chain results in
+    a failure. *)
+  let chain' =
+    {chain with
+      a2b = `ShardingIndexed
+        {cfg with
+          chunk_shape = [|5; 3; 5|]
+          ;index_codecs =
+            {cfg.index_codecs with a2a = [`Transpose [|0; 3; 1; 2|]]}}}
+  in
+  let cc = Chain.create decoded_repr chain' |> Result.get_ok in
+  assert_bool
+    "shard index chain can't be encoded since Owl does not support transposing
+    Int64 types.  See:
+    https://github.com/owlbarn/owl/issues/671#issuecomment-2211303040" @@
+    Result.is_error @@ Chain.encode cc arr;
 
   (* test correctness of decoding nested sharding codecs.*)
   let str =

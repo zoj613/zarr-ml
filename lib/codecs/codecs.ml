@@ -19,9 +19,9 @@ type bytestobytes =
 
 type arraytobytes =
   [ `Bytes of endianness
-  | `ShardingIndexed of sharding_config ]
+  | `ShardingIndexed of shard_config ]
 
-and sharding_config =
+and shard_config =
   {chunk_shape : int array
   ;codecs : bytestobytes shard_chain
   ;index_codecs : fixed_bytestobytes shard_chain
@@ -94,19 +94,6 @@ module Chain = struct
 
   let default : t =
     {a2a = []; a2b = ArrayToBytes.default; b2b = []}
-
-  let compute_encoded_size : int -> t -> int = fun input_size t ->
-    List.fold_left BytesToBytes.compute_encoded_size
-      (ArrayToBytes.compute_encoded_size
-         (List.fold_left ArrayToArray.compute_encoded_size
-            input_size t.a2a) t.a2b)
-      (List.map
-        (function
-        | Any Crc32c -> Crc32c
-        | Any _ ->
-          let msg =
-            "Cannot compute encoded size for variable-size codecs."
-          in failwith msg) t.b2b)
 
   let encode :
     type a b. t -> (a, b) Ndarray.t -> (string, [> error ]) result

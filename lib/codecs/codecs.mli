@@ -37,10 +37,10 @@ type loc = Start | End
 (** The type of [array -> bytes] codecs. *)
 type arraytobytes =
   [ `Bytes of endianness
-  | `ShardingIndexed of sharding_config ]
+  | `ShardingIndexed of shard_config ]
 
 (** A type representing the Sharding indexed codec's configuration parameters. *)
-and sharding_config =
+and shard_config =
   {chunk_shape : int array
   ;codecs : bytestobytes shard_chain
   ;index_codecs : fixed_bytestobytes shard_chain
@@ -84,10 +84,6 @@ module Chain : sig
   (** [default] returns the default codec chain that contains only
       the required codecs as defined in the Zarr Version 3 specification. *)
   val default : t
-
-  (** [compute_encoded_size init t] returns the size (in bytes) of the
-      encoded byte string given the size [init] of its decoded representation. *)
-  val compute_encoded_size : int -> t -> int
 
   (** [encode t x] computes the encoded byte string representation of
       array chunk [x]. Returns an error upon failure. *)

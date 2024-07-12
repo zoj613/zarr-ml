@@ -46,11 +46,11 @@ let rec to_internal_a2b v =
     ShardingIndexed
       {chunk_shape = cfg.chunk_shape
       ;index_location = cfg.index_location
-      ;index_codecs : chain = 
+      ;index_codecs : fixed bytes_to_bytes sharding_chain = 
         {a2a = to_internal_a2a cfg.index_codecs.a2a
         ;a2b = to_internal_a2b cfg.index_codecs.a2b
         ;b2b = fixed_to_internal_b2b cfg.index_codecs.b2b}
-      ;codecs : chain =
+      ;codecs : any_bytes_to_bytes sharding_chain =
         {a2a = to_internal_a2a cfg.codecs.a2a
         ;a2b = to_internal_a2b cfg.codecs.a2b
         ;b2b = variable_to_internal_b2b cfg.codecs.b2b}}
@@ -71,11 +71,11 @@ and variable_to_internal_b2b b2b =
   List.fold_right
     (fun x acc ->
       match x with
-      | `Gzip lvl -> Gzip lvl :: acc
-      | `Crc32c -> Crc32c :: acc) b2b []
+      | `Gzip lvl -> Any (Gzip lvl) :: acc
+      | `Crc32c -> Any Crc32c :: acc) b2b []
 
 module Chain = struct
-  type t = chain
+  type t = any_bytes_to_bytes sharding_chain
 
   let create : 
     type a b. (a, b) Util.array_repr -> codec_chain -> (t, [> error ]) result
@@ -99,7 +99,14 @@ module Chain = struct
     List.fold_left BytesToBytes.compute_encoded_size
       (ArrayToBytes.compute_encoded_size
          (List.fold_left ArrayToArray.compute_encoded_size
-            input_size t.a2a) t.a2b) t.b2b
+            input_size t.a2a) t.a2b)
+      (List.map
+        (function
+        | Any Crc32c -> Crc32c
+        | Any _ ->
+          let msg =
+            "Cannot compute encoded size for variable-size codecs."
+          in failwith msg) t.b2b)
 
   let encode :
     type a b. t -> (a, b) Ndarray.t -> (string, [> error ]) result

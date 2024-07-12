@@ -233,7 +233,9 @@ end = struct
       Result.error @@ `Sharding (t.chunk_shape, repr.shape, msg))
     >>= fun () ->
     parse_chain repr t.codecs >>= fun () ->
-    parse_chain repr t.index_codecs
+    (* must add one dimension to the representation of the index array. *)
+    parse_chain
+      {repr with shape = Array.append repr.shape [|2|]} t.index_codecs
 
   let compute_encoded_size input_size t =
     List.fold_left BytesToBytes.compute_encoded_size

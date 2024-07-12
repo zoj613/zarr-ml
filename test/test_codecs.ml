@@ -67,7 +67,7 @@ let tests = [
   let c = Result.get_ok c in
   assert_raises
     ~msg:"Encoded size cannot be computed for compression codecs."
-    (Failure "Cannot compute encoded size of Gzip codec.")
+    (Failure "Cannot compute encoded size for variable-size codecs.")
     (fun () -> Chain.compute_encoded_size 0 c);
 
   let c' =
@@ -310,6 +310,19 @@ let tests = [
           "index_codecs":
             [{"name": "bytes", "configuration": {"endian": "big"}},
              {"name": "UNKNOWN_BYTESTOBYTES_CODEC"}],
+          "codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
+  (* test violation of index_codec invariant when it contains variable-sized codecs. *)
+  decode_chain
+    ~str:{|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"index_location": "start",
+          "chunk_shape": [5, 5, 5],
+          "index_codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}},
+             {"name": "gzip", "configuration": {"level": 1}}],
           "codecs":
             [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
     ~msg:"Must be exactly one array->bytes codec.";

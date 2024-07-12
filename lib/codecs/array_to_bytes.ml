@@ -18,14 +18,14 @@ type array_to_bytes =
 
 and shard_config =
   {chunk_shape : int array
-  ;codecs : chain
-  ;index_codecs : chain
+  ;codecs : any_bytes_to_bytes sharding_chain
+  ;index_codecs : fixed bytes_to_bytes sharding_chain
   ;index_location : loc}
 
-and chain =
-  {a2a: array_to_array list
-  ;a2b: array_to_bytes
-  ;b2b: bytes_to_bytes list}
+and 'a sharding_chain = {
+  a2a: array_to_array list;
+  a2b: array_to_bytes;
+  b2b: 'a list}
 
 type error =
   [ Extensions.error
@@ -246,7 +246,7 @@ end = struct
   
   let rec encode_chain
     : type a b.
-      chain ->
+      any_bytes_to_bytes sharding_chain ->
       (a, b) Ndarray.t ->
       (string, [> error]) result
     = fun t x ->
@@ -318,7 +318,11 @@ end = struct
       Ndarray.set shard_idx coord nbytes;
       offset := Int64.add !offset nbytes) cindices (Ok ())
     >>= fun () ->
-    encode_chain t.index_codecs shard_idx >>| fun b' ->
+    (* convert t.index_codecs to a generic bytes-to-bytes chain. *)
+    encode_chain
+      {t.index_codecs with b2b =
+        List.map (fun v -> Any v) t.index_codecs.b2b} shard_idx
+    >>| fun b' ->
     match t.index_location with
     | Start ->
       let buf' = Buffer.create @@ String.length b' in
@@ -331,7 +335,7 @@ end = struct
 
   let rec decode_chain
     : type a b. 
-      chain ->
+      any_bytes_to_bytes sharding_chain ->
       string ->
       (a, b) Util.array_repr ->
       ((a, b) Ndarray.t, [> error]) result
@@ -371,7 +375,10 @@ end = struct
       ;kind = Bigarray.Int64
       ;shape = Array.append cps [|2|]}
     in
-    decode_chain t.index_codecs b' repr >>| fun decoded ->
+    decode_chain
+      {t.index_codecs with b2b =
+        List.map (fun v -> Any v) t.index_codecs.b2b} b' repr 
+    >>| fun decoded ->
     (decoded, rest)
 
   and index_size t cps =
@@ -433,9 +440,11 @@ end = struct
       List.map BytesToBytes.to_yojson chain.b2b)
 
   and to_yojson t =
-    let codecs = chain_to_yojson t.codecs
-    in
-    let index_codecs = chain_to_yojson t.index_codecs
+    let codecs = chain_to_yojson t.codecs in
+    let index_codecs =
+      chain_to_yojson
+        {t.index_codecs with b2b =
+          List.map (fun v -> Any v) t.index_codecs.b2b}
     in
     let index_location =
       match t.index_location with
@@ -456,9 +465,10 @@ end = struct
        ("index_codecs", index_codecs);
        ("codecs", codecs)])]
 
-  let rec chain_of_yojson
-  : Yojson.Safe.t list -> (chain, string) result
-  = fun codecs -> 
+  let rec chain_of_yojson :
+    Yojson.Safe.t list ->
+    (any_bytes_to_bytes sharding_chain, string) result
+    = fun codecs -> 
     let filter_partition f encoded =
       List.fold_right (fun c (l, r) ->
         match f c with
@@ -524,6 +534,15 @@ end = struct
       Error "sharding_indexed must have a index_codecs field"
     | x :: _ ->
       chain_of_yojson @@ Yojson.Safe.Util.to_list x)
-    >>| fun index_codecs ->
-    {index_codecs; index_location; codecs; chunk_shape}
+    >>= fun ic ->
+    (* Ensure index_codecs only contains fixed size bytes-to-bytes codecs. *)
+    List.fold_right
+      (fun c acc ->
+        acc >>= fun l ->
+        match c with
+        | Any Crc32c -> Ok (Crc32c :: l)
+        | Any (Gzip _) ->
+          Error "index_codecs must not contain variable-sized codecs.")
+      ic.b2b (Ok []) >>| fun b2b ->
+    {index_codecs = {ic with b2b}; index_location; codecs; chunk_shape}
 end

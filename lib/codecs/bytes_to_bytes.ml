@@ -3,18 +3,21 @@ module Ndarray = Owl.Dense.Ndarray.Generic
 type compression_level =
   | L0 | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9
 
-type bytes_to_bytes =
-  | Crc32c
-  | Gzip of compression_level
+type fixed = F
+type variable = V
+
+type _ bytes_to_bytes =
+  | Crc32c : fixed bytes_to_bytes
+  | Gzip : compression_level -> variable bytes_to_bytes
+
+type any_bytes_to_bytes =
+  | Any : _ bytes_to_bytes -> any_bytes_to_bytes
 
 type error = 
   [ `Gzip of Ezgzip.error ]
 
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/gzip/v1.0.html *)
 module GzipCodec = struct
-  let compute_encoded_size _ =
-    failwith "Cannot compute encoded size of Gzip codec."
-
   let to_int = function
     | L0 -> 0 | L1 -> 1 | L2 -> 2 | L3 -> 3 | L4 -> 4
     | L5 -> 5 | L6 -> 6 | L7 -> 7 | L8 -> 8 | L9 -> 9
@@ -69,24 +72,26 @@ end
 
 module BytesToBytes = struct
   let compute_encoded_size input_size = function
-    | Gzip _ -> GzipCodec.compute_encoded_size input_size
     | Crc32c -> Crc32cCodec.compute_encoded_size input_size
 
   let encode t x = match t with
-    | Gzip l -> GzipCodec.encode l x
-    | Crc32c -> Crc32cCodec.encode x
+    | Any Gzip l -> GzipCodec.encode l x
+    | Any Crc32c -> Crc32cCodec.encode x
 
   let decode t x = match t with
-    | Gzip _ -> GzipCodec.decode x
-    | Crc32c -> Crc32cCodec.decode x
+    | Any Gzip _ -> GzipCodec.decode x
+    | Any Crc32c -> Crc32cCodec.decode x
 
   let to_yojson = function
-    | Gzip l -> GzipCodec.to_yojson l
-    | Crc32c -> Crc32cCodec.to_yojson 
+    | Any Gzip l -> GzipCodec.to_yojson l
+    | Any Crc32c -> Crc32cCodec.to_yojson 
 
   let of_yojson x =
+    let open Util.Result_syntax in
     match Util.get_name x with
-    | "gzip" -> GzipCodec.of_yojson x
-    | "crc32c" -> Crc32cCodec.of_yojson x
+    | "gzip" ->
+      GzipCodec.of_yojson x >>| fun gzip -> Any gzip
+    | "crc32c" ->
+      Crc32cCodec.of_yojson x >>| fun crc -> Any crc
     | s -> Error ("bytes->bytes codec not supported: " ^ s)
 end

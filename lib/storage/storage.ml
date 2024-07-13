@@ -80,32 +80,27 @@ module Make (M : STORE) : S with type t = M.t = struct
 
   let find_child_nodes t node =
     List.fold_left
-      (fun (lacc, racc) pre ->
+      (fun (l, r) pre ->
         let p = "/" ^ String.(length pre - 1 |> sub pre 0) in
         if unsafe_node_type t (pre ^ "zarr.json") = "array" then
-          let x = Result.get_ok @@ ArrayNode.of_path p in
-          x :: lacc, racc
+          (Result.get_ok @@ ArrayNode.of_path p) :: l, r
         else
-          let x = Result.get_ok @@ GroupNode.of_path p in
-          lacc, x :: racc)
+          l, (Result.get_ok @@ GroupNode.of_path p) :: r)
       ([], []) (snd @@ list_dir t @@ GroupNode.to_prefix node)
 
   let find_all_nodes t =
-    let keys =
-      List.filter
-        (String.ends_with ~suffix:"/zarr.json")
-        (list_prefix "" t) in
-    let a, g =
+    match
       List.fold_left
-        (fun (lacc, racc) key ->
-          let p = "/" ^ String.(length key - 10 |> sub key 0) in
-          if unsafe_node_type t key = "array" then
-            (Result.get_ok @@ ArrayNode.of_path p) :: lacc, racc
-          else
-            lacc, (Result.get_ok @@ GroupNode.of_path p) :: racc)
-        ([], []) keys in
-    match a, g with
-    | [], [] -> a, g
+        (fun ((l, r) as acc) key ->
+          if String.ends_with ~suffix:"/zarr.json" key then
+            let p = "/" ^ String.(length key - 10 |> sub key 0) in
+            if unsafe_node_type t key = "array" then
+              (Result.get_ok @@ ArrayNode.of_path p) :: l, r
+            else
+              l, (Result.get_ok @@ GroupNode.of_path p) :: r
+          else acc) ([], []) (list_prefix "" t)
+    with
+    | [], [] as xs -> xs
     | l, r -> l, GroupNode.root :: r
 
   let erase_group_node t node =
@@ -114,9 +109,7 @@ module Make (M : STORE) : S with type t = M.t = struct
   let erase_array_node t node =
     erase t @@ ArrayNode.to_metakey node
 
-  let erase_all_nodes t =
-    (* [erase_prefix t ""] is surely faster? *)
-    erase_values t @@ list_prefix "" t
+  let erase_all_nodes t = erase_prefix t ""
 
   let set_array
   : type a b.

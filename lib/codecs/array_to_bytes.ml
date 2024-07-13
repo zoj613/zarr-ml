@@ -267,18 +267,17 @@ end = struct
       ;shape = t.chunk_shape} in
     let cindices = ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl in
     let buf = Buffer.create @@ Ndarray.size_in_bytes x in
-    let offset = ref 0L in
     let coord = idx_shp in
     ArraySet.fold (fun idx acc ->
-      acc >>= fun () ->
+      acc >>= fun offset ->
       (* find_all returns bindings in reverse order. To restore the
        * C-ordering of elements we must call List.rev. *)
       let vals =
+        Array.of_list @@
+        snd @@
+        List.split @@
+        List.rev @@
         Arraytbl.find_all tbl idx
-        |> List.rev 
-        |> List.split
-        |> snd
-        |> Array.of_list
       in
       let x' = Ndarray.of_array repr.kind vals t.chunk_shape in
       encode_chain t.codecs x' >>| fun b ->
@@ -286,24 +285,18 @@ end = struct
       let len = Array.length idx in
       Array.blit idx 0 coord 0 len;
       coord.(len) <- 0;
-      Ndarray.set shard_idx coord !offset;
+      Ndarray.set shard_idx coord offset;
       coord.(len) <- 1;
       let nbytes = Int64.of_int @@ String.length b in
       Ndarray.set shard_idx coord nbytes;
-      offset := Int64.add !offset nbytes) cindices (Ok ())
-    >>= fun () ->
+      Int64.add offset nbytes) cindices (Ok 0L)
+    >>= fun _ ->
     (* convert t.index_codecs to a generic bytes-to-bytes chain. *)
     encode_chain (t.index_codecs :> bytestobytes internal_chain) shard_idx
     >>| fun b' ->
     match t.index_location with
-    | Start ->
-      let buf' = Buffer.create @@ String.length b' in
-      Buffer.add_string buf' b';
-      Buffer.add_buffer buf' buf;
-      Buffer.contents buf'
-    | End ->
-      Buffer.add_string buf b';
-      Buffer.contents buf
+    | Start -> b' ^ Buffer.contents buf
+    | End -> Buffer.(add_string buf b'; contents buf)
 
   let rec decode_chain
     : type a b. 

@@ -1,10 +1,6 @@
+open Codecs_intf
+
 module Ndarray = Owl.Dense.Ndarray.Generic
-
-type arraytoarray =
-  [ `Transpose of int array ]
-
-type error =
-  [ `Transpose_order of int array * string ]
 
 module ArrayToArray : sig 
   val parse

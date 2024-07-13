@@ -1,32 +1,6 @@
-open Array_to_array
-open Bytes_to_bytes
+open Codecs_intf
 
 module Ndarray = Owl.Dense.Ndarray.Generic
-
-type endianness = Little | Big
-
-type loc = Start | End
-
-type arraytobytes =
-  [ `Bytes of endianness
-  | `ShardingIndexed of shard_config ]
-
-and shard_config =
-  {chunk_shape : int array
-  ;codecs : bytestobytes shard_chain
-  ;index_codecs : fixed_bytestobytes shard_chain
-  ;index_location : loc}
-
-and 'a shard_chain =
-  {a2a: arraytoarray list
-  ;a2b: arraytobytes
-  ;b2b: 'a list}
-
-type error =
-  [ Extensions.error
-  | Array_to_array.error
-  | Bytes_to_bytes.error
-  | `Sharding of int array * int array * string ]
 
 module ArrayToBytes : sig
   val parse

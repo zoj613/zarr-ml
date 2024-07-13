@@ -3,15 +3,14 @@ module Ndarray = Owl.Dense.Ndarray.Generic
 type compression_level =
   | L0 | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9
 
-type fixed = F
-type variable = V
+type fixed_bytestobytes =
+  [ `Crc32c ]
 
-type _ bytes_to_bytes =
-  | Crc32c : fixed bytes_to_bytes
-  | Gzip : compression_level -> variable bytes_to_bytes
+type variable_bytestobytes =
+  [ `Gzip of compression_level ]
 
-type any_bytes_to_bytes =
-  | Any : _ bytes_to_bytes -> any_bytes_to_bytes
+type bytestobytes =
+  [ fixed_bytestobytes | variable_bytestobytes ]
 
 type error = 
   [ `Gzip of Ezgzip.error ]
@@ -42,7 +41,7 @@ module GzipCodec = struct
     let open Util.Result_syntax in
     match Yojson.Safe.Util.(member "configuration" x |> to_assoc) with
     | [("level", `Int i)] ->
-      of_int i >>| fun level -> Gzip level
+      of_int i >>| fun level -> `Gzip level
     | _ -> Error "Invalid Gzip configuration."
 end
 
@@ -67,31 +66,33 @@ module Crc32cCodec = struct
   let of_yojson _ =
     (* checks for validity of configuration are done via
        BytesToBytes.of_yojson so just return valid result.*)
-      Ok Crc32c
+      Ok `Crc32c
 end
 
 module BytesToBytes = struct
-  let compute_encoded_size input_size = function
-    | Crc32c -> Crc32cCodec.compute_encoded_size input_size
+  let compute_encoded_size :
+    int -> fixed_bytestobytes -> int
+    = fun input_size -> function
+    | `Crc32c -> Crc32cCodec.compute_encoded_size input_size
 
   let encode t x = match t with
-    | Any Gzip l -> GzipCodec.encode l x
-    | Any Crc32c -> Crc32cCodec.encode x
+    | `Gzip l -> GzipCodec.encode l x
+    | `Crc32c -> Crc32cCodec.encode x
 
   let decode t x = match t with
-    | Any Gzip _ -> GzipCodec.decode x
-    | Any Crc32c -> Crc32cCodec.decode x
+    | `Gzip _ -> GzipCodec.decode x
+    | `Crc32c -> Crc32cCodec.decode x
 
   let to_yojson = function
-    | Any Gzip l -> GzipCodec.to_yojson l
-    | Any Crc32c -> Crc32cCodec.to_yojson 
+    | `Gzip l -> GzipCodec.to_yojson l
+    | `Crc32c -> Crc32cCodec.to_yojson 
 
   let of_yojson x =
     let open Util.Result_syntax in
     match Util.get_name x with
     | "gzip" ->
-      GzipCodec.of_yojson x >>| fun gzip -> Any gzip
+      GzipCodec.of_yojson x >>| fun gzip -> gzip
     | "crc32c" ->
-      Crc32cCodec.of_yojson x >>| fun crc -> Any crc
+      Crc32cCodec.of_yojson x >>| fun crc -> crc
     | s -> Error ("bytes->bytes codec not supported: " ^ s)
 end

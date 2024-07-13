@@ -5,92 +5,55 @@ open Util.Result_syntax
 
 module Ndarray = Owl.Dense.Ndarray.Generic
 
-type arraytoarray =
-  [ `Transpose of int array ]
+type error =
+  [ `Extension of string 
+  | `Gzip of Ezgzip.error
+  | `Transpose_order of int array * string
+  | `CodecChain of string
+  | `Sharding of int array * int array * string ]
 
-type fixed_bytestobytes =
-  [ `Crc32c ]
+type codec_chain =
+  [ arraytoarray | arraytobytes | bytestobytes ] list
 
-type variable_bytestobytes =
-  [ `Gzip of compression_level ]
-
-type bytestobytes =
-  [ fixed_bytestobytes | variable_bytestobytes ]
-
-type arraytobytes =
-  [ `Bytes of endianness
-  | `ShardingIndexed of shard_config ]
-
-and shard_config =
-  {chunk_shape : int array
-  ;codecs : bytestobytes shard_chain
-  ;index_codecs : fixed_bytestobytes shard_chain
-  ;index_location : loc}
-
-and 'a shard_chain = {
-  a2a: arraytoarray list;
-  a2b: arraytobytes;
-  b2b: 'a list;
-}
-
-type codec_chain = {
-  a2a: arraytoarray list;
-  a2b: arraytobytes;
-  b2b: bytestobytes list;
-}
-
-let rec to_internal_a2b v =
-  match v with
-  | `Bytes e -> Bytes e
-  | `ShardingIndexed cfg ->
-    ShardingIndexed
-      {chunk_shape = cfg.chunk_shape
-      ;index_location = cfg.index_location
-      ;index_codecs : fixed bytes_to_bytes sharding_chain = 
-        {a2a = to_internal_a2a cfg.index_codecs.a2a
-        ;a2b = to_internal_a2b cfg.index_codecs.a2b
-        ;b2b = fixed_to_internal_b2b cfg.index_codecs.b2b}
-      ;codecs : any_bytes_to_bytes sharding_chain =
-        {a2a = to_internal_a2a cfg.codecs.a2a
-        ;a2b = to_internal_a2b cfg.codecs.a2b
-        ;b2b = variable_to_internal_b2b cfg.codecs.b2b}}
-
-and to_internal_a2a a2a =
-  List.fold_right
-    (fun x acc ->
-      match x with
-      | `Transpose o -> Transpose o :: acc) a2a []
-
-and fixed_to_internal_b2b b2b =
-  List.fold_right
-    (fun x acc ->
-      match x with
-      | `Crc32c -> Crc32c :: acc) b2b []
-
-and variable_to_internal_b2b b2b =
-  List.fold_right
-    (fun x acc ->
-      match x with
-      | `Gzip lvl -> Any (Gzip lvl) :: acc
-      | `Crc32c -> Any Crc32c :: acc) b2b []
+type internal_chain =
+  {a2a : arraytoarray list
+  ;a2b : arraytobytes
+  ;b2b : bytestobytes list}
+  (*;b2b_fixed : fixed_bytestobytes list
+  ;b2b_variable : variable_bytestobytes list} *)
 
 module Chain = struct
-  type t = any_bytes_to_bytes sharding_chain
+  type t = internal_chain
 
   let create : 
     type a b. (a, b) Util.array_repr -> codec_chain -> (t, [> error ]) result
     = fun repr cc ->
-    let a2a = to_internal_a2a cc.a2a in
-    let a2b = to_internal_a2b cc.a2b in
-    let b2b = variable_to_internal_b2b cc.b2b in
+    let a2a, rest = List.partition_map (function
+      | #arraytoarray as c -> Either.left c
+      | #arraytobytes as c -> Either.right c
+      | #bytestobytes as c -> Either.right c) cc
+    in
+    (match 
+      List.partition_map (function
+        | #arraytobytes as c -> Either.left c
+        | #bytestobytes as c -> Either.right c) rest
+    with
+    | [x], rest -> Ok (x, rest)
+    | _ ->
+      Result.error @@ `CodecChain "Must be exactly one array->bytes codec.")
+    >>= fun (a2b, b2b) ->
+   (* let b2b_fixed, b2b_variable = List.partition_map (function
+      | #fixed_bytestobytes as c -> Either.left c
+      | #variable_bytestobytes as c -> Either.right c) rest
+    in *)
+    let ic = {a2a; a2b; b2b} in
     List.fold_left
       (fun acc c ->
          acc >>= fun r ->
          ArrayToArray.parse r c >>= fun () ->
-         ArrayToArray.compute_encoded_representation c r) (Ok repr) a2a
+         ArrayToArray.compute_encoded_representation c r) (Ok repr) ic.a2a
     >>= fun repr' ->
-    ArrayToBytes.parse repr' a2b >>| fun () ->
-    ({a2a; a2b; b2b} : t)
+    ArrayToBytes.parse repr' ic.a2b >>| fun () -> ic
 
   let default : t =
     {a2a = []; a2b = ArrayToBytes.default; b2b = []}

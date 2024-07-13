@@ -17,7 +17,7 @@ let bytes_encode_decode
   = fun decoded_repr ->
     List.iter
       (fun bytes_codec ->
-        let chain = {a2a = []; a2b = bytes_codec; b2b = []} in
+        let chain = [bytes_codec] in
         let r = Chain.create decoded_repr chain in
         assert_bool
           "creating correct bytes codec chain should not fail." @@
@@ -51,17 +51,25 @@ let tests = [
     ;index_codecs = {a2a = []; a2b = `Bytes Little; b2b = [`Crc32c]}
     ;codecs = {a2a = [`Transpose [|0; 1; 2|]]; a2b = `Bytes Big; b2b = [`Gzip L1]}}
   in
-  let chain =
-    {a2a = [`Transpose [|2; 1; 0; 3|]]
-    ;a2b = `ShardingIndexed shard_cfg
-    ;b2b = [`Crc32c; `Gzip L9]}
+  let chain  =
+    [`Transpose [|2; 1; 0; 3|]; `ShardingIndexed shard_cfg; `Crc32c; `Gzip L9]
   in
   assert_bool
-    "" @@
+    "Chain with incorrect transpose dimension order cannot be created" @@
     Result.is_error @@
     Chain.create decoded_repr chain; 
 
-  let chain = {chain with a2a = [`Transpose [|2; 1; 0|]]} in
+  let chain  =
+    [`Transpose [|2; 1; 0|]; `ShardingIndexed shard_cfg; `Bytes Big]
+  in
+  assert_bool
+    "Chain with more than 1 array->bytes codec cannot be created" @@
+    Result.is_error @@
+    Chain.create decoded_repr chain; 
+
+  let chain =
+    [`Transpose [|2; 1; 0|]; `ShardingIndexed shard_cfg; `Crc32c; `Gzip L9]
+  in
   let c = Chain.create decoded_repr chain in
   assert_bool "" @@ Result.is_ok c;
   let c = Result.get_ok c in
@@ -177,18 +185,15 @@ let tests = [
     ;kind = Bigarray.Complex32
     ;fill_value = Complex.zero}
   in
-  let chain =
-    {a2a = [`Transpose [||]]; a2b = `Bytes Little; b2b = []}
-  in
+  let chain = [`Transpose [||]; `Bytes Little] in
   assert_bool
     "" @@ 
     Result.is_error @@
     Chain.create decoded_repr chain;
   assert_bool
-    "" @@ 
+    "Transpose codec with misisng dimensions should fail chain creation." @@ 
     Result.is_error @@
-    Chain.create decoded_repr
-    {chain with a2a = [`Transpose [|4; 0; 1|]]})
+    Chain.create decoded_repr [`Transpose [|4; 0; 1|]; `Bytes Little])
 ;
 
 "test sharding indexed codec" >:: (fun _ ->
@@ -324,8 +329,7 @@ let tests = [
       ;b2b = [`Crc32c]}
     ;codecs = {a2a = []; a2b = `Bytes Big; b2b = []}}
   in
-  let chain =
-    {a2a = []; a2b = `ShardingIndexed cfg; b2b = []} in
+  let chain = [`ShardingIndexed cfg] in
   (*test failure for chunk shape not evenly dividing shard. *)
   assert_bool
     "chunk shape must always evenly divide a shard" @@
@@ -334,13 +338,9 @@ let tests = [
   assert_bool
     "chunk shape must have same size as shard dimensionality" @@
     Result.is_error @@ Chain.create decoded_repr @@ 
-    {a2a = []; a2b = `ShardingIndexed {cfg with chunk_shape = [|5|]}; b2b = []};
+    [`ShardingIndexed {cfg with chunk_shape = [|5|]}];
 
-  let chain =
-    {a2a = []
-    ;a2b = `ShardingIndexed {cfg with chunk_shape = [|5; 3; 5|]}
-    ;b2b = []}
-  in
+  let chain = [`ShardingIndexed {cfg with chunk_shape = [|5; 3; 5|]}] in
   let c = Chain.create decoded_repr chain in
   assert_bool
     "Well formed shard config should not fail Chain creation" @@
@@ -368,12 +368,11 @@ let tests = [
   (* test if including a transpose codec for index_codec chain results in
     a failure. *)
   let chain' =
-    {chain with
-      a2b = `ShardingIndexed
-        {cfg with
-          chunk_shape = [|5; 3; 5|]
-          ;index_codecs =
-            {cfg.index_codecs with a2a = [`Transpose [|0; 3; 1; 2|]]}}}
+   [`ShardingIndexed
+    {cfg with
+      chunk_shape = [|5; 3; 5|]
+      ;index_codecs =
+        {cfg.index_codecs with a2a = [`Transpose [|0; 3; 1; 2|]]}}]
   in
   let cc = Chain.create decoded_repr chain' |> Result.get_ok in
   assert_bool
@@ -446,12 +445,11 @@ let tests = [
       decoded_repr.shape
       decoded_repr.fill_value
   in
-  let chain = {a2a = []; a2b = `Bytes Little; b2b = []}
-  in
+  let chain = [`Bytes Little] in
   List.iter
     (fun level ->
       let c =
-        Chain.create decoded_repr {chain with b2b = [`Gzip level]} in
+        Chain.create decoded_repr @@ chain @ [`Gzip level] in
       assert_bool
         "Creating `Gzip chain should not fail." @@
         Result.is_ok c;

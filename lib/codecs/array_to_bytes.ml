@@ -4,28 +4,24 @@ open Util.Result_syntax
 
 module Ndarray = Owl.Dense.Ndarray.Generic
 
-type endianness =
-  | Little
-  | Big
+type endianness = Little | Big
 
-type loc =
-  | Start
-  | End
+type loc = Start | End
 
-type array_to_bytes =
-  | Bytes of endianness
-  | ShardingIndexed of shard_config
+type arraytobytes =
+  [ `Bytes of endianness
+  | `ShardingIndexed of shard_config ]
 
 and shard_config =
   {chunk_shape : int array
-  ;codecs : any_bytes_to_bytes sharding_chain
-  ;index_codecs : fixed bytes_to_bytes sharding_chain
+  ;codecs : bytestobytes shard_chain
+  ;index_codecs : fixed_bytestobytes shard_chain
   ;index_location : loc}
 
-and 'a sharding_chain = {
-  a2a: array_to_array list;
-  a2b: array_to_bytes;
-  b2b: 'a list}
+and 'a shard_chain =
+  {a2a: arraytoarray list
+  ;a2b: arraytobytes
+  ;b2b: 'a list}
 
 type error =
   [ Extensions.error
@@ -115,65 +111,65 @@ end
 module rec ArrayToBytes : sig
   val parse
     : ('a, 'b) Util.array_repr ->
-      array_to_bytes ->
+      arraytobytes ->
       (unit, [> error]) result
-  val compute_encoded_size : int -> array_to_bytes -> int
-  val default : array_to_bytes
+  val compute_encoded_size : int -> arraytobytes -> int
+  val default : arraytobytes
   val encode
     : ('a, 'b) Ndarray.t ->
-      array_to_bytes ->
+      arraytobytes ->
       (string, [> error]) result
   val decode
     : string ->
       ('a, 'b) Util.array_repr ->
-      array_to_bytes ->
+      arraytobytes ->
       (('a, 'b) Ndarray.t, [> error]) result
-  val of_yojson : Yojson.Safe.t -> (array_to_bytes, string) result
-  val to_yojson : array_to_bytes -> Yojson.Safe.t
+  val of_yojson : Yojson.Safe.t -> (arraytobytes, string) result
+  val to_yojson : arraytobytes -> Yojson.Safe.t
 end = struct
 
-  let default = Bytes Little
+  let default = `Bytes Little
 
   let parse decoded_repr = function
-    | Bytes _ -> Ok ()
-    | ShardingIndexed c ->
+    | `Bytes _ -> Ok ()
+    | `ShardingIndexed c ->
       ShardingIndexedCodec.parse decoded_repr c
 
   let compute_encoded_size input_size = function
-    | Bytes _ ->
+    | `Bytes _ ->
       BytesCodec.compute_encoded_size input_size
-    | ShardingIndexed s ->
+    | `ShardingIndexed s ->
       ShardingIndexedCodec.compute_encoded_size input_size s
 
   let encode
     : type a b.
       (a, b) Ndarray.t ->
-      array_to_bytes ->
+      arraytobytes ->
       (string, [> error]) result
     = fun x -> function
-    | Bytes endian -> BytesCodec.encode x endian
-    | ShardingIndexed c -> ShardingIndexedCodec.encode x c
+    | `Bytes endian -> BytesCodec.encode x endian
+    | `ShardingIndexed c -> ShardingIndexedCodec.encode x c
 
   let decode
     : type a b. 
       string ->
       (a, b) Util.array_repr ->
-      array_to_bytes ->
+      arraytobytes ->
       ((a, b) Ndarray.t, [> error]) result
     = fun b repr -> function
-    | Bytes endian -> BytesCodec.decode b repr endian
-    | ShardingIndexed c -> ShardingIndexedCodec.decode b repr c
+    | `Bytes endian -> BytesCodec.decode b repr endian
+    | `ShardingIndexed c -> ShardingIndexedCodec.decode b repr c
 
   let to_yojson = function
-    | Bytes endian -> BytesCodec.to_yojson endian
-    | ShardingIndexed c -> ShardingIndexedCodec.to_yojson c
+    | `Bytes endian -> BytesCodec.to_yojson endian
+    | `ShardingIndexed c -> ShardingIndexedCodec.to_yojson c
 
   let of_yojson x =
     match Util.get_name x with
     | "bytes" ->
-      BytesCodec.of_yojson x >>| fun e -> Bytes e
+      BytesCodec.of_yojson x >>| fun e -> `Bytes e
     | "sharding_indexed" ->
-      ShardingIndexedCodec.of_yojson x >>| fun c -> ShardingIndexed c
+      ShardingIndexedCodec.of_yojson x >>| fun c -> `ShardingIndexed c
     | _ -> Error ("array->bytes codec not supported: ")
 end
 
@@ -248,7 +244,7 @@ end = struct
   
   let rec encode_chain
     : type a b.
-      any_bytes_to_bytes sharding_chain ->
+      bytestobytes shard_chain ->
       (a, b) Ndarray.t ->
       (string, [> error]) result
     = fun t x ->
@@ -321,9 +317,7 @@ end = struct
       offset := Int64.add !offset nbytes) cindices (Ok ())
     >>= fun () ->
     (* convert t.index_codecs to a generic bytes-to-bytes chain. *)
-    encode_chain
-      {t.index_codecs with b2b =
-        List.map (fun v -> Any v) t.index_codecs.b2b} shard_idx
+    encode_chain (t.index_codecs :> bytestobytes shard_chain) shard_idx
     >>| fun b' ->
     match t.index_location with
     | Start ->
@@ -337,7 +331,7 @@ end = struct
 
   let rec decode_chain
     : type a b. 
-      any_bytes_to_bytes sharding_chain ->
+      bytestobytes shard_chain ->
       string ->
       (a, b) Util.array_repr ->
       ((a, b) Ndarray.t, [> error]) result
@@ -378,9 +372,8 @@ end = struct
       ;shape = Array.append cps [|2|]}
     in
     decode_chain
-      {t.index_codecs with b2b =
-        List.map (fun v -> Any v) t.index_codecs.b2b} b' repr 
-    >>| fun decoded ->
+      (t.index_codecs : fixed_bytestobytes shard_chain :> bytestobytes shard_chain)
+      b' repr >>| fun decoded ->
     (decoded, rest)
 
   and index_size t cps =
@@ -444,9 +437,7 @@ end = struct
   and to_yojson t =
     let codecs = chain_to_yojson t.codecs in
     let index_codecs =
-      chain_to_yojson
-        {t.index_codecs with b2b =
-          List.map (fun v -> Any v) t.index_codecs.b2b}
+      chain_to_yojson (t.index_codecs :> bytestobytes shard_chain)
     in
     let index_location =
       match t.index_location with
@@ -468,8 +459,7 @@ end = struct
        ("codecs", codecs)])]
 
   let rec chain_of_yojson :
-    Yojson.Safe.t list ->
-    (any_bytes_to_bytes sharding_chain, string) result
+    Yojson.Safe.t list -> (bytestobytes shard_chain, string) result
     = fun codecs -> 
     let filter_partition f encoded =
       List.fold_right (fun c (l, r) ->
@@ -542,9 +532,11 @@ end = struct
       (fun c acc ->
         acc >>= fun l ->
         match c with
-        | Any Crc32c -> Ok (Crc32c :: l)
-        | Any (Gzip _) ->
+        | `Crc32c ->
+          Ok (`Crc32c :: l)
+        | `Gzip _ ->
           Error "index_codecs must not contain variable-sized codecs.")
-      ic.b2b (Ok []) >>| fun b2b ->
+      ic.b2b (Ok [])
+    >>| fun b2b ->
     {index_codecs = {ic with b2b}; index_location; codecs; chunk_shape}
 end

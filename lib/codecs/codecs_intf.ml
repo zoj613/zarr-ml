@@ -17,23 +17,20 @@ type endianness = Little | Big
 
 type loc = Start | End
 
-type arraytobytes =
+type array_tobytes =
   [ `Bytes of endianness
-  | `ShardingIndexed of shard_config ]
+  | `ShardingIndexed of internal_shard_config ]
 
-and shard_config =
+and internal_shard_config =
   {chunk_shape : int array
-  ;codecs : bytestobytes shard_chain
-  ;index_codecs : fixed_bytestobytes shard_chain
+  ;codecs : bytestobytes internal_chain
+  ;index_codecs : fixed_bytestobytes internal_chain
   ;index_location : loc}
 
-and 'a shard_chain =
-  {a2a: arraytoarray list
-  ;a2b: arraytobytes
-  ;b2b: 'a list}
-
-type codec_chain =
-  [ arraytoarray | arraytobytes | bytestobytes ] list
+and 'a internal_chain =
+  {a2a : arraytoarray list
+  ;a2b : array_tobytes
+  ;b2b : 'a list}
 
 type error =
   [ `Extension of string 
@@ -82,16 +79,17 @@ module type Interface = sig
   (** A type representing the Sharding indexed codec's configuration parameters. *)
   and shard_config =
     {chunk_shape : int array
-    ;codecs : bytestobytes shard_chain
-    ;index_codecs : fixed_bytestobytes shard_chain
+    ;codecs :
+      [ arraytoarray
+      | `Bytes of endianness
+      | `ShardingIndexed of shard_config
+      | bytestobytes ] list
+    ;index_codecs :
+      [ arraytoarray
+      | `Bytes of endianness
+      | `ShardingIndexed of shard_config
+      | fixed_bytestobytes ] list
     ;index_location : loc}
-
-  (** A type representing the chain of codecs used to encode/decode
-      a shard's bytes and its index array. *)
-  and 'a shard_chain =
-    {a2a: arraytoarray list
-    ;a2b: arraytobytes
-    ;b2b: 'a list}
 
   (** A type used to build a user-defined chain of codecs when creating a Zarr array. *)
   type codec_chain =

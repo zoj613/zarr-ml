@@ -5,30 +5,69 @@ open Util.Result_syntax
 
 include Codecs_intf
 
-type internal_chain =
-  {a2a : arraytoarray list
-  ;a2b : arraytobytes
-  ;b2b : bytestobytes list}
+type arraytobytes =
+  [ `Bytes of endianness
+  | `ShardingIndexed of shard_config ]
+
+and shard_config =
+  {chunk_shape : int array
+  ;codecs :
+    [ arraytoarray
+    | `Bytes of endianness
+    | `ShardingIndexed of shard_config
+    | bytestobytes ] list
+  ;index_codecs :
+    [ arraytoarray
+    | `Bytes of endianness
+    | `ShardingIndexed of shard_config
+    | fixed_bytestobytes ] list
+  ;index_location : loc}
+
+type codec_chain =
+  [ arraytoarray | arraytobytes | bytestobytes ] list
 
 module Chain = struct
-  type t = internal_chain
+  type t = bytestobytes internal_chain
 
-  let create : 
+  let rec create : 
     type a b. (a, b) Util.array_repr -> codec_chain -> (t, [> error ]) result
     = fun repr cc ->
-    let a2a, rest = List.partition_map (function
-      | #arraytoarray as c -> Either.left c
-      | #arraytobytes as c -> Either.right c
-      | #bytestobytes as c -> Either.right c) cc
+    let a2a, rest =
+      List.partition_map
+        (function
+        | #arraytoarray as c -> Either.left c
+        | #arraytobytes as c -> Either.right c
+        | #bytestobytes as c -> Either.right c) cc
     in
-    (match 
-      List.partition_map (function
-        | #arraytobytes as c -> Either.left c
-        | #bytestobytes as c -> Either.right c) rest
-    with
-    | [x], rest -> Ok (x, rest)
-    | _ ->
-      Result.error @@ `CodecChain "Must be exactly one array->bytes codec.")
+    List.fold_right
+      (fun c acc ->
+        acc >>= fun (l, r) ->
+        match c with
+        | #bytestobytes as c -> Ok (l, c :: r)
+        | `Bytes e -> Ok (`Bytes e :: l, r)
+        | `ShardingIndexed cfg ->
+          create repr cfg.codecs >>= fun codecs ->
+          create
+            {repr with shape = Array.append repr.shape [|2|]}
+            (cfg.index_codecs :> codec_chain) >>= fun index_codecs ->
+          (* coerse to a fixed_bytestobytes internal_chain list type *)
+          let b2b =
+            fst @@
+            List.partition_map
+              (function
+              | #fixed_bytestobytes as c -> Either.left c
+              | c -> Either.right c) index_codecs.b2b
+          in
+          let cfg' : internal_shard_config =
+            {codecs
+            ;chunk_shape = cfg.chunk_shape
+            ;index_location = cfg.index_location
+            ;index_codecs = {index_codecs with b2b}}
+          in Ok (`ShardingIndexed cfg' :: l, r)) rest (Ok ([], []))
+    >>= fun result ->
+    (match result with
+    | [x], r -> Ok (x, r)
+    | _ -> Error (`CodecChain "Must be exactly one array->bytes codec."))
     >>= fun (a2b, b2b) ->
     let ic = {a2a; a2b; b2b} in
     List.fold_left
@@ -101,7 +140,7 @@ module Chain = struct
     let a2a, rest = filter_partition ArrayToArray.of_yojson rest in
     let b2b, rest = filter_partition BytesToBytes.of_yojson rest in
     match rest with
-    | [] -> Ok ({a2a; a2b; b2b} : t)
+    | [] -> Ok {a2a; a2b; b2b}
     | x :: _ ->
       let msg =
         (Util.get_name x) ^

@@ -75,14 +75,8 @@ R[73,1]    -INF    -INF     -INF     -INF    -INF     -INF *)
 ```ocaml
 let config =
   {chunk_shape = [|5; 3; 5|]
-  ;codecs =
-    {a2a = [`Transpose [|2; 0; 1|]]
-    ;a2b = `Bytes Little
-    ;b2b = [`Gzip L5]}
-  ;index_codecs =
-    {a2a = []
-    ;a2b = `Bytes Big
-    ;b2b = [`Crc32c]}
+  ;codecs = [`Transpose [|2; 0; 1|]; `Bytes Little; `Gzip L5]
+  ;index_codecs = [`Bytes Big; `Crc32c]
   ;index_location = Start};;
 
 let shard_node = Result.get_ok @@ ArrayNode.(group_node / "another");;

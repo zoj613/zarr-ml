@@ -7,20 +7,20 @@ type endianness = Little | Big
 
 type loc = Start | End
 
-type array_to_bytes =
-  | Bytes of endianness
-  | ShardingIndexed of shard_config
+type arraytobytes =
+  [ `Bytes of endianness
+  | `ShardingIndexed of shard_config ]
 
 and shard_config =
   {chunk_shape : int array
-  ;codecs : any_bytes_to_bytes sharding_chain
-  ;index_codecs : fixed bytes_to_bytes sharding_chain
+  ;codecs : bytestobytes shard_chain
+  ;index_codecs : fixed_bytestobytes shard_chain
   ;index_location : loc}
 
-and 'a sharding_chain = {
-  a2a: array_to_array list;
-  a2b: array_to_bytes;
-  b2b: 'a list}
+and 'a shard_chain =
+  {a2a: arraytoarray list
+  ;a2b: arraytobytes
+  ;b2b: 'a list}
 
 type error =
   [ Extensions.error
@@ -31,19 +31,19 @@ type error =
 module ArrayToBytes : sig
   val parse
     : ('a, 'b) Util.array_repr ->
-      array_to_bytes ->
+      arraytobytes ->
       (unit, [> error]) result
-  val compute_encoded_size : int -> array_to_bytes -> int
-  val default : array_to_bytes
+  val compute_encoded_size : int -> arraytobytes -> int
+  val default : arraytobytes
   val encode
     : ('a, 'b) Ndarray.t ->
-      array_to_bytes ->
+      arraytobytes ->
       (string, [> error]) result
   val decode
     : string ->
       ('a, 'b) Util.array_repr ->
-      array_to_bytes ->
+      arraytobytes ->
       (('a, 'b) Ndarray.t, [> error]) result
-  val of_yojson : Yojson.Safe.t -> (array_to_bytes, string) result
-  val to_yojson : array_to_bytes -> Yojson.Safe.t
+  val of_yojson : Yojson.Safe.t -> (arraytobytes, string) result
+  val to_yojson : arraytobytes -> Yojson.Safe.t
 end

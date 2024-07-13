@@ -1,12 +1,10 @@
 module Ndarray = Owl.Dense.Ndarray.Generic
 
-type dimension_order = int array
-
-type array_to_array =
-  | Transpose of dimension_order
+type arraytoarray =
+  [ `Transpose of int array ]
 
 type error =
-  [ `Transpose_order of dimension_order * string ]
+  [ `Transpose_order of int array * string ]
 
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/transpose/v1.0.html *)
 module TransposeCodec = struct
@@ -49,12 +47,12 @@ module TransposeCodec = struct
           or negative values." in
         Result.error @@ `Transpose_order (o, msg)
       else
-        Result.ok @@ Transpose o
+        Result.ok @@ `Transpose o
 
   let parse
     : type a b.
       (a, b) Util.array_repr ->
-      dimension_order ->
+      int array ->
       (unit, [> error]) result
     = fun repr o ->
     ignore @@ parse_order o;
@@ -108,37 +106,37 @@ module TransposeCodec = struct
                 "transpose order must only
                 contain positive integers and unique values."
               in Error msg) o (Ok [])
-        >>| fun o' -> Transpose (Array.of_list o')
+        >>| fun o' -> `Transpose (Array.of_list o')
     | _ -> Error "Invalid transpose configuration."
 end
 
 module ArrayToArray = struct
   let parse decoded_repr = function
-    | Transpose o -> TransposeCodec.parse decoded_repr o
+    | `Transpose o -> TransposeCodec.parse decoded_repr o
 
   let compute_encoded_size input_size = function
-    | Transpose _ -> TransposeCodec.compute_encoded_size input_size
+    | `Transpose _ -> TransposeCodec.compute_encoded_size input_size
 
   let compute_encoded_representation
     : type a b.
-      array_to_array ->
+      arraytoarray ->
       (a, b) Util.array_repr ->
       ((a, b) Util.array_repr, [> error]) result
     = fun t repr ->
     match t with
-    | Transpose o ->
+    | `Transpose o ->
       TransposeCodec.compute_encoded_representation o repr
 
   let encode t x =
     match t with
-    | Transpose order -> TransposeCodec.encode order x
+    | `Transpose order -> TransposeCodec.encode order x
 
   let decode t x =
     match t with
-    | Transpose order -> TransposeCodec.decode order x
+    | `Transpose order -> TransposeCodec.decode order x
 
   let to_yojson = function
-    | Transpose order -> TransposeCodec.to_yojson order
+    | `Transpose order -> TransposeCodec.to_yojson order
 
   let of_yojson x =
     match Util.get_name x with

@@ -48,18 +48,14 @@ and shard_config =
 
 (** A type representing the chain of codecs used to encode/decode
     a shard's bytes and its index array. *)
-and 'a shard_chain = {
-  a2a: arraytoarray list;
-  a2b: arraytobytes;
-  b2b: 'a list;
-}
+and 'a shard_chain =
+  {a2a: arraytoarray list
+  ;a2b: arraytobytes
+  ;b2b: 'a list}
 
 (** A type used to build a user-defined chain of codecs when creating a Zarr array. *)
-type codec_chain = {
-  a2a: arraytoarray list;
-  a2b: arraytobytes;
-  b2b: bytestobytes list;
-}
+type codec_chain =
+  [ arraytoarray | arraytobytes | bytestobytes ] list
 
 (** The type of errors returned upon failure when an calling a function
   on a {!Chain} type. *)
@@ -67,7 +63,9 @@ type error =
   [ `Extension of string 
   | `Gzip of Ezgzip.error
   | `Transpose_order of int array * string
+  | `CodecChain of string
   | `Sharding of int array * int array * string ]
+
 
 (** A module containing functions to encode/decode an array chunk using a
     predefined set of codecs. *)

@@ -33,13 +33,8 @@ FilesystemStore.create_group store group_node;;
 let array_node =
   Result.get_ok @@ ArrayNode.(group_node / "name");;
 
-let codec_chain =
-  {a2a = [`Transpose [|2; 0; 1|]]
-  ;a2b = `Bytes Big
-  ;b2b = [`Gzip L2]};;
-
 FilesystemStore.create_array
-  ~codecs:codec_chain
+  ~codecs:[`Transpose [|2; 0; 1|]; `Bytes Big; `Gzip L2]
   ~shape:[|100; 100; 50|]
   ~chunks:[|10; 15; 20|]
   Bigarray.Float32 
@@ -89,13 +84,11 @@ let config =
     ;a2b = `Bytes Big
     ;b2b = [`Crc32c]}
   ;index_location = Start};;
-let codec_chain =
-  {a2a = []; a2b = `ShardingIndexed config; b2b = []};;
 
 let shard_node = Result.get_ok @@ ArrayNode.(group_node / "another");;
 
 FilesystemStore.create_array
-  ~codecs:codec_chain
+  ~codecs:[`ShardingIndexed config]
   ~shape:[|100; 100; 50|]
   ~chunks:[|10; 15; 20|]
   Bigarray.Complex32

@@ -1,26 +1,14 @@
-include Bytes_to_bytes
-include Array_to_array
-include Array_to_bytes
+open Bytes_to_bytes
+open Array_to_array
+open Array_to_bytes
 open Util.Result_syntax
 
-module Ndarray = Owl.Dense.Ndarray.Generic
-
-type error =
-  [ `Extension of string 
-  | `Gzip of Ezgzip.error
-  | `Transpose_order of int array * string
-  | `CodecChain of string
-  | `Sharding of int array * int array * string ]
-
-type codec_chain =
-  [ arraytoarray | arraytobytes | bytestobytes ] list
+include Codecs_intf
 
 type internal_chain =
   {a2a : arraytoarray list
   ;a2b : arraytobytes
   ;b2b : bytestobytes list}
-  (*;b2b_fixed : fixed_bytestobytes list
-  ;b2b_variable : variable_bytestobytes list} *)
 
 module Chain = struct
   type t = internal_chain
@@ -42,10 +30,6 @@ module Chain = struct
     | _ ->
       Result.error @@ `CodecChain "Must be exactly one array->bytes codec.")
     >>= fun (a2b, b2b) ->
-   (* let b2b_fixed, b2b_variable = List.partition_map (function
-      | #fixed_bytestobytes as c -> Either.left c
-      | #variable_bytestobytes as c -> Either.right c) rest
-    in *)
     let ic = {a2a; a2b; b2b} in
     List.fold_left
       (fun acc c ->

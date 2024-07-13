@@ -87,21 +87,21 @@ end
 module rec ArrayToBytes : sig
   val parse
     : ('a, 'b) Util.array_repr ->
-      arraytobytes ->
+      array_tobytes ->
       (unit, [> error]) result
-  val compute_encoded_size : int -> arraytobytes -> int
-  val default : arraytobytes
+  val compute_encoded_size : int -> array_tobytes -> int
+  val default : array_tobytes
   val encode
     : ('a, 'b) Ndarray.t ->
-      arraytobytes ->
+      array_tobytes ->
       (string, [> error]) result
   val decode
     : string ->
       ('a, 'b) Util.array_repr ->
-      arraytobytes ->
+      array_tobytes ->
       (('a, 'b) Ndarray.t, [> error]) result
-  val of_yojson : Yojson.Safe.t -> (arraytobytes, string) result
-  val to_yojson : arraytobytes -> Yojson.Safe.t
+  val of_yojson : Yojson.Safe.t -> (array_tobytes, string) result
+  val to_yojson : array_tobytes -> Yojson.Safe.t
 end = struct
 
   let default = `Bytes Little
@@ -120,7 +120,7 @@ end = struct
   let encode
     : type a b.
       (a, b) Ndarray.t ->
-      arraytobytes ->
+      array_tobytes ->
       (string, [> error]) result
     = fun x -> function
     | `Bytes endian -> BytesCodec.encode x endian
@@ -130,7 +130,7 @@ end = struct
     : type a b. 
       string ->
       (a, b) Util.array_repr ->
-      arraytobytes ->
+      array_tobytes ->
       ((a, b) Ndarray.t, [> error]) result
     = fun b repr -> function
     | `Bytes endian -> BytesCodec.decode b repr endian
@@ -150,7 +150,7 @@ end = struct
 end
 
 and ShardingIndexedCodec : sig
-  type t = shard_config
+  type t = internal_shard_config
   val parse
     : ('a, 'b) Util.array_repr ->
       t ->
@@ -169,7 +169,7 @@ and ShardingIndexedCodec : sig
   val to_yojson : t -> Yojson.Safe.t
 end = struct
 
-  type t = shard_config  
+  type t = internal_shard_config  
 
   let parse_chain repr chain =
     List.fold_left
@@ -183,7 +183,7 @@ end = struct
   let parse 
     : type a b.
       (a, b) Util.array_repr ->
-      shard_config ->
+      internal_shard_config ->
       (unit, [> error]) result
     = fun repr t ->
     (match Array.(length repr.shape = length t.chunk_shape) with
@@ -220,7 +220,7 @@ end = struct
   
   let rec encode_chain
     : type a b.
-      bytestobytes shard_chain ->
+      bytestobytes internal_chain ->
       (a, b) Ndarray.t ->
       (string, [> error]) result
     = fun t x ->
@@ -234,7 +234,7 @@ end = struct
   and encode
     : type a b.
       (a, b) Ndarray.t ->
-      shard_config ->
+      internal_shard_config ->
       (string, [> error]) result
     = fun x t ->
     let open Util in
@@ -293,7 +293,7 @@ end = struct
       offset := Int64.add !offset nbytes) cindices (Ok ())
     >>= fun () ->
     (* convert t.index_codecs to a generic bytes-to-bytes chain. *)
-    encode_chain (t.index_codecs :> bytestobytes shard_chain) shard_idx
+    encode_chain (t.index_codecs :> bytestobytes internal_chain) shard_idx
     >>| fun b' ->
     match t.index_location with
     | Start ->
@@ -307,7 +307,7 @@ end = struct
 
   let rec decode_chain
     : type a b. 
-      bytestobytes shard_chain ->
+      bytestobytes internal_chain ->
       string ->
       (a, b) Util.array_repr ->
       ((a, b) Ndarray.t, [> error]) result
@@ -330,7 +330,7 @@ end = struct
   and decode_index
     : string ->
       int array ->
-      shard_config ->
+      internal_shard_config ->
       ((int64, Bigarray.int64_elt) Ndarray.t * string, [> error]) result
     = fun b shard_shape t ->
     let open Util in
@@ -347,10 +347,9 @@ end = struct
       ;kind = Bigarray.Int64
       ;shape = Array.append cps [|2|]}
     in
-    decode_chain
-      (t.index_codecs : fixed_bytestobytes shard_chain :> bytestobytes shard_chain)
-      b' repr >>| fun decoded ->
-    (decoded, rest)
+    decode_chain (t.index_codecs :> bytestobytes internal_chain) b' repr
+    >>= fun decoded ->
+    Ok (decoded, rest)
 
   and index_size t cps =
     compute_encoded_size (16 * Util.prod cps) t
@@ -413,7 +412,7 @@ end = struct
   and to_yojson t =
     let codecs = chain_to_yojson t.codecs in
     let index_codecs =
-      chain_to_yojson (t.index_codecs :> bytestobytes shard_chain)
+      chain_to_yojson (t.index_codecs :> bytestobytes internal_chain)
     in
     let index_location =
       match t.index_location with
@@ -435,7 +434,7 @@ end = struct
        ("codecs", codecs)])]
 
   let rec chain_of_yojson :
-    Yojson.Safe.t list -> (bytestobytes shard_chain, string) result
+    Yojson.Safe.t list -> (bytestobytes internal_chain, string) result
     = fun codecs -> 
     let filter_partition f encoded =
       List.fold_right (fun c (l, r) ->

@@ -48,8 +48,8 @@ let tests = [
   let shard_cfg =
     {chunk_shape = [|2; 5; 5|]
     ;index_location = End
-    ;index_codecs = {a2a = []; a2b = `Bytes Little; b2b = [`Crc32c]}
-    ;codecs = {a2a = [`Transpose [|0; 1; 2|]]; a2b = `Bytes Big; b2b = [`Gzip L1]}}
+    ;index_codecs = [`Bytes Little; `Crc32c]
+    ;codecs = [`Transpose [|0; 1; 2|]; `Bytes Big; `Gzip L1]}
   in
   let chain  =
     [`Transpose [|2; 1; 0; 3|]; `ShardingIndexed shard_cfg; `Crc32c; `Gzip L9]
@@ -323,11 +323,8 @@ let tests = [
   let cfg =
     {chunk_shape = [|3; 5; 5|]
     ;index_location = Start
-    ;index_codecs =
-      {a2a = [] 
-      ;a2b = `Bytes Little
-      ;b2b = [`Crc32c]}
-    ;codecs = {a2a = []; a2b = `Bytes Big; b2b = []}}
+    ;index_codecs = [`Bytes Little; `Crc32c]
+    ;codecs = [`Bytes Big]}
   in
   let chain = [`ShardingIndexed cfg] in
   (*test failure for chunk shape not evenly dividing shard. *)
@@ -368,11 +365,9 @@ let tests = [
   (* test if including a transpose codec for index_codec chain results in
     a failure. *)
   let chain' =
-   [`ShardingIndexed
-    {cfg with
+   [`ShardingIndexed {cfg with
       chunk_shape = [|5; 3; 5|]
-      ;index_codecs =
-        {cfg.index_codecs with a2a = [`Transpose [|0; 3; 1; 2|]]}}]
+      ;index_codecs = `Transpose [|0; 3; 1; 2|] :: cfg.index_codecs}]
   in
   let cc = Chain.create decoded_repr chain' |> Result.get_ok in
   assert_bool

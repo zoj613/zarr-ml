@@ -40,8 +40,6 @@ module type STORE = sig
   val is_member : t -> key -> bool
 end
 
-module Ndarray = Owl.Dense.Ndarray.Generic
-
 module type S = sig
   type t
   (** The storage type. *)
@@ -122,7 +120,7 @@ module type S = sig
   val set_array
     : ArrayNode.t ->
       Owl_types.index array ->
-      ('a, 'b) Ndarray.t ->
+      ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
       t ->
       (unit, [> error | Node.error | Codecs.error ]) result
   (** [set_array n s x t] writes n-dimensional array [x] to the slice [s]
@@ -137,7 +135,8 @@ module type S = sig
       Owl_types.index array ->
       ('a, 'b) Bigarray.kind ->
       t ->
-      (('a, 'b) Ndarray.t, [> error | Node.error | Codecs.error ]) result
+      (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
+      ,[> error | Node.error | Codecs.error ]) result
   (** [get_array n s k t] reads an n-dimensional array of size determined
       by slice [s] from array node [n]. This operation fails if:
       - If there is a problem decoding/encoding node [n] chunks.

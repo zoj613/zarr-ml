@@ -82,7 +82,10 @@ module Chain = struct
     {a2a = []; a2b = ArrayToBytes.default; b2b = []}
 
   let encode :
-    type a b. t -> (a, b) Ndarray.t -> (string, [> error ]) result
+    type a b.
+    t ->
+    (a, b, Bigarray.c_layout) Bigarray.Genarray.t ->
+    (string, [> error ]) result
     = fun t x ->
     List.fold_left
       (fun acc c -> acc >>= ArrayToArray.encode c) (Ok x) t.a2a
@@ -96,7 +99,7 @@ module Chain = struct
     t ->
     (a, b) Util.array_repr ->
     string ->
-    ((a, b) Ndarray.t, [> error ]) result
+    ((a, b, Bigarray.c_layout) Bigarray.Genarray.t, [> error]) result
     = fun t repr x ->
     (* compute the last encoded representation of array->array codec chain.
        This becomes the decoded representation of the array->bytes decode

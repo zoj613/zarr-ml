@@ -5,8 +5,6 @@
 
 include Codecs_intf.Interface
 
-module Ndarray = Owl.Dense.Ndarray.Generic
-
 (** A module containing functions to encode/decode an array chunk using a
     predefined set of codecs. *)
 module Chain : sig
@@ -26,12 +24,17 @@ module Chain : sig
   (** [encode t x] computes the encoded byte string representation of
       array chunk [x]. Returns an error upon failure. *)
   val encode :
-    t -> ('a, 'b) Ndarray.t -> (string, [> error ]) result
+    t ->
+    ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
+    (string, [> error ]) result
 
   (** [decode t repr x] decodes the byte string [x] using codec chain [t]
       and decoded representation type [repr]. Returns an error upon failure.*)
   val decode :
-    t -> ('a, 'b) Util.array_repr -> string -> (('a, 'b) Ndarray.t, [> error]) result
+    t ->
+    ('a, 'b) Util.array_repr ->
+    string ->
+    (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t, [> error ]) result
 
   (** [x = y] returns true if chain [x] is equal to chain [y],
       and false otherwise. *)

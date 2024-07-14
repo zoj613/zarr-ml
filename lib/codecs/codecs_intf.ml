@@ -39,7 +39,6 @@ type error =
   | `CodecChain of string
   | `Sharding of int array * int array * string ]
 
-module Ndarray = Owl.Dense.Ndarray.Generic
 
 module type Interface = sig
   (** The type of [array -> array] codecs. *)

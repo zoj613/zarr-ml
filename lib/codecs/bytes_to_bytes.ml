@@ -1,7 +1,5 @@
 open Codecs_intf
 
-module Ndarray = Owl.Dense.Ndarray.Generic
-
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/gzip/v1.0.html *)
 module GzipCodec = struct
   let to_int = function

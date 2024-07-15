@@ -69,22 +69,21 @@ module Chain = struct
     | [x], r -> Ok (x, r)
     | _ -> Error (`CodecChain "Must be exactly one array->bytes codec."))
     >>= fun (a2b, b2b) ->
-    let ic = {a2a; a2b; b2b} in
     List.fold_left
       (fun acc c ->
-         acc >>= fun r ->
-         ArrayToArray.parse r c >>= fun () ->
-         ArrayToArray.compute_encoded_representation c r) (Ok repr) ic.a2a
-    >>= fun repr' ->
-    ArrayToBytes.parse repr' ic.a2b >>| fun () -> ic
+        acc >>= fun r ->
+        ArrayToArray.parse c r >>= fun () ->
+        ArrayToArray.compute_encoded_representation c r)
+      (Ok repr) a2a
+    >>= ArrayToBytes.parse a2b >>| fun () ->
+    {a2a; a2b; b2b}
 
   let default : t =
     {a2a = []; a2b = ArrayToBytes.default; b2b = []}
 
   let encode :
-    type a b.
     t ->
-    (a, b, Bigarray.c_layout) Bigarray.Genarray.t ->
+    ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
     (string, [> error ]) result
     = fun t x ->
     List.fold_left
@@ -92,15 +91,17 @@ module Chain = struct
     >>= fun y ->
     List.fold_left
       (fun acc c -> acc >>= BytesToBytes.encode c)
-      (ArrayToBytes.encode y t.a2b) t.b2b
+      (ArrayToBytes.encode t.a2b y) t.b2b
 
   let decode :
-    type a b.
     t ->
-    (a, b) Util.array_repr ->
+    ('a, 'b) Util.array_repr ->
     string ->
-    ((a, b, Bigarray.c_layout) Bigarray.Genarray.t, [> error]) result
+    (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t, [> error]) result
     = fun t repr x ->
+    List.fold_right
+      (fun c acc -> acc >>= BytesToBytes.decode c) t.b2b (Ok x)
+    >>= fun y ->
     (* compute the last encoded representation of array->array codec chain.
        This becomes the decoded representation of the array->bytes decode
        procedure. *)
@@ -110,11 +111,8 @@ module Chain = struct
       (Ok repr) t.a2a
     >>= fun repr' ->
     List.fold_right
-      (fun c acc -> acc >>= BytesToBytes.decode c) t.b2b (Ok x)
-    >>= fun y ->
-    List.fold_right
       (fun c acc -> acc >>= ArrayToArray.decode c)
-      t.a2a (ArrayToBytes.decode y repr' t.a2b)
+      t.a2a (ArrayToBytes.decode t.a2b repr' y)
 
   let ( = ) : t -> t -> bool = fun x y ->
     x.a2a = y.a2a && x.a2b = y.a2b && x.b2b = y.b2b

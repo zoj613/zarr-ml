@@ -73,11 +73,8 @@ module BytesToBytes = struct
     | `Crc32c -> Crc32cCodec.to_yojson 
 
   let of_yojson x =
-    let open Util.Result_syntax in
     match Util.get_name x with
-    | "gzip" ->
-      GzipCodec.of_yojson x >>| fun gzip -> gzip
-    | "crc32c" ->
-      Crc32cCodec.of_yojson x >>| fun crc -> crc
+    | "gzip" -> GzipCodec.of_yojson x
+    | "crc32c" -> Crc32cCodec.of_yojson x
     | s -> Error ("bytes->bytes codec not supported: " ^ s)
 end

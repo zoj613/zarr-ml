@@ -1,10 +1,10 @@
 open Codecs_intf
 
 module ArrayToArray : sig 
-  val parse
-    : ('a, 'b) Util.array_repr ->
-      arraytoarray ->
-      (unit, [> error]) result
+  val parse :
+    arraytoarray ->
+    ('a, 'b) Util.array_repr ->
+    (unit, [> error]) result
   val compute_encoded_size : int -> arraytoarray -> int
   val compute_encoded_representation :
     arraytoarray ->

@@ -107,17 +107,17 @@ module TransposeCodec = struct
 end
 
 module ArrayToArray = struct
-  let parse decoded_repr = function
+  let parse t decoded_repr =
+    match t with
     | `Transpose o -> TransposeCodec.parse decoded_repr o
 
   let compute_encoded_size input_size = function
     | `Transpose _ -> TransposeCodec.compute_encoded_size input_size
 
-  let compute_encoded_representation
-    : type a b.
-      arraytoarray ->
-      (a, b) Util.array_repr ->
-      ((a, b) Util.array_repr, [> error]) result
+  let compute_encoded_representation :
+    arraytoarray ->
+    ('a, 'b) Util.array_repr ->
+    (('a, 'b) Util.array_repr, [> error]) result
     = fun t repr ->
     match t with
     | `Transpose o ->

@@ -23,10 +23,7 @@ module Impl = struct
   let erase_prefix t pre =
     StrMap.filter_map_inplace
       (fun k v ->
-        if String.starts_with ~prefix:pre k then 
-          None
-        else 
-          Some v) t
+        if String.starts_with ~prefix:pre k then None else Some v) t
 
   let get_partial_values t kr_pairs =
     Storage_intf.Base.get_partial_values

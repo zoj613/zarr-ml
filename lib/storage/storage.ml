@@ -50,19 +50,10 @@ module Make (M : STORE) : S with type t = M.t = struct
     | None -> Ok Codecs.Chain.default)
     >>= fun codecs ->
     AM.create
-      ~sep
-      ~codecs
-      ~dimension_names
-      ~attributes
-      ~shape
-      kind
-      fill_value
-      chunks
-    >>= fun meta ->
-    set t (ArrayNode.to_metakey node) (AM.encode meta);
-    Result.ok @@
-    make_implicit_groups_explicit t @@
-    Some (ArrayNode.parent node)
+      ~sep ~codecs ~dimension_names ~attributes ~shape
+      kind fill_value chunks
+    >>| AM.encode >>| set t (ArrayNode.to_metakey node) >>| fun () ->
+    make_implicit_groups_explicit t @@ Some (ArrayNode.parent node)
 
   let group_metadata node t =
     get t @@ GroupNode.to_metakey node >>= fun bytes ->
@@ -165,8 +156,7 @@ module Make (M : STORE) : S with type t = M.t = struct
          much slower for large Zarr chunks but necessary for usability.*)
       List.iter
         (fun (c, v) -> Ndarray.set arr c v) @@ Arraytbl.find_all tbl idx;
-      Codecs.Chain.encode codecs arr >>| fun encoded ->
-      set t chunkkey encoded) cindices (Ok ())
+      Codecs.Chain.encode codecs arr >>| set t chunkkey) cindices (Ok ())
 
   let get_array
   : type a b.
@@ -218,8 +208,8 @@ module Make (M : STORE) : S with type t = M.t = struct
         >>= fun arr ->
         Arraytbl.add tbl idx arr;
         Ok (Ndarray.get arr coord :: l)) pair (Ok [])
-    >>| fun res ->
-    Ndarray.of_array kind (Array.of_list res) sshape
+    >>| Array.of_list >>| fun vals ->
+    Ndarray.of_array kind vals sshape
 
   let reshape t node shape =
     let mkey = ArrayNode.to_metakey node in
@@ -230,7 +220,7 @@ module Make (M : STORE) : S with type t = M.t = struct
       Ok ()
     else
       Error (`Store_write "new shape must have same number of dimensions."))
-    >>= fun () ->
+    >>| fun () ->
     let pre = ArrayNode.to_key node ^ "/" in
     let s =
       ArraySet.of_list @@ AM.chunk_indices meta @@ AM.shape meta in
@@ -239,7 +229,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     ArraySet.iter
       (fun v -> erase t @@ pre ^ AM.chunk_key meta v)
       ArraySet.(diff s s');
-    Ok (set t mkey @@ AM.encode @@ AM.update_shape meta shape)
+    set t mkey @@ AM.encode @@ AM.update_shape meta shape
 end
 
 module MemoryStore = struct

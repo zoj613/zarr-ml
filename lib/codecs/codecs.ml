@@ -109,6 +109,18 @@ module Chain = struct
       ShardingIndexedCodec.partial_encode c repr pairs b
     | `Bytes _ -> failwith "bytes codec does not support partial encoding." 
 
+  let partial_decode :
+    t ->
+    ('a, 'b) Util.array_repr ->
+    (int * int array) list ->
+    string ->
+    ((int * 'a) list, [> error ]) result 
+    = fun t repr pairs b ->
+    match t.a2b with
+    | `ShardingIndexed c ->
+      ShardingIndexedCodec.partial_decode c repr pairs b
+    | `Bytes _ -> failwith "bytes codec does not support partial decoding."
+
   let decode :
     t ->
     ('a, 'b) Util.array_repr ->

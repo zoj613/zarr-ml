@@ -31,6 +31,7 @@ module ShardingIndexedCodec : sig
   val partial_decode :
     t ->
     ('a, 'b) Util.array_repr ->
+    (int * int array) list ->
     string ->
     ((int * 'a) list, [> error ]) result
 end

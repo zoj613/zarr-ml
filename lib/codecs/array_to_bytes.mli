@@ -19,3 +19,18 @@ module ArrayToBytes : sig
   val of_yojson : Yojson.Safe.t -> (array_tobytes, string) result
   val to_yojson : array_tobytes -> Yojson.Safe.t
 end
+
+module ShardingIndexedCodec : sig
+  type t = internal_shard_config
+  val partial_encode :
+    t ->
+    ('a, 'b) Util.array_repr ->
+    (int array * 'a) list ->
+    string ->
+    (string, [> error]) result
+  val partial_decode :
+    t ->
+    ('a, 'b) Util.array_repr ->
+    string ->
+    ((int * 'a) list, [> error ]) result
+end

@@ -113,50 +113,50 @@ module Make (M : STORE) : S with type t = M.t = struct
     let open Util in
     get t @@ ArrayNode.to_metakey node >>= fun bytes ->
     AM.decode bytes >>? (fun msg -> `Store_write msg) >>= fun meta ->
-    (if Ndarray.shape x = Indexing.slice_shape slice @@ AM.shape meta then 
+    let arr_shape = AM.shape meta in
+    (if Ndarray.shape x = Indexing.slice_shape slice arr_shape then 
         Ok ()
       else
         Error (`Store_write "slice and input array shapes are unequal."))
     >>= fun () ->
-    (if AM.is_valid_kind meta @@ Ndarray.kind x then
+    let kind = Ndarray.kind x in
+    (if AM.is_valid_kind meta kind then
         Ok ()
       else
        Result.error @@
        `Store_write (
          "input array's kind is not compatible with node's data type."))
     >>= fun () ->
-    let coords = Indexing.coords_of_slice slice @@ AM.shape meta in
-    let tbl = Arraytbl.create @@ Array.length coords
-    in
+    let coords = Indexing.coords_of_slice slice arr_shape in
+    let tbl = Arraytbl.create @@ Array.length coords in
     Ndarray.iteri (fun i y ->
       let k, c = AM.index_coord_pair meta coords.(i) in
       Arraytbl.add tbl k (c, y)) x;
     let repr =
-      {kind = Ndarray.kind x
+      {kind
       ;shape = AM.chunk_shape meta
-      ;fill_value = AM.fillvalue_of_kind meta @@ Ndarray.kind x}
+      ;fill_value = AM.fillvalue_of_kind meta kind}
     in
-    let codecs = AM.codecs meta in
+    let chain = AM.codecs meta in
     let prefix = ArrayNode.to_key node ^ "/" in
-    let cindices = ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl in
-    ArraySet.fold (fun idx acc ->
-      acc >>= fun () ->
-      let chunkkey = prefix ^ AM.chunk_key meta idx in
-      (match get t chunkkey with
-      | Ok b ->
-        Codecs.Chain.decode codecs repr b
-      | Error _ ->
-        Ok (Ndarray.create repr.kind repr.shape repr.fill_value))
-      >>= fun arr ->
-      (* NOTE: Ndarray.set_fancy* functions unfortunately don't work for array
-         kinds other than Float32, Float64, Complex32 and Complex64.
-         See: https://github.com/owlbarn/owl/issues/671 . As a workaround
-         we manually set each coordinate one-at-time using the basic
-         set function which does not suffer from this bug. It is likely
-         much slower for large Zarr chunks but necessary for usability.*)
-      List.iter
-        (fun (c, v) -> Ndarray.set arr c v) @@ Arraytbl.find_all tbl idx;
-      Codecs.Chain.encode codecs arr >>| set t chunkkey) cindices (Ok ())
+    ArraySet.fold
+      (fun idx acc ->
+        acc >>= fun () ->
+        let ckey = prefix ^ AM.chunk_key meta idx in
+        let pairs = Arraytbl.find_all tbl idx in 
+        match get t ckey with
+        | Ok b when Codecs.Chain.is_just_sharding chain ->
+          Codecs.Chain.partial_encode chain repr pairs b >>| set t ckey
+        | Ok b ->
+          Codecs.Chain.decode chain repr b >>= fun arr ->
+          List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
+          Codecs.Chain.encode chain arr >>| set t ckey
+        | Error _ ->
+          (* array chunk not present in store, so create one. *)
+          let arr = Ndarray.create repr.kind repr.shape repr.fill_value in
+          List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
+          Codecs.Chain.encode chain arr >>| set t ckey)
+      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok ())
 
   let get_array
   : type a b.

@@ -2,6 +2,7 @@ open Array_to_array
 open Bytes_to_bytes
 open Util.Result_syntax
 open Codecs_intf
+open Util
 
 module Ndarray = Owl.Dense.Ndarray.Generic
 
@@ -154,8 +155,13 @@ and ShardingIndexedCodec : sig
   val parse :
     t -> ('a, 'b) Util.array_repr -> (unit, [> error]) result
   val compute_encoded_size : int -> t -> int
-  val encode :
-    t -> ('a, 'b) Ndarray.t -> (string, [> error]) result
+  val encode : t -> ('a, 'b) Ndarray.t -> (string, [> error]) result
+  val partial_encode :
+    internal_shard_config ->
+    ('a, 'b) Util.array_repr ->
+    (int array * 'a) list ->
+    string ->
+    (string, [> error]) result
   val decode :
     t ->
     ('a, 'b) Util.array_repr ->
@@ -325,6 +331,70 @@ end = struct
   and index_size t cps =
     compute_encoded_size (16 * Util.prod cps) t
 
+  and partial_encode :
+    internal_shard_config ->
+    ('a, 'b) Util.array_repr ->
+    (int array * 'a) list ->
+    string ->
+    (string, [> error]) result
+    = fun t repr pairs b ->
+    let open Extensions in
+    decode_index b repr.shape t >>= fun (idx_arr, b') ->
+    let b' = Bytes.of_string b' in
+    let tbl = Arraytbl.create @@ List.length pairs in
+    RegularGrid.create ~array_shape:repr.shape t.chunk_shape >>= fun grid ->
+    List.iter
+      (fun (c, v) ->
+        let id, co = RegularGrid.index_coord_pair grid c in
+        Arraytbl.add tbl id (co, v)) pairs;
+    let inner =
+      {kind = repr.kind
+      ;shape = t.chunk_shape
+      ;fill_value = repr.fill_value}
+    in
+    let icoord = Ndarray.shape idx_arr in 
+    let idx_dim = Array.length inner.shape in
+    ArraySet.fold
+      (fun idx acc ->
+        acc >>= fun (bs, shard_idx) ->
+        let z = Arraytbl.find_all tbl idx in  
+        match Ndarray.slice_left shard_idx idx with
+        | xs when Ndarray.equal_scalar xs Int64.max_int ->
+          let arr = Ndarray.create inner.kind inner.shape inner.fill_value in
+          List.iter (fun (c, v) -> Ndarray.set arr c v) z;
+          encode_chain t.codecs arr >>| fun s -> 
+          Array.blit idx 0 icoord 0 idx_dim;
+          icoord.(idx_dim) <- 0;
+          Ndarray.set shard_idx icoord @@ Int64.of_int @@ Bytes.length bs;
+          icoord.(idx_dim) <- 1;
+          Ndarray.set shard_idx icoord @@ Int64.of_int @@ String.length s;
+          Bytes.cat bs @@ String.to_bytes s, shard_idx
+        | xs ->
+          let p = Bigarray.array1_of_genarray xs in
+          let offset = Int64.to_int p.{0} in
+          let nbytes = Int64.to_int p.{1} in
+          let ic = Bytes.sub bs offset nbytes |> Bytes.to_string in
+          decode_chain t.codecs ic inner >>= fun arr ->
+          List.iter (fun (c, v) -> Ndarray.set arr c v) z;
+          encode_chain t.codecs arr >>| fun s ->
+          let nbytes' = String.length s in
+          if nbytes' = nbytes then
+            (Bytes.blit_string s 0 bs offset nbytes'; bs, shard_idx)
+          else
+            (Array.blit idx 0 icoord 0 idx_dim;
+            icoord.(idx_dim) <- 0;
+            Ndarray.set shard_idx icoord @@ Int64.of_int @@ Bytes.length bs;
+            icoord.(idx_dim) <- 1;
+            Ndarray.set shard_idx icoord @@ Int64.of_int nbytes';
+            Bytes.cat bs @@ String.to_bytes s, shard_idx))
+      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok (b', idx_arr))
+    >>= fun (bytes, shard_idx) ->
+    encode_chain (t.index_codecs :> bytestobytes internal_chain) shard_idx
+    >>| fun ib ->
+    match t.index_location with
+    | Start -> ib ^ Bytes.to_string bytes
+    | End -> Bytes.to_string bytes ^ ib
+
   and decode :
     t ->
     ('a, 'b) Util.array_repr ->
@@ -357,7 +427,7 @@ end = struct
         | Some arr ->
           Ok (Ndarray.get arr coord :: l)
         | None ->
-          match Ndarray.(slice_left shard_idx idx) with
+          match Ndarray.slice_left shard_idx idx with
           | pair when Ndarray.equal_scalar pair Int64.max_int ->
             Ok (inner.fill_value :: l)
           | pair ->

@@ -2,6 +2,7 @@ open OUnit2
 open Zarr
 open Zarr.Node
 open Zarr.Storage
+open Zarr.Codecs
 
 module Ndarray = Owl.Dense.Ndarray.Generic
 
@@ -72,10 +73,16 @@ let test_store
   in
   assert_equal (Ok ()) r;
   (* should work with a custom chain too *)
+  let shard_cfg =
+    {chunk_shape = [|2; 5; 5|]
+    ;index_location = End
+    ;index_codecs = [`Bytes Little; `Crc32c]
+    ;codecs = [`Transpose [|2; 0; 1|]; `Bytes Big; `Gzip L1]}
+  in
   let r =
     M.create_array
       ~sep:`Dot
-      ~codecs:[`Bytes Big]
+      ~codecs:[`ShardingIndexed shard_cfg]
       ~shape:[|100; 100; 50|]
       ~chunks:[|10; 15; 20|]
       Bigarray.Complex64
@@ -97,6 +104,9 @@ let test_store
     got;
 
   let x' = Ndarray.map (fun _ -> Complex.one) got in
+  let r = M.set_array anode slice x' store in
+  assert_equal (Ok ()) r;
+  let x' = Ndarray.map (fun v -> Complex.add v Complex.one) x' in
   let r = M.set_array anode slice x' store in
   assert_equal (Ok ()) r;
   let got =

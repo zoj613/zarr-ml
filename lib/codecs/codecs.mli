@@ -21,6 +21,10 @@ module Chain : sig
       the required codecs as defined in the Zarr Version 3 specification. *)
   val default : t
 
+  (** [is_just_sharding t] is [true] if the codec chain [t] contains only
+      the [sharding_indexed] codec. *)
+  val is_just_sharding : t -> bool
+
   (** [encode t x] computes the encoded byte string representation of
       array chunk [x]. Returns an error upon failure. *)
   val encode :
@@ -35,6 +39,13 @@ module Chain : sig
     ('a, 'b) Util.array_repr ->
     string ->
     (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t, [> error ]) result
+
+  val partial_encode :
+    t ->
+    ('a, 'b) Util.array_repr ->
+    (int array * 'a) list ->
+    string ->
+    (string, [> error ]) result 
 
   (** [x = y] returns true if chain [x] is equal to chain [y],
       and false otherwise. *)

@@ -93,6 +93,22 @@ module Chain = struct
       (fun acc c -> acc >>= BytesToBytes.encode c)
       (ArrayToBytes.encode t.a2b y) t.b2b
 
+  let is_just_sharding : t -> bool = function
+    | {a2a = []; a2b = `ShardingIndexed _; b2b = []} -> true
+    | _ -> false
+
+  let partial_encode :
+    t ->
+    ('a, 'b) Util.array_repr ->
+    (int array * 'a) list ->
+    string ->
+    (string, [> error]) result
+    = fun t repr pairs b ->
+    match t.a2b with
+    | `ShardingIndexed c ->
+      ShardingIndexedCodec.partial_encode c repr pairs b
+    | `Bytes _ -> failwith "bytes codec does not support partial encoding." 
+
   let decode :
     t ->
     ('a, 'b) Util.array_repr ->

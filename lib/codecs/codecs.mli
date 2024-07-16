@@ -47,6 +47,13 @@ module Chain : sig
     string ->
     (string, [> error ]) result 
 
+  val partial_decode :
+    t ->
+    ('a, 'b) Util.array_repr ->
+    (int * int array) list ->
+    string ->
+    ((int * 'a) list, [> error ]) result 
+
   (** [x = y] returns true if chain [x] is equal to chain [y],
       and false otherwise. *)
   val ( = ) : t -> t -> bool

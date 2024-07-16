@@ -175,48 +175,44 @@ module Make (M : STORE) : S with type t = M.t = struct
        Result.error @@
        `Store_read ("input kind is not compatible with node's data type."))
     >>= fun () ->
-    (try
-      Ok (Indexing.slice_shape slice @@ AM.shape meta)
-    with
+    let arr_shape = AM.shape meta in
+    (try Result.ok @@ Indexing.slice_shape slice arr_shape with
     | Assert_failure _ -> 
       Result.error @@
       `Store_read "slice shape is not compatible with node's shape.")
-    >>= fun sshape ->
-    let coords = Indexing.coords_of_slice slice @@ AM.shape meta in
+    >>= fun slice_shape ->
+    let coords = Indexing.coords_of_slice slice arr_shape in
     let tbl = Arraytbl.create @@ Array.length coords in
     Array.iteri
       (fun i y ->
         let k, c = AM.index_coord_pair meta y in
         Arraytbl.add tbl k (i, c)) coords;
-    let prefix = ArrayNode.to_key node ^ "/" in
     let chain = AM.codecs meta in
-    let repr =
-      {kind
-      ;shape = AM.chunk_shape meta
-      ;fill_value = AM.fillvalue_of_kind meta kind}
-    in
+    let prefix = ArrayNode.to_key node ^ "/" in
+    let fill_value = AM.fillvalue_of_kind meta kind in
+    let repr = {kind; fill_value; shape = AM.chunk_shape meta} in
     ArraySet.fold
       (fun idx acc ->
-        acc >>= fun l ->
-        let xs = Arraytbl.find_all tbl idx in
+        acc >>= fun xs ->
+        let pairs = Arraytbl.find_all tbl idx in
         match get t @@ prefix ^ AM.chunk_key meta idx with
+        | Ok b when Codecs.Chain.is_just_sharding chain ->
+          Codecs.Chain.partial_decode chain repr pairs b >>| List.append xs
         | Ok b ->
           Codecs.Chain.decode chain repr b >>| fun arr ->
           List.fold_left
-            (fun accu (i, c) -> (i, Ndarray.get arr c) :: accu) l xs
+            (fun accu (i, c) -> (i, Ndarray.get arr c) :: accu) xs pairs
        | Error _ ->
           Result.ok @@
           List.fold_left
-            (fun accu (i, _) -> (i, repr.fill_value) :: accu) l xs)
+            (fun accu (i, _) -> (i, repr.fill_value) :: accu) xs pairs)
       (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok []) 
     >>| fun pairs ->
     let vals =
-      Array.of_list @@
-      snd @@
-      List.split @@
+      Array.of_list @@ snd @@ List.split @@
+      (* restores the C-order of the decoded array coordinates. *)
       List.fast_sort (fun (x, _) (y, _) -> Int.compare x y) pairs
-    in
-    Ndarray.of_array kind vals sshape
+    in Ndarray.of_array kind vals slice_shape
 
   let reshape t node shape =
     let mkey = ArrayNode.to_metakey node in

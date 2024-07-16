@@ -162,6 +162,12 @@ and ShardingIndexedCodec : sig
     (int array * 'a) list ->
     string ->
     (string, [> error]) result
+  val partial_decode :
+    t ->
+    ('a, 'b) Util.array_repr ->
+    (int * int array) list ->
+    string ->
+    ((int * 'a) list, [> error ]) result
   val decode :
     t ->
     ('a, 'b) Util.array_repr ->
@@ -381,6 +387,9 @@ end = struct
           if nbytes' = nbytes then
             (Bytes.blit_string s 0 bs offset nbytes'; bs, shard_idx)
           else
+            (* append to the end of the bytestream iff the new encoded
+               bytes of this inner chunk are not the same size as the
+               decoded bytes and then update the corresponding shard index entries.*)
             (Array.blit idx 0 icoord 0 idx_dim;
             icoord.(idx_dim) <- 0;
             Ndarray.set shard_idx icoord @@ Int64.of_int @@ Bytes.length bs;
@@ -438,6 +447,43 @@ end = struct
             Ok (Ndarray.get x coord :: l)) pair (Ok [])
       >>| Array.of_list >>| fun vals ->
       Ndarray.of_array inner.kind vals repr.shape
+
+  and partial_decode :
+    t ->
+    ('a, 'b) Util.array_repr ->
+    (int * int array) list ->
+    string ->
+    ((int * 'a) list, [> error ]) result
+    = fun t repr pairs b ->
+    let open Extensions in
+    decode_index b repr.shape t >>= fun (idx_arr, b') ->
+    RegularGrid.create ~array_shape:repr.shape t.chunk_shape >>= fun grid ->
+    let tbl = Arraytbl.create @@ List.length pairs in
+    List.iter
+      (fun (i, y) ->
+        let id, c = RegularGrid.index_coord_pair grid y in
+        Arraytbl.add tbl id (i, c)) pairs;
+    let inner =
+      {kind = repr.kind
+      ;shape = t.chunk_shape
+      ;fill_value = repr.fill_value}
+    in
+    ArraySet.fold
+      (fun idx acc ->
+        acc >>= fun (shard_idx, xs) ->
+        let z = Arraytbl.find_all tbl idx in
+        match Ndarray.slice_left shard_idx idx with
+        | ps when Ndarray.equal_scalar ps Int64.max_int ->
+          Ok (shard_idx,
+              xs @ List.map (fun (i, _) -> (i, inner.fill_value)) z)
+        | ps ->
+          let p = Bigarray.array1_of_genarray ps in
+          let ic = String.sub b' (Int64.to_int p.{0}) (Int64.to_int p.{1}) in
+          decode_chain t.codecs ic inner >>| fun arr ->
+          shard_idx,
+          xs @ List.map (fun (i, c) -> (i, Ndarray.get arr c)) z)
+      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok (idx_arr, []))
+    >>| snd
 
   let rec chain_to_yojson chain =
     `List

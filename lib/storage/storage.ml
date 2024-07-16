@@ -182,11 +182,12 @@ module Make (M : STORE) : S with type t = M.t = struct
       Result.error @@
       `Store_read "slice shape is not compatible with node's shape.")
     >>= fun sshape ->
-    let pair = 
-      Array.map
-        (AM.index_coord_pair meta)
-        (Indexing.coords_of_slice slice @@ AM.shape meta) in
-    let tbl = Arraytbl.create @@ Array.length pair in
+    let coords = Indexing.coords_of_slice slice @@ AM.shape meta in
+    let tbl = Arraytbl.create @@ Array.length coords in
+    Array.iteri
+      (fun i y ->
+        let k, c = AM.index_coord_pair meta y in
+        Arraytbl.add tbl k (i, c)) coords;
     let prefix = ArrayNode.to_key node ^ "/" in
     let chain = AM.codecs meta in
     let repr =
@@ -194,21 +195,27 @@ module Make (M : STORE) : S with type t = M.t = struct
       ;shape = AM.chunk_shape meta
       ;fill_value = AM.fillvalue_of_kind meta kind}
     in
-    Array.fold_right (fun (idx, coord) acc ->
-      acc >>= fun l ->
-      match Arraytbl.find_opt tbl idx with
-      | Some arr ->
-        Ok (Ndarray.get arr coord :: l)
-      | None ->
-        (match get t @@ prefix ^ AM.chunk_key meta idx with
+    ArraySet.fold
+      (fun idx acc ->
+        acc >>= fun l ->
+        let xs = Arraytbl.find_all tbl idx in
+        match get t @@ prefix ^ AM.chunk_key meta idx with
         | Ok b ->
-          Codecs.Chain.decode chain repr b
-        | Error _ ->
-          Ok (Ndarray.create repr.kind repr.shape repr.fill_value))
-        >>= fun arr ->
-        Arraytbl.add tbl idx arr;
-        Ok (Ndarray.get arr coord :: l)) pair (Ok [])
-    >>| Array.of_list >>| fun vals ->
+          Codecs.Chain.decode chain repr b >>| fun arr ->
+          List.fold_left
+            (fun accu (i, c) -> (i, Ndarray.get arr c) :: accu) l xs
+       | Error _ ->
+          Result.ok @@
+          List.fold_left
+            (fun accu (i, _) -> (i, repr.fill_value) :: accu) l xs)
+      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok []) 
+    >>| fun pairs ->
+    let vals =
+      Array.of_list @@
+      snd @@
+      List.split @@
+      List.fast_sort (fun (x, _) (y, _) -> Int.compare x y) pairs
+    in
     Ndarray.of_array kind vals sshape
 
   let reshape t node shape =

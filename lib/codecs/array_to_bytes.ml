@@ -44,7 +44,7 @@ module BytesCodec = struct
     string ->
     (a, b) Util.array_repr ->
     endianness ->
-    ((a, b) Ndarray.t, [> error]) result
+    ((a, b) Ndarray.t, [> `Store_read of string | error]) result
     = fun buf decoded t ->
     let open Bigarray in
     let open (val endian_module t) in
@@ -100,7 +100,7 @@ module rec ArrayToBytes : sig
     array_tobytes ->
     ('a, 'b) Util.array_repr ->
     string ->
-    (('a, 'b) Ndarray.t, [> error]) result
+    (('a, 'b) Ndarray.t, [> `Store_read of string | error]) result
   val of_yojson : Yojson.Safe.t -> (array_tobytes, string) result
   val to_yojson : array_tobytes -> Yojson.Safe.t
 end = struct
@@ -127,11 +127,10 @@ end = struct
     | `ShardingIndexed c -> ShardingIndexedCodec.encode c x
 
   let decode :
-    type a b.
     array_tobytes ->
-    (a, b) Util.array_repr ->
+    ('a, 'b) Util.array_repr ->
     string ->
-    ((a, b) Ndarray.t, [> error]) result
+    (('a, 'b) Ndarray.t, [> error]) result
     = fun t repr b ->
     match t with
     | `Bytes endian -> BytesCodec.decode b repr endian
@@ -143,8 +142,7 @@ end = struct
 
   let of_yojson x =
     match Util.get_name x with
-    | "bytes" ->
-      BytesCodec.of_yojson x >>| fun e -> `Bytes e
+    | "bytes" -> BytesCodec.of_yojson x >>| fun e -> `Bytes e
     | "sharding_indexed" ->
       ShardingIndexedCodec.of_yojson x >>| fun c -> `ShardingIndexed c
     | _ -> Error ("array->bytes codec not supported: ")
@@ -152,27 +150,31 @@ end
 
 and ShardingIndexedCodec : sig
   type t = internal_shard_config
-  val parse :
-    t -> ('a, 'b) Util.array_repr -> (unit, [> error]) result
+  val parse : t -> ('a, 'b) Util.array_repr -> (unit, [> error]) result
   val compute_encoded_size : int -> t -> int
   val encode : t -> ('a, 'b) Ndarray.t -> (string, [> error]) result
   val partial_encode :
-    internal_shard_config ->
+    t ->
+    ((int * int option) list ->
+      (string list, [> `Store_read of string | error ] as 'c) result) ->
+    partial_setter ->
+    int ->
     ('a, 'b) Util.array_repr ->
     (int array * 'a) list ->
-    string ->
-    (string, [> error]) result
+    (unit, 'c) result
   val partial_decode :
     t ->
+    ((int * int option) list ->
+      (string list, [> `Store_read of string | error ] as 'c) result) ->
+    int ->
     ('a, 'b) Util.array_repr ->
     (int * int array) list ->
-    string ->
-    ((int * 'a) list, [> error ]) result
+    ((int * 'a) list, 'c) result
   val decode :
     t ->
     ('a, 'b) Util.array_repr ->
     string ->
-    (('a, 'b) Ndarray.t, [> error]) result
+    (('a, 'b) Ndarray.t, [> `Store_read of string | error]) result
   val of_yojson : Yojson.Safe.t -> (t, string) result
   val to_yojson : t -> Yojson.Safe.t
 end = struct
@@ -191,29 +193,27 @@ end = struct
     internal_shard_config ->
     ('a, 'b) Util.array_repr ->
     (unit, [> error]) result
-    = fun t repr ->
-    (match Array.(length repr.shape = length t.chunk_shape) with
+    = fun t r ->
+    (match Array.(length r.shape = length t.chunk_shape) with
     | true -> Ok ()
     | false ->
       let msg =
         "sharding chunk_shape length must equal the dimensionality of
         the decoded representaton of a shard." in
-      Result.error @@ `Sharding (t.chunk_shape, repr.shape, msg))
+      Result.error @@ `Sharding (t.chunk_shape, r.shape, msg))
     >>= fun () ->
     (match
-      Array.for_all2 (fun x y -> (x mod y) = 0) repr.shape t.chunk_shape
+      Array.for_all2 (fun x y -> (x mod y) = 0) r.shape t.chunk_shape
     with
     | true -> Ok ()
     | false ->
       let msg =
         "sharding chunk_shape must evenly divide the size of the shard shape."
       in
-      Result.error @@ `Sharding (t.chunk_shape, repr.shape, msg))
+      Result.error @@ `Sharding (t.chunk_shape, r.shape, msg))
     >>= fun () ->
-    parse_chain repr t.codecs >>= fun () ->
-    (* must add one dimension to the representation of the index array. *)
-    parse_chain
-      {repr with shape = Array.append repr.shape [|2|]} t.index_codecs
+    parse_chain r t.codecs >>= fun () ->
+    parse_chain {r with shape = Array.append r.shape [|2|]} t.index_codecs
 
   let compute_encoded_size input_size t =
     List.fold_left BytesToBytes.compute_encoded_size
@@ -242,7 +242,6 @@ end = struct
     ('a, 'b) Ndarray.t ->
     (string, [> error]) result
     = fun t x ->
-    let open Util in
     let open Extensions in
     let shard_shape = Ndarray.shape x in
     let cps = Array.map2 (/) shard_shape t.chunk_shape in
@@ -256,49 +255,39 @@ end = struct
       let k, c = RegularGrid.index_coord_pair grid coords.(i) in
       Arraytbl.add tbl k (c, y)) x;
     let kind = Ndarray.kind x in
-    let cindices = ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl in
     let buf = Buffer.create @@ Ndarray.size_in_bytes x in
-    let coord = idx_shp in
-    let len = Array.length shard_shape in
-    ArraySet.fold (fun idx acc ->
-      acc >>= fun offset ->
-      (* find_all returns bindings in reverse order. To restore the
-       * C-ordering of elements we must call List.rev. *)
-      let vals =
-        Array.of_list @@
-        snd @@
-        List.split @@
-        List.rev @@
-        Arraytbl.find_all tbl idx
-      in
-      let x' = Ndarray.of_array kind vals t.chunk_shape in
-      encode_chain t.codecs x' >>| fun b ->
-      Buffer.add_string buf b;
-      Array.blit idx 0 coord 0 len;
-      coord.(len) <- 0;
-      Ndarray.set shard_idx coord offset;
-      coord.(len) <- 1;
-      let nbytes = Int64.of_int @@ String.length b in
-      Ndarray.set shard_idx coord nbytes;
-      Int64.add offset nbytes) cindices (Ok 0L)
+    let icoords = Array.map (fun v -> [|v; v|]) idx_shp in
+    icoords.(Array.length shard_shape) <- [|0; 1|];
+    ArraySet.fold
+      (fun idx acc ->
+        acc >>= fun offset ->
+        (* find_all returns bindings in reverse order. To restore the
+         * C-ordering of elements we must use List.rev. *)
+        let v =
+          Array.of_list @@ snd @@ List.split @@ List.rev @@
+          Arraytbl.find_all tbl idx in
+        let x' = Ndarray.of_array kind v t.chunk_shape in
+        encode_chain t.codecs x' >>| fun b ->
+        Buffer.add_string buf b;
+        Array.iteri (fun i v -> icoords.(i).(0) <- v; icoords.(i).(1) <- v) idx;
+        let nb = Int64.of_int @@ String.length b in
+        Ndarray.set_index shard_idx icoords [|offset; nb|];
+        Int64.add offset nb)
+      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok 0L)
     >>= fun _ ->
-    (* convert t.index_codecs to a generic bytes-to-bytes chain. *)
     encode_chain (t.index_codecs :> bytestobytes internal_chain) shard_idx
-    >>| fun b' ->
+    >>| fun ib ->
     match t.index_location with
-    | Start -> b' ^ Buffer.contents buf
-    | End -> Buffer.(add_string buf b'; contents buf)
+    | Start -> ib ^ Buffer.contents buf
+    | End -> Buffer.(add_string buf ib; contents buf)
 
   let rec decode_chain :
     type a b.
     bytestobytes internal_chain ->
-    string ->
     (a, b) Util.array_repr ->
+    string ->
     ((a, b) Ndarray.t, [> error]) result
-    = fun t x repr ->
-    (* compute the last encoded representation of array->array codec chain.
-       This becomes the decoded representation of the array->bytes decode
-       procedure. *)
+    = fun t repr x ->
     List.fold_left
       (fun acc c ->
         acc >>= ArrayToArray.compute_encoded_representation c)
@@ -312,13 +301,11 @@ end = struct
       t.a2a (ArrayToBytes.decode t.a2b repr' y)
 
   and decode_index :
-    string ->
-    int array ->
     internal_shard_config ->
+    int array ->
+    string ->
     ((int64, Bigarray.int64_elt) Ndarray.t * string, [> error]) result
-    = fun b shard_shape t ->
-    let open Util in
-    let cps = Array.map2 (/) shard_shape t.chunk_shape in
+    = fun t cps b ->
     let l = index_size t cps in
     let o = String.length b - l in
     let index_bytes, rest =
@@ -328,10 +315,10 @@ end = struct
     in
     decode_chain
       (t.index_codecs :> bytestobytes internal_chain)
-      index_bytes
       {fill_value = Int64.max_int
       ;kind = Bigarray.Int64
       ;shape = Array.append cps [|2|]}
+      index_bytes
     >>| fun decoded -> decoded, rest
 
   and index_size t cps =
@@ -339,149 +326,133 @@ end = struct
 
   and partial_encode :
     internal_shard_config ->
+    ((int * int option) list ->
+      (string list, [> `Store_read of string | error ]) result) ->
+    partial_setter ->
+    int ->
     ('a, 'b) Util.array_repr ->
     (int array * 'a) list ->
-    string ->
-    (string, [> error]) result
-    = fun t repr pairs b ->
+    (unit, [> `Store_read of string | error ]) result
+    = fun t get_partial set_partial bytesize repr pairs ->
     let open Extensions in
-    decode_index b repr.shape t >>= fun (idx_arr, b') ->
-    let b' = Bytes.of_string b' in
+    let cps = Array.map2 (/) repr.shape t.chunk_shape in
+    let is = index_size t cps in
+    let ibytes, pad =
+      match t.index_location with
+      | Start -> get_partial [0, Some is], is
+      | End -> get_partial [bytesize - is, None], 0 in
+    ibytes >>|
+    List.hd >>=
+    decode_index t cps >>= fun (idx_arr, _) ->
     let tbl = Arraytbl.create @@ List.length pairs in
     RegularGrid.create ~array_shape:repr.shape t.chunk_shape >>= fun grid ->
     List.iter
       (fun (c, v) ->
         let id, co = RegularGrid.index_coord_pair grid c in
         Arraytbl.add tbl id (co, v)) pairs;
-    let inner =
-      {kind = repr.kind
-      ;shape = t.chunk_shape
-      ;fill_value = repr.fill_value}
-    in
-    let icoord = Ndarray.shape idx_arr in 
-    let idx_dim = Array.length inner.shape in
+    let inner = {repr with shape = t.chunk_shape} in
+    let icoords = Array.map (fun v -> [|v; v|]) @@ Ndarray.shape idx_arr in
+    icoords.(Array.length t.chunk_shape) <- [|0; 1|];
     ArraySet.fold
       (fun idx acc ->
-        acc >>= fun (bs, shard_idx) ->
+        acc >>= fun (bsize, shard_idx) ->
         let z = Arraytbl.find_all tbl idx in  
-        match Ndarray.slice_left shard_idx idx with
-        | xs when Ndarray.equal_scalar xs Int64.max_int ->
-          let arr = Ndarray.create inner.kind inner.shape inner.fill_value in
-          List.iter (fun (c, v) -> Ndarray.set arr c v) z;
-          encode_chain t.codecs arr >>| fun s -> 
-          Array.blit idx 0 icoord 0 idx_dim;
-          icoord.(idx_dim) <- 0;
-          Ndarray.set shard_idx icoord @@ Int64.of_int @@ Bytes.length bs;
-          icoord.(idx_dim) <- 1;
-          Ndarray.set shard_idx icoord @@ Int64.of_int @@ String.length s;
-          Bytes.cat bs @@ String.to_bytes s, shard_idx
-        | xs ->
-          let p = Bigarray.array1_of_genarray xs in
-          let offset = Int64.to_int p.{0} in
-          let nbytes = Int64.to_int p.{1} in
-          let ic = Bytes.sub bs offset nbytes |> Bytes.to_string in
-          decode_chain t.codecs ic inner >>= fun arr ->
-          List.iter (fun (c, v) -> Ndarray.set arr c v) z;
-          encode_chain t.codecs arr >>| fun s ->
-          let nbytes' = String.length s in
-          if nbytes' = nbytes then
-            (Bytes.blit_string s 0 bs offset nbytes'; bs, shard_idx)
-          else
-            (* append to the end of the bytestream iff the new encoded
-               bytes of this inner chunk are not the same size as the
-               decoded bytes and then update the corresponding shard index entries.*)
-            (Array.blit idx 0 icoord 0 idx_dim;
-            icoord.(idx_dim) <- 0;
-            Ndarray.set shard_idx icoord @@ Int64.of_int @@ Bytes.length bs;
-            icoord.(idx_dim) <- 1;
-            Ndarray.set shard_idx icoord @@ Int64.of_int nbytes';
-            Bytes.cat bs @@ String.to_bytes s, shard_idx))
-      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok (b', idx_arr))
-    >>= fun (bytes, shard_idx) ->
+        let p = Bigarray.array1_of_genarray @@ Ndarray.slice_left shard_idx idx in
+        let offset = Int64.to_int p.{0} in
+        let nb = Int64.to_int p.{1} in
+        get_partial [pad + offset, Some nb] >>|
+        List.hd >>=
+        decode_chain t.codecs inner >>= fun arr ->
+        List.iter (fun (c, v) -> Ndarray.set arr c v) z;
+        encode_chain t.codecs arr >>| fun s ->
+        let nb' = String.length s in
+        (* if codec chain doesnt contain compressions so update chunk in-place *)
+        if nb' = nb then
+          (set_partial [pad + offset, s]; bsize, shard_idx)
+        else
+          (Array.iteri
+            (fun i v -> icoords.(i).(0) <- v; icoords.(i).(1) <- v) idx;
+          Ndarray.set_index
+            shard_idx icoords Int64.[|of_int bsize; of_int nb'|];
+          set_partial ~append:true [bsize, s];
+          bsize + nb', shard_idx))
+      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok (bytesize - pad, idx_arr))
+    >>= fun (bytesize, shard_idx) ->
     encode_chain (t.index_codecs :> bytestobytes internal_chain) shard_idx
     >>| fun ib ->
     match t.index_location with
-    | Start -> ib ^ Bytes.to_string bytes
-    | End -> Bytes.to_string bytes ^ ib
+    | Start -> set_partial [0, ib]
+    | End -> set_partial ~append:true [bytesize, ib]
 
   and decode :
     t ->
     ('a, 'b) Util.array_repr ->
     string ->
-    (('a, 'b) Ndarray.t, [> error]) result
+    (('a, 'b) Ndarray.t, [> `Store_read of string | error]) result
     = fun t repr b ->
-    let open Util in
     let open Extensions in
-    let open Util.Result_syntax in
-    decode_index b repr.shape t >>= fun (shard_idx, b') ->
-    if Ndarray.equal_scalar shard_idx Int64.max_int then
-      Ok (Ndarray.create repr.kind repr.shape repr.fill_value)
-    else
-      RegularGrid.create ~array_shape:repr.shape t.chunk_shape >>= fun sg ->
-      let slice = Array.make (Array.length repr.shape) @@ Owl_types.R [] in
-      (* pair (i, c) is a pair of shard chunk index (i) and shard coordinate c *)
-      let pair =
-        Array.map
-        (RegularGrid.index_coord_pair sg)
-        (Indexing.coords_of_slice slice repr.shape) in
-      let tbl = Arraytbl.create @@ Array.length pair in
-      let inner =
-        {kind = repr.kind
-        ;shape = t.chunk_shape
-        ;fill_value = repr.fill_value}
-      in
-      Array.fold_right (fun (idx, coord) acc ->
-        acc >>= fun l ->
-        match Arraytbl.find_opt tbl idx with
-        | Some arr ->
-          Ok (Ndarray.get arr coord :: l)
-        | None ->
-          match Ndarray.slice_left shard_idx idx with
-          | pair when Ndarray.equal_scalar pair Int64.max_int ->
-            Ok (inner.fill_value :: l)
-          | pair ->
-            let p = Bigarray.array1_of_genarray pair in
-            let c = String.sub b' (Int64.to_int p.{0}) (Int64.to_int p.{1}) in
-            decode_chain t.codecs c inner >>= fun x ->
-            Arraytbl.add tbl idx x;
-            Ok (Ndarray.get x coord :: l)) pair (Ok [])
-      >>| Array.of_list >>| fun vals ->
-      Ndarray.of_array inner.kind vals repr.shape
+    let cps = Array.map2 (/) repr.shape t.chunk_shape in
+    decode_index t cps b >>= fun (shard_idx, b') ->
+    RegularGrid.create ~array_shape:repr.shape t.chunk_shape >>= fun grid ->
+    let slice = Array.make (Array.length repr.shape) @@ Owl_types.R [] in
+    let coords = Indexing.coords_of_slice slice repr.shape in
+    let tbl = Arraytbl.create @@ Array.length coords in
+    Array.iteri
+      (fun i y ->
+        let k, c = RegularGrid.index_coord_pair grid y in
+        Arraytbl.add tbl k (i, c)) coords;
+    let inner = {repr with shape = t.chunk_shape} in
+    ArraySet.fold
+      (fun idx acc ->
+        acc >>= fun xs ->
+        let pairs = Arraytbl.find_all tbl idx in
+        let p = Bigarray.array1_of_genarray @@ Ndarray.slice_left shard_idx idx in
+        let c = String.sub b' (Int64.to_int p.{0}) (Int64.to_int p.{1}) in
+        decode_chain t.codecs inner c >>| fun arr ->
+        List.fold_left
+          (fun a (i, c) -> (i, Ndarray.get arr c) :: a) xs pairs)
+      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok [])
+    >>| fun pairs ->
+    let v =
+      Array.of_list @@ snd @@ List.split @@
+      List.fast_sort (fun (x, _) (y, _) -> Int.compare x y) pairs in
+    Ndarray.of_array inner.kind v repr.shape
 
   and partial_decode :
-    t ->
+    internal_shard_config ->
+    ((int * int option) list ->
+      (string list, [> `Store_read of string | error ]) result) ->
+    int ->
     ('a, 'b) Util.array_repr ->
     (int * int array) list ->
-    string ->
-    ((int * 'a) list, [> error ]) result
-    = fun t repr pairs b ->
+    ((int * 'a) list, [> `Store_read of string | error ]) result
+    = fun t get_partial bsize repr pairs ->
     let open Extensions in
-    decode_index b repr.shape t >>= fun (idx_arr, b') ->
+    let cps = Array.map2 (/) repr.shape t.chunk_shape in
+    let is = index_size t cps in
+    let ibytes, pad =
+      match t.index_location with
+      | Start -> get_partial [0, Some is], is
+      | End -> get_partial [bsize - is, None], 0 in
+    ibytes >>|
+    List.hd >>=
+    decode_index t cps >>= fun (idx_arr, _) ->
     RegularGrid.create ~array_shape:repr.shape t.chunk_shape >>= fun grid ->
     let tbl = Arraytbl.create @@ List.length pairs in
     List.iter
       (fun (i, y) ->
         let id, c = RegularGrid.index_coord_pair grid y in
         Arraytbl.add tbl id (i, c)) pairs;
-    let inner =
-      {kind = repr.kind
-      ;shape = t.chunk_shape
-      ;fill_value = repr.fill_value}
-    in
+    let inner = {repr with shape = t.chunk_shape} in
     ArraySet.fold
       (fun idx acc ->
         acc >>= fun (shard_idx, xs) ->
         let z = Arraytbl.find_all tbl idx in
-        match Ndarray.slice_left shard_idx idx with
-        | ps when Ndarray.equal_scalar ps Int64.max_int ->
-          Ok (shard_idx,
-              xs @ List.map (fun (i, _) -> (i, inner.fill_value)) z)
-        | ps ->
-          let p = Bigarray.array1_of_genarray ps in
-          let ic = String.sub b' (Int64.to_int p.{0}) (Int64.to_int p.{1}) in
-          decode_chain t.codecs ic inner >>| fun arr ->
-          shard_idx,
-          xs @ List.map (fun (i, c) -> (i, Ndarray.get arr c)) z)
+        let p = Bigarray.array1_of_genarray @@ Ndarray.slice_left shard_idx idx in
+        get_partial Int64.[pad + to_int p.{0}, Some (to_int p.{1})] >>|
+        List.hd >>=
+        decode_chain t.codecs inner >>| fun arr ->
+        shard_idx, xs @ List.map (fun (i, c) -> (i, Ndarray.get arr c)) z)
       (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok (idx_arr, []))
     >>| snd
 

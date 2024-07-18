@@ -38,21 +38,27 @@ module Chain : sig
     t ->
     ('a, 'b) Util.array_repr ->
     string ->
-    (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t, [> error ]) result
+    (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
+    ,[> `Store_read of string | error ]) result
 
   val partial_encode :
     t ->
+    ((int * int option) list ->
+      (string list, [> `Store_read of string | error ] as 'c) result) ->
+    partial_setter ->
+    int ->
     ('a, 'b) Util.array_repr ->
     (int array * 'a) list ->
-    string ->
-    (string, [> error ]) result 
+    (unit, 'c) result
 
   val partial_decode :
     t ->
+    ((int * int option) list ->
+      (string list, [> `Store_read of string | error ] as 'c) result) ->
+    int ->
     ('a, 'b) Util.array_repr ->
     (int * int array) list ->
-    string ->
-    ((int * 'a) list, [> error ]) result 
+    ((int * 'a) list, 'c) result
 
   (** [x = y] returns true if chain [x] is equal to chain [y],
       and false otherwise. *)

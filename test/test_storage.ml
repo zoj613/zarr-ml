@@ -56,33 +56,25 @@ let test_store
       have metadata with said values.");
 
   let fake = ArrayNode.(gnode / "non-member") |> Result.get_ok in
-  assert_equal
-    ~printer:string_of_bool
-    false @@
-    M.array_exists store fake;
+  assert_equal ~printer:string_of_bool false @@ M.array_exists store fake;
 
-  let anode = ArrayNode.(gnode / "arrnode") |> Result.get_ok in
-  let r =
-    M.create_array
-      ~shape:[|100; 100; 50|]
-      ~chunks:[|10; 15; 20|]
-      Bigarray.Complex64
-      Complex.zero
-      anode
-      store
+  let nested_sharding =
+  `ShardingIndexed {
+    chunk_shape = [|5; 1; 5|];
+    index_location = Start;
+    index_codecs = [`Bytes Big];
+    codecs = [`Bytes Little; `Gzip L2]}
   in
-  assert_equal (Ok ()) r;
-  (* should work with a custom chain too *)
-  let shard_cfg =
+  let cfg =
     {chunk_shape = [|2; 5; 5|]
     ;index_location = End
     ;index_codecs = [`Bytes Little; `Crc32c]
-    ;codecs = [`Transpose [|2; 0; 1|]; `Bytes Big; `Gzip L1]}
-  in
+    ;codecs = [`Transpose [|2; 0; 1|]; nested_sharding; `Gzip L1]} in
+  let anode = ArrayNode.(gnode / "arrnode") |> Result.get_ok in
   let r =
     M.create_array
       ~sep:`Dot
-      ~codecs:[`ShardingIndexed shard_cfg]
+      ~codecs:[`ShardingIndexed cfg]
       ~shape:[|100; 100; 50|]
       ~chunks:[|10; 15; 20|]
       Bigarray.Complex64
@@ -91,28 +83,37 @@ let test_store
       store
   in
   assert_equal (Ok ()) r;
-  
   let slice = Owl_types.[|R [0; 20]; I 10; R []|] in
-  let expected =
-    Ndarray.create Bigarray.Complex64 [|21; 1; 50|] Complex.zero in
-  let got =
-    Result.get_ok @@
-    M.get_array anode slice Bigarray.Complex64 store in
-  assert_equal
-    ~printer:Owl_pretty.dsnda_to_string
-    expected
-    got;
+  let r = M.get_array anode slice Bigarray.Complex64 store in
+  assert_bool "" @@ Result.is_ok r;
+  let expected = Ndarray.create Bigarray.Complex64 [|21; 1; 50|] Complex.one in
+  let r = M.set_array anode slice expected store in
+  assert_equal (Ok ()) r;
+  let got = Result.get_ok @@ M.get_array anode slice Bigarray.Complex64 store in
+  assert_equal ~printer:Owl_pretty.dsnda_to_string expected got;
+  let x' = Ndarray.map (fun v -> Complex.(add v one)) got in
+  let r = M.set_array anode slice x' store in
+  assert_equal (Ok ()) r;
+  let r = M.get_array anode slice Bigarray.Complex64 store in
+  assert_bool "" @@ Result.is_ok r;
 
-  let x' = Ndarray.map (fun _ -> Complex.one) got in
+  let r =
+    M.create_array
+      ~codecs:[`Bytes Big]
+      ~shape:[|100; 100; 50|]
+      ~chunks:[|10; 15; 20|]
+      Bigarray.Complex64
+      Complex.zero
+      anode
+      store in
+  assert_equal (Ok ()) r;
+  let expected = Ndarray.create Bigarray.Complex64 [|21; 1; 50|] Complex.zero in
+  let got = Result.get_ok @@ M.get_array anode slice Bigarray.Complex64 store in
+  assert_equal ~printer:Owl_pretty.dsnda_to_string expected got;
+  let x' = Ndarray.map (fun v -> Complex.(add v one)) got in
   let r = M.set_array anode slice x' store in
   assert_equal (Ok ()) r;
-  let x' = Ndarray.map (fun v -> Complex.add v Complex.one) x' in
-  let r = M.set_array anode slice x' store in
-  assert_equal (Ok ()) r;
-  let got =
-    Result.get_ok @@
-    M.get_array anode slice Bigarray.Complex64 store
-  in
+  let got = Result.get_ok @@ M.get_array anode slice Bigarray.Complex64 store in
   assert_equal ~printer:Owl_pretty.dsnda_to_string x' got;
   assert_bool
     "get_array can only work with the correct array kind" @@

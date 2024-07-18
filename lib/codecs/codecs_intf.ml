@@ -39,6 +39,7 @@ type error =
   | `CodecChain of string
   | `Sharding of int array * int array * string ]
 
+type partial_setter = ?append:bool -> (int * string) list -> unit
 
 module type Interface = sig
   (** The type of [array -> array] codecs. *)
@@ -102,4 +103,6 @@ module type Interface = sig
     | `Transpose_order of int array * string
     | `CodecChain of string
     | `Sharding of int array * int array * string ]
+
+  type partial_setter = ?append:bool -> (int * string) list -> unit
 end

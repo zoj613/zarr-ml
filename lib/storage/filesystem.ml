@@ -58,11 +58,10 @@ module Impl = struct
       Out_channel.[Open_wronly; Open_trunc; Open_creat]
       t.file_perm
       filename
-      (fun oc -> Out_channel.output_string oc value)
+      (fun oc -> Out_channel.output_string oc value; Out_channel.flush oc)
 
   let set_partial_values t key ?(append=false) rvs =
     let open Out_channel in
-    ignore @@
     Out_channel.with_open_gen
       [if append then Open_append else Open_wronly]
       t.file_perm
@@ -71,7 +70,7 @@ module Impl = struct
         List.iter
           (fun (rs, value) ->
             Out_channel.seek oc @@ Int64.of_int rs;
-            Out_channel.output_string oc value) rvs; 0)
+            Out_channel.output_string oc value) rvs; Out_channel.flush oc)
 
   let list t =
     let module StrSet = Storage_intf.Base.StrSet in
@@ -105,14 +104,11 @@ module Impl = struct
     | Sys_error _ -> ()
 
   let size t key =
-    try
-      In_channel.with_open_gen
-        In_channel.[Open_rdonly]
-        t.file_perm
-        (key_to_fspath t key)
-        (fun ic -> In_channel.length ic |> Int64.to_int)
-    with
-    | Sys_error _ -> 0
+    In_channel.with_open_gen
+      In_channel.[Open_rdonly]
+      t.file_perm
+      (key_to_fspath t key)
+      (fun ic -> In_channel.length ic |> Int64.to_int)
 
   let erase_values t keys =
     Storage_intf.Base.erase_values
@@ -122,7 +118,7 @@ module Impl = struct
     Storage_intf.Base.erase_prefix
       ~list_fn:list ~erase_fn:erase t pre
 
-  let list_prefix pre t =
+  let list_prefix t pre =
     Storage_intf.Base.list_prefix ~list_fn:list t pre
 
   let list_dir t pre =

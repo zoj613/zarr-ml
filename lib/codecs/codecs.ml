@@ -99,33 +99,39 @@ module Chain = struct
 
   let partial_encode :
     t ->
+    ((int * int option) list ->
+      (string list, [> `Store_read of string | error] as 'c) result) ->
+    partial_setter ->
+    int ->
     ('a, 'b) Util.array_repr ->
     (int array * 'a) list ->
-    string ->
-    (string, [> error]) result
-    = fun t repr pairs b ->
+    (unit, 'c) result
+    = fun t f g bsize repr pairs ->
     match t.a2b with
     | `ShardingIndexed c ->
-      ShardingIndexedCodec.partial_encode c repr pairs b
+      ShardingIndexedCodec.partial_encode c f g bsize repr pairs
     | `Bytes _ -> failwith "bytes codec does not support partial encoding." 
 
   let partial_decode :
     t ->
+    ((int * int option) list ->
+      (string list, [> `Store_read of string | error ] as 'c) result) ->
+    int ->
     ('a, 'b) Util.array_repr ->
     (int * int array) list ->
-    string ->
-    ((int * 'a) list, [> error ]) result 
-    = fun t repr pairs b ->
+    ((int * 'a) list, 'c) result
+    = fun t f s repr pairs ->
     match t.a2b with
     | `ShardingIndexed c ->
-      ShardingIndexedCodec.partial_decode c repr pairs b
+      ShardingIndexedCodec.partial_decode c f s repr pairs
     | `Bytes _ -> failwith "bytes codec does not support partial decoding."
 
   let decode :
     t ->
     ('a, 'b) Util.array_repr ->
     string ->
-    (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t, [> error]) result
+    (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
+    ,[> `Store_read of string | error]) result
     = fun t repr x ->
     List.fold_right
       (fun c acc -> acc >>= BytesToBytes.decode c) t.b2b (Ok x)

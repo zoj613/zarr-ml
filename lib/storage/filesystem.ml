@@ -28,6 +28,29 @@ module Impl = struct
     with
     | Sys_error _ -> Error (`Store_read fpath)
 
+  let get_partial_values t key ranges =
+    let open Util.Result_syntax in
+    In_channel.with_open_gen
+      In_channel.[Open_rdonly]
+      t.file_perm
+      (key_to_fspath t key)
+      (fun ic ->
+        let size = In_channel.length ic |> Int64.to_int in
+        List.fold_right
+          (fun (rs, len) acc ->
+            acc >>= fun xs ->
+            let len' =
+              match len with
+              | Some l -> l
+              | None -> size - rs
+            in
+            In_channel.seek ic @@ Int64.of_int rs;
+            match In_channel.really_input_string ic len' with
+            | Some s -> Ok (s :: xs)
+            | None ->
+              Error (`Store_read "EOF reached before all bytes are read."))
+          ranges (Ok []))
+
   let set t key value =
     let filename = key_to_fspath t key in
     create_parent_dir filename t.file_perm;
@@ -36,6 +59,19 @@ module Impl = struct
       t.file_perm
       filename
       (fun oc -> Out_channel.output_string oc value)
+
+  let set_partial_values t key ?(append=false) rvs =
+    let open Out_channel in
+    ignore @@
+    Out_channel.with_open_gen
+      [if append then Open_append else Open_wronly]
+      t.file_perm
+      (key_to_fspath t key)
+      (fun oc ->
+        List.iter
+          (fun (rs, value) ->
+            Out_channel.seek oc @@ Int64.of_int rs;
+            Out_channel.output_string oc value) rvs; 0)
 
   let list t =
     let module StrSet = Storage_intf.Base.StrSet in
@@ -68,13 +104,15 @@ module Impl = struct
     try Sys.remove @@ key_to_fspath t key with
     | Sys_error _ -> ()
 
-  let get_partial_values t kr_pairs =
-    Storage_intf.Base.get_partial_values
-      ~get_fn:get t kr_pairs
-
-  let set_partial_values t krv_triplet =
-    Storage_intf.Base.set_partial_values
-      ~set_fn:set ~get_fn:get t krv_triplet
+  let size t key =
+    try
+      In_channel.with_open_gen
+        In_channel.[Open_rdonly]
+        t.file_perm
+        (key_to_fspath t key)
+        (fun ic -> In_channel.length ic |> Int64.to_int)
+    with
+    | Sys_error _ -> 0
 
   let erase_values t keys =
     Storage_intf.Base.erase_values

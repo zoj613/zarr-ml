@@ -3,7 +3,7 @@ open Node
 
 type key = string
 
-type range = ByteRange of int * int option
+type range = int * int option
 
 type error =
   [ `Store_read of string
@@ -27,10 +27,12 @@ module type STORE = sig
       in keys and ending with a trailing / character. *)
 
   type t
-  val get : t -> key -> (string, [> error]) result
-  val get_partial_values : t -> (key * range) list -> (string list, [> error ]) result
+  val size : t -> key -> int
+  val get : t -> key -> (string, [> `Store_read of string ]) result
+  val get_partial_values :
+    t -> key -> range list -> (string list, [> `Store_read of string ]) result
   val set : t -> key -> string -> unit
-  val set_partial_values : t -> (key * int * string) list -> (unit, [> error]) result
+  val set_partial_values : t -> key -> ?append:bool -> (int * string) list -> unit
   val erase : t -> key -> unit
   val erase_values : t -> key list -> unit
   val erase_prefix : t -> key -> unit
@@ -214,29 +216,25 @@ module Base = struct
     in
     StrSet.(elements keys, elements prefixes)
 
-  let get_partial_values ~get_fn t kr_pairs =
+  let get_partial_values ~get_fn t key ranges =
     let open Util.Result_syntax in
     List.fold_right
-      (fun (k, ByteRange (rs, len)) acc ->
+      (fun (rs, len) acc ->
         acc >>= fun xs ->
-        get_fn t k >>| fun v ->
+        get_fn t key >>| fun v ->
         (match len with
         | None -> String.sub v rs @@ String.length v - rs
-        | Some l -> String.sub v rs l) :: xs) kr_pairs (Ok [])
+        | Some l -> String.sub v rs l) :: xs) ranges (Ok [])
 
-  let set_partial_values ~set_fn ~get_fn t krv =
-    let open Util.Result_syntax in
-    let module StrMap = Util.StrMap in
-    let tbl = StrMap.create @@ List.length krv in
-    List.fold_right
-      (fun (k, rs, v) acc ->
-        acc >>= fun () ->
-        (match StrMap.find_opt tbl k with
-        | None ->
-          get_fn t k
-        | Some ov -> Ok ov)
-        >>| fun ov ->
-        let ov' = Bytes.of_string ov in
-        String.(length v |> blit v 0 ov' rs);
-        set_fn t k @@ Bytes.to_string ov') krv (Ok ())
+  let set_partial_values ~set_fn ~get_fn t key append rv =
+    List.iter
+      (fun (rs, v) ->
+        let ov = get_fn t key |> Result.get_ok in
+        if append then
+          let ov' = ov ^ v in
+          set_fn t key ov'
+        else
+          let ov' = Bytes.of_string ov in
+          String.(length v |> Bytes.blit_string v 0 ov' rs);
+          set_fn t key @@ Bytes.to_string ov') rv
 end

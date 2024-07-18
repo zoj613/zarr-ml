@@ -20,18 +20,23 @@ module Impl = struct
 
   let erase = StrMap.remove
 
+  let size t key =
+    match get t key with
+    | Ok v -> String.length v
+    | Error _ -> 0
+
   let erase_prefix t pre =
     StrMap.filter_map_inplace
       (fun k v ->
         if String.starts_with ~prefix:pre k then None else Some v) t
 
-  let get_partial_values t kr_pairs =
+  let get_partial_values t key ranges =
     Storage_intf.Base.get_partial_values
-      ~get_fn:get t kr_pairs
+      ~get_fn:get t key ranges
 
-  let set_partial_values t krv_triplet =
+  let set_partial_values t key ?(append=false) rv =
     Storage_intf.Base.set_partial_values
-      ~set_fn:set ~get_fn:get t krv_triplet
+      ~set_fn:set ~get_fn:get t key append rv
 
   let erase_values t keys =
     Storage_intf.Base.erase_values ~erase_fn:erase t keys

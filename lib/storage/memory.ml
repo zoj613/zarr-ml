@@ -21,9 +21,7 @@ module Impl = struct
   let erase = StrMap.remove
 
   let size t key =
-    match get t key with
-    | Ok v -> String.length v
-    | Error _ -> 0
+    get t key |> Result.get_ok |> String.length
 
   let erase_prefix t pre =
     StrMap.filter_map_inplace
@@ -41,7 +39,7 @@ module Impl = struct
   let erase_values t keys =
     Storage_intf.Base.erase_values ~erase_fn:erase t keys
 
-  let list_prefix pre t =
+  let list_prefix t pre =
     Storage_intf.Base.list_prefix ~list_fn:list t pre
 
   let list_dir t pre =

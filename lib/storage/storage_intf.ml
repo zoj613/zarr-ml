@@ -37,7 +37,7 @@ module type STORE = sig
   val erase_values : t -> key list -> unit
   val erase_prefix : t -> key -> unit
   val list : t -> key list
-  val list_prefix : key -> t -> key list
+  val list_prefix : t -> key -> key list
   val list_dir : t -> key -> key list * string list 
   val is_member : t -> key -> bool
 end

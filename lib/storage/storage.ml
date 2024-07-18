@@ -1,5 +1,6 @@
 include Storage_intf
 
+open Util
 open Util.Result_syntax
 open Node
 
@@ -43,7 +44,6 @@ module Make (M : STORE) : S with type t = M.t = struct
     node
     t
     =
-    let open Util in
     let repr = {kind; fill_value; shape = chunks} in
     (match codecs with
     | Some c -> Codecs.Chain.create repr c
@@ -89,7 +89,7 @@ module Make (M : STORE) : S with type t = M.t = struct
               (Result.get_ok @@ ArrayNode.of_path p) :: l, r
             else
               l, (Result.get_ok @@ GroupNode.of_path p) :: r
-          else acc) ([], []) (list_prefix "" t)
+          else acc) ([], []) (list_prefix t "")
     with
     | [], [] as xs -> xs
     | l, r -> l, GroupNode.root :: r
@@ -102,15 +102,13 @@ module Make (M : STORE) : S with type t = M.t = struct
 
   let erase_all_nodes t = erase_prefix t ""
 
-  let set_array
-  : type a b.
+  let set_array :
     ArrayNode.t ->
     Owl_types.index array ->
-    (a, b) Ndarray.t ->
+    ('a, 'b) Ndarray.t ->
     t ->
     (unit, [> error ]) result
   = fun node slice x t ->
-    let open Util in
     get t @@ ArrayNode.to_metakey node >>= fun bytes ->
     AM.decode bytes >>? (fun msg -> `Store_write msg) >>= fun meta ->
     let arr_shape = AM.shape meta in
@@ -132,41 +130,40 @@ module Make (M : STORE) : S with type t = M.t = struct
     Ndarray.iteri (fun i y ->
       let k, c = AM.index_coord_pair meta coords.(i) in
       Arraytbl.add tbl k (c, y)) x;
-    let repr =
-      {kind
-      ;shape = AM.chunk_shape meta
-      ;fill_value = AM.fillvalue_of_kind meta kind}
-    in
-    let chain = AM.codecs meta in
+    let fill_value = AM.fillvalue_of_kind meta kind in
+    let repr = {kind; fill_value; shape = AM.chunk_shape meta} in
     let prefix = ArrayNode.to_key node ^ "/" in
+    let chain = AM.codecs meta in
     ArraySet.fold
       (fun idx acc ->
         acc >>= fun () ->
-        let ckey = prefix ^ AM.chunk_key meta idx in
         let pairs = Arraytbl.find_all tbl idx in 
-        match get t ckey with
-        | Ok b when Codecs.Chain.is_just_sharding chain ->
-          Codecs.Chain.partial_encode chain repr pairs b >>| set t ckey
-        | Ok b ->
-          Codecs.Chain.decode chain repr b >>= fun arr ->
-          List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
-          Codecs.Chain.encode chain arr >>| set t ckey
-        | Error _ ->
-          (* array chunk not present in store, so create one. *)
-          let arr = Ndarray.create repr.kind repr.shape repr.fill_value in
+        let ckey = prefix ^ AM.chunk_key meta idx in
+        if Codecs.Chain.is_just_sharding chain && is_member t ckey then
+          Codecs.Chain.partial_encode
+            chain
+            (get_partial_values t ckey)
+            (set_partial_values t ckey)
+            (size t ckey)
+            repr
+            pairs
+        else
+          (match get t ckey with
+          | Ok b -> Codecs.Chain.decode chain repr b
+          | Error `Store_read _ ->
+            Result.ok @@ Ndarray.create repr.kind repr.shape repr.fill_value)
+          >>= fun arr ->
           List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
           Codecs.Chain.encode chain arr >>| set t ckey)
       (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok ())
 
-  let get_array
-  : type a b.
+  let get_array :
     ArrayNode.t ->
     Owl_types.index array ->
-    (a, b) Bigarray.kind ->
+    ('a, 'b) Bigarray.kind ->
     t ->
-    ((a, b) Ndarray.t, [> error]) result
+    (('a, 'b) Ndarray.t, [> error]) result
   = fun node slice kind t ->
-    let open Util in
     get t @@ ArrayNode.to_metakey node >>= fun bytes ->
     AM.decode bytes >>? (fun msg -> `Store_read msg) >>= fun meta ->
     (if AM.is_valid_kind meta kind then
@@ -195,44 +192,44 @@ module Make (M : STORE) : S with type t = M.t = struct
       (fun idx acc ->
         acc >>= fun xs ->
         let pairs = Arraytbl.find_all tbl idx in
-        match get t @@ prefix ^ AM.chunk_key meta idx with
-        | Ok b when Codecs.Chain.is_just_sharding chain ->
-          Codecs.Chain.partial_decode chain repr pairs b >>| List.append xs
-        | Ok b ->
-          Codecs.Chain.decode chain repr b >>| fun arr ->
-          List.fold_left
-            (fun accu (i, c) -> (i, Ndarray.get arr c) :: accu) xs pairs
-       | Error _ ->
-          Result.ok @@
-          List.fold_left
-            (fun accu (i, _) -> (i, repr.fill_value) :: accu) xs pairs)
-      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok []) 
+        let ckey = prefix ^ AM.chunk_key meta idx in
+        if Codecs.Chain.is_just_sharding chain && is_member t ckey then
+          Codecs.Chain.partial_decode
+            chain (get_partial_values t ckey) (size t ckey) repr pairs >>|
+            List.append xs
+        else
+          match get t ckey with
+          | Ok b ->
+            Codecs.Chain.decode chain repr b >>| fun arr ->
+            List.fold_left
+              (fun a (i, c) -> (i, Ndarray.get arr c) :: a) xs pairs
+         | Error `Store_read _ ->
+            Result.ok @@
+            List.fold_left (fun a (i, _) -> (i, fill_value) :: a) xs pairs)
+      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok [])
     >>| fun pairs ->
-    let vals =
+    (* sorting restores the C-order of the decoded array coordinates. *)
+    let v =
       Array.of_list @@ snd @@ List.split @@
-      (* restores the C-order of the decoded array coordinates. *)
-      List.fast_sort (fun (x, _) (y, _) -> Int.compare x y) pairs
-    in Ndarray.of_array kind vals slice_shape
+      List.fast_sort (fun (x, _) (y, _) -> Int.compare x y) pairs in
+    Ndarray.of_array kind v slice_shape
 
-  let reshape t node shape =
+  let reshape t node newshape =
     let mkey = ArrayNode.to_metakey node in
     get t mkey  >>= fun bytes ->
-    AM.decode bytes >>? (fun msg -> `Store_write msg)
-    >>= fun meta ->
-    (if Array.length shape = Array.length @@ AM.shape meta then
+    AM.decode bytes >>? (fun msg -> `Store_write msg) >>= fun meta ->
+    let oldshape = AM.shape meta in
+    (if Array.length newshape = Array.length oldshape then
       Ok ()
     else
       Error (`Store_write "new shape must have same number of dimensions."))
     >>| fun () ->
     let pre = ArrayNode.to_key node ^ "/" in
-    let s =
-      ArraySet.of_list @@ AM.chunk_indices meta @@ AM.shape meta in
-    let s' =
-      ArraySet.of_list @@ AM.chunk_indices meta shape in
+    let s = ArraySet.of_list @@ AM.chunk_indices meta oldshape in
+    let s' = ArraySet.of_list @@ AM.chunk_indices meta newshape in
     ArraySet.iter
-      (fun v -> erase t @@ pre ^ AM.chunk_key meta v)
-      ArraySet.(diff s s');
-    set t mkey @@ AM.encode @@ AM.update_shape meta shape
+      (fun v -> erase t @@ pre ^ AM.chunk_key meta v) ArraySet.(diff s s');
+    set t mkey @@ AM.encode @@ AM.update_shape meta newshape
 end
 
 module MemoryStore = struct

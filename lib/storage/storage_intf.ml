@@ -34,7 +34,6 @@ module type STORE = sig
   val set : t -> key -> string -> unit
   val set_partial_values : t -> key -> ?append:bool -> (int * string) list -> unit
   val erase : t -> key -> unit
-  val erase_values : t -> key list -> unit
   val erase_prefix : t -> key -> unit
   val list : t -> key list
   val list_prefix : t -> key -> key list
@@ -190,11 +189,8 @@ module Base = struct
       (String.starts_with ~prefix:pre) 
       (list_fn t)
 
-  let erase_values ~erase_fn t keys =
-    StrSet.iter (erase_fn t) @@ StrSet.of_list keys
-
   let erase_prefix ~list_fn ~erase_fn t pre =
-    erase_values ~erase_fn t @@ list_prefix ~list_fn t pre
+    List.iter (erase_fn t) @@ list_prefix ~list_fn t pre
 
   let list_dir ~list_fn t pre =
     let n = String.length pre in

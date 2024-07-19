@@ -110,10 +110,6 @@ module Impl = struct
       (key_to_fspath t key)
       (fun ic -> In_channel.length ic |> Int64.to_int)
 
-  let erase_values t keys =
-    Storage_intf.Base.erase_values
-      ~erase_fn:erase t keys
-
   let erase_prefix t pre =
     Storage_intf.Base.erase_prefix
       ~list_fn:list ~erase_fn:erase t pre

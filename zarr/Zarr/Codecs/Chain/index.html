@@ -13,16 +13,16 @@
     <span>[&gt; <span>`Store_read of string</span> <span>| <a href="../index.html#type-error">error</a></span> ]</span>)</span>
     <span class="xref-unresolved">Stdlib</span>.result</span></span></code></div><div class="spec-doc"><p><code>decode t repr x</code> decodes the byte string <code>x</code> using codec chain <code>t</code> and decoded representation type <code>repr</code>. Returns an error upon failure.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-partial_encode"><a href="#val-partial_encode" class="anchor"></a><code><span><span class="keyword">val</span> partial_encode : 
   <span><a href="#type-t">t</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span><span>(int * <span>int option</span>)</span> list</span> <span class="arrow">&#45;&gt;</span></span>
-    <span><span>(<span>string list</span>, <span>[&gt; <span>`Store_read of string</span> <span>| <a href="../index.html#type-error">error</a></span> ]</span> <span class="keyword">as</span> 'c)</span> <span class="xref-unresolved">Stdlib</span>.result</span>)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span>(int * <span>int option</span>)</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>(string, <span>[&gt; <span>`Store_read of string</span> <span>| <a href="../index.html#type-error">error</a></span> ]</span> <span class="keyword">as</span> 'c)</span> <span class="xref-unresolved">Stdlib</span>.result</span>)</span> <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../index.html#type-partial_setter">partial_setter</a> <span class="arrow">&#45;&gt;</span></span>
   <span>int <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>(<span class="type-var">'a</span>, <span class="type-var">'b</span>)</span> <span class="xref-unresolved">Zarr__.Util.array_repr</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>(<span>int array</span> * <span class="type-var">'a</span>)</span> list</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(unit, <span class="type-var">'c</span>)</span> <span class="xref-unresolved">Stdlib</span>.result</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-partial_decode"><a href="#val-partial_decode" class="anchor"></a><code><span><span class="keyword">val</span> partial_decode : 
   <span><a href="#type-t">t</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span><span>(int * <span>int option</span>)</span> list</span> <span class="arrow">&#45;&gt;</span></span>
-    <span><span>(<span>string list</span>, <span>[&gt; <span>`Store_read of string</span> <span>| <a href="../index.html#type-error">error</a></span> ]</span> <span class="keyword">as</span> 'c)</span> <span class="xref-unresolved">Stdlib</span>.result</span>)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span>(int * <span>int option</span>)</span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>(string, <span>[&gt; <span>`Store_read of string</span> <span>| <a href="../index.html#type-error">error</a></span> ]</span> <span class="keyword">as</span> 'c)</span> <span class="xref-unresolved">Stdlib</span>.result</span>)</span> <span class="arrow">&#45;&gt;</span></span>
   <span>int <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>(<span class="type-var">'a</span>, <span class="type-var">'b</span>)</span> <span class="xref-unresolved">Zarr__.Util.array_repr</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>(int * <span>int array</span>)</span> list</span> <span class="arrow">&#45;&gt;</span></span>

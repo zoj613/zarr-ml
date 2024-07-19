@@ -36,9 +36,6 @@ module Impl = struct
     Storage_intf.Base.set_partial_values
       ~set_fn:set ~get_fn:get t key append rv
 
-  let erase_values t keys =
-    Storage_intf.Base.erase_values ~erase_fn:erase t keys
-
   let list_prefix t pre =
     Storage_intf.Base.list_prefix ~list_fn:list t pre
 

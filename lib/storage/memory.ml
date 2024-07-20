@@ -1,4 +1,10 @@
-module StrMap = Util.StrMap
+module HashableString = struct
+  type t = string
+  let hash = Hashtbl.hash
+  let equal = String.equal
+end
+
+module StrMap = Hashtbl.Make (HashableString)
 
 let create () = StrMap.create 16
 

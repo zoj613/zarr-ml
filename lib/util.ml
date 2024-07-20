@@ -13,28 +13,14 @@ type ('a, 'b) array_repr =
   ;shape : int array
   ;fill_value : 'a}
 
-module HashableArray = struct  
-  type t = int array
-  let hash = Hashtbl.hash
-  let equal x y = Array.for_all2 Int.equal x y
-end
-
 module ComparableArray = struct
   type t = int array
   let compare = Stdlib.compare
 end
 
-module HashableString = struct
-  type t = string
-  let hash = Hashtbl.hash
-  let equal = String.equal
-end
-
 module ArraySet = Set.Make (ComparableArray)
 
-module Arraytbl = Hashtbl.Make (HashableArray)
-
-module StrMap = Hashtbl.Make (HashableString)
+module ArrayMap = Map.Make (ComparableArray)
 
 module Result_syntax = struct
   let ( >>= ) = Result.bind

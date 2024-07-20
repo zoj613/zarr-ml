@@ -249,11 +249,15 @@ end = struct
     let shard_idx = Ndarray.create Bigarray.Int64 idx_shp Int64.max_int in
     RegularGrid.create ~array_shape:shard_shape t.chunk_shape >>= fun grid ->
     let slice = Array.make (Ndarray.num_dims x) @@ Owl_types.R [] in
-    let coords = Indexing.coords_of_slice slice shard_shape in
-    let tbl = Arraytbl.create @@ Array.length coords in
-    Ndarray.iteri (fun i y ->
-      let k, c = RegularGrid.index_coord_pair grid coords.(i) in
-      Arraytbl.add tbl k (c, y)) x;
+    let m =
+      Array.fold_right
+        (fun y acc ->
+          let k, c = RegularGrid.index_coord_pair grid y in
+          ArrayMap.update k (function
+            | None -> Some [(c, Ndarray.get x y)]
+            | Some l -> Some ((c, Ndarray.get x y) :: l)) acc)
+        (Indexing.coords_of_slice slice shard_shape) ArrayMap.empty
+    in
     let kind = Ndarray.kind x in
     let buf = Buffer.create @@ Ndarray.size_in_bytes x in
     let icoords = Array.map (fun v -> [|v; v|]) idx_shp in
@@ -261,11 +265,7 @@ end = struct
     ArraySet.fold
       (fun idx acc ->
         acc >>= fun offset ->
-        (* find_all returns bindings in reverse order. To restore the
-         * C-ordering of elements we must use List.rev. *)
-        let v =
-          Array.of_list @@ snd @@ List.split @@ List.rev @@
-          Arraytbl.find_all tbl idx in
+        let v = Array.of_list @@ snd @@ List.split @@ ArrayMap.find idx m in
         let x' = Ndarray.of_array kind v t.chunk_shape in
         encode_chain t.codecs x' >>| fun b ->
         Buffer.add_string buf b;
@@ -273,7 +273,7 @@ end = struct
         let nb = Int64.of_int @@ String.length b in
         Ndarray.set_index shard_idx icoords [|offset; nb|];
         Int64.add offset nb)
-      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok 0L)
+      (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) (Ok 0L)
     >>= fun _ ->
     encode_chain (t.index_codecs :> bytestobytes internal_chain) shard_idx
     >>| fun ib ->
@@ -344,19 +344,22 @@ end = struct
     ibytes >>|
     List.hd >>=
     decode_index t cps >>= fun (idx_arr, _) ->
-    let tbl = Arraytbl.create @@ List.length pairs in
     RegularGrid.create ~array_shape:repr.shape t.chunk_shape >>= fun grid ->
-    List.iter
-      (fun (c, v) ->
-        let id, co = RegularGrid.index_coord_pair grid c in
-        Arraytbl.add tbl id (co, v)) pairs;
+    let m =
+      List.fold_left
+        (fun acc (c, v) ->
+          let id, co = RegularGrid.index_coord_pair grid c in
+          ArrayMap.update id (function
+            | None -> Some [(co, v)]
+            | Some l -> Some ((co, v) :: l)) acc) ArrayMap.empty pairs
+    in
     let inner = {repr with shape = t.chunk_shape} in
     let icoords = Array.map (fun v -> [|v; v|]) @@ Ndarray.shape idx_arr in
     icoords.(Array.length t.chunk_shape) <- [|0; 1|];
     ArraySet.fold
       (fun idx acc ->
         acc >>= fun (bsize, shard_idx) ->
-        let z = Arraytbl.find_all tbl idx in  
+        let z = ArrayMap.find idx m in
         let p = Bigarray.array1_of_genarray @@ Ndarray.slice_left shard_idx idx in
         let offset = Int64.to_int p.{0} in
         let nb = Int64.to_int p.{1} in
@@ -376,7 +379,8 @@ end = struct
             shard_idx icoords Int64.[|of_int bsize; of_int nb'|];
           set_partial ~append:true [bsize, s];
           bsize + nb', shard_idx))
-      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok (bytesize - pad, idx_arr))
+      (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) @@
+      Ok (bytesize - pad, idx_arr)
     >>= fun (bytesize, shard_idx) ->
     encode_chain (t.index_codecs :> bytestobytes internal_chain) shard_idx
     >>| fun ib ->
@@ -395,23 +399,29 @@ end = struct
     decode_index t cps b >>= fun (shard_idx, b') ->
     RegularGrid.create ~array_shape:repr.shape t.chunk_shape >>= fun grid ->
     let slice = Array.make (Array.length repr.shape) @@ Owl_types.R [] in
-    let coords = Indexing.coords_of_slice slice repr.shape in
-    let tbl = Arraytbl.create @@ Array.length coords in
-    Array.iteri
-      (fun i y ->
-        let k, c = RegularGrid.index_coord_pair grid y in
-        Arraytbl.add tbl k (i, c)) coords;
+    let icoords =
+      Array.mapi
+        (fun i v -> i, v) @@ Indexing.coords_of_slice slice repr.shape
+    in
+    let m =
+      Array.fold_left
+        (fun acc (i, y) ->
+          let k, c = RegularGrid.index_coord_pair grid y in
+          ArrayMap.update k (function
+            | None -> Some [(i, c)]
+            | Some l -> Some ((i, c) :: l)) acc) ArrayMap.empty icoords
+    in
     let inner = {repr with shape = t.chunk_shape} in
     ArraySet.fold
       (fun idx acc ->
         acc >>= fun xs ->
-        let pairs = Arraytbl.find_all tbl idx in
+        let pairs = ArrayMap.find idx m in
         let p = Bigarray.array1_of_genarray @@ Ndarray.slice_left shard_idx idx in
         let c = String.sub b' (Int64.to_int p.{0}) (Int64.to_int p.{1}) in
         decode_chain t.codecs inner c >>| fun arr ->
         List.fold_left
           (fun a (i, c) -> (i, Ndarray.get arr c) :: a) xs pairs)
-      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok [])
+      (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) (Ok [])
     >>| fun pairs ->
     let v =
       Array.of_list @@ snd @@ List.split @@
@@ -438,22 +448,26 @@ end = struct
     List.hd >>=
     decode_index t cps >>= fun (idx_arr, _) ->
     RegularGrid.create ~array_shape:repr.shape t.chunk_shape >>= fun grid ->
-    let tbl = Arraytbl.create @@ List.length pairs in
-    List.iter
-      (fun (i, y) ->
-        let id, c = RegularGrid.index_coord_pair grid y in
-        Arraytbl.add tbl id (i, c)) pairs;
+    let m =
+      List.fold_left
+        (fun acc (i, y) ->
+          let id, c = RegularGrid.index_coord_pair grid y in
+          ArrayMap.update id (function
+            | None -> Some [(i, c)]
+            | Some l -> Some ((i, c) :: l)) acc) ArrayMap.empty pairs
+    in
     let inner = {repr with shape = t.chunk_shape} in
     ArraySet.fold
       (fun idx acc ->
         acc >>= fun (shard_idx, xs) ->
-        let z = Arraytbl.find_all tbl idx in
+        let z = ArrayMap.find idx m in
         let p = Bigarray.array1_of_genarray @@ Ndarray.slice_left shard_idx idx in
         get_partial Int64.[pad + to_int p.{0}, Some (to_int p.{1})] >>|
         List.hd >>=
         decode_chain t.codecs inner >>| fun arr ->
         shard_idx, xs @ List.map (fun (i, c) -> (i, Ndarray.get arr c)) z)
-      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok (idx_arr, []))
+      (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) @@
+      Ok (idx_arr, [])
     >>| snd
 
   let rec chain_to_yojson chain =

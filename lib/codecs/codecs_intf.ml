@@ -13,7 +13,7 @@ type variable_bytestobytes =
 type bytestobytes =
   [ fixed_bytestobytes | variable_bytestobytes ]
 
-type endianness = Little | Big
+type endianness = LE | BE
 
 type loc = Start | End
 
@@ -65,7 +65,7 @@ module type Interface = sig
     [ fixed_bytestobytes | variable_bytestobytes ]
 
   (** A type representing the configured endianness of an array. *)
-  type endianness = Little | Big
+  type endianness = LE | BE
 
   (** A type representing the location of a shard's index array in
       an encoded byte string. *)

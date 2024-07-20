@@ -11,8 +11,8 @@ module BytesCodec = struct
   let compute_encoded_size (input_size : int) = input_size
 
   let endian_module = function
-    | Little -> (module Ebuffer.Little : Ebuffer.S)
-    | Big -> (module Ebuffer.Big : Ebuffer.S)
+    | LE -> (module Ebuffer.Little : Ebuffer.S)
+    | BE -> (module Ebuffer.Big : Ebuffer.S)
 
   let encode :
     type a b. (a, b) Ndarray.t -> endianness -> (string, [> error]) result
@@ -67,8 +67,8 @@ module BytesCodec = struct
   let to_yojson e =
     let endian =
       match e with
-      | Little -> "little"
-      | Big -> "big"
+      | LE -> "little"
+      | BE -> "big"
     in
     `Assoc
     [("name", `String "bytes")
@@ -78,8 +78,8 @@ module BytesCodec = struct
     match Yojson.Safe.Util.(member "configuration" x |> to_assoc) with
     | [("endian", `String e)] ->
       (match e with
-      | "little" -> Ok Little
-      | "big" -> Ok Big
+      | "little" -> Ok LE
+      | "big" -> Ok BE
       | s ->
         Result.error @@ "Unsupported bytes endianness: " ^ s)
     | _ -> Error "Invalid bytes codec configuration."
@@ -105,7 +105,7 @@ module rec ArrayToBytes : sig
   val to_yojson : array_tobytes -> Yojson.Safe.t
 end = struct
 
-  let default = `Bytes Little
+  let default = `Bytes LE
 
   let parse t decoded_repr =
     match t with

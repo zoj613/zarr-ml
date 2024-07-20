@@ -35,7 +35,7 @@ let bytes_encode_decode
         assert_equal
           ~printer:Owl_pretty.dsnda_to_string
           arr
-          (Result.get_ok decoded)) [`Bytes Little; `Bytes Big]
+          (Result.get_ok decoded)) [`Bytes LE; `Bytes BE]
 
 let tests = [
 "test codec chain" >:: (fun _ ->
@@ -48,8 +48,8 @@ let tests = [
   let shard_cfg =
     {chunk_shape = [|2; 5; 5|]
     ;index_location = End
-    ;index_codecs = [`Bytes Little; `Crc32c]
-    ;codecs = [`Transpose [|0; 1; 2|]; `Bytes Big; `Gzip L1]}
+    ;index_codecs = [`Bytes LE; `Crc32c]
+    ;codecs = [`Transpose [|0; 1; 2|]; `Bytes BE; `Gzip L1]}
   in
   let chain  =
     [`Transpose [|2; 1; 0; 3|]; `ShardingIndexed shard_cfg; `Crc32c; `Gzip L9]
@@ -60,7 +60,7 @@ let tests = [
     Chain.create decoded_repr chain; 
 
   let chain  =
-    [`Transpose [|2; 1; 0|]; `ShardingIndexed shard_cfg; `Bytes Big]
+    [`Transpose [|2; 1; 0|]; `ShardingIndexed shard_cfg; `Bytes BE]
   in
   assert_bool
     "Chain with more than 1 array->bytes codec cannot be created" @@
@@ -185,7 +185,7 @@ let tests = [
     ;kind = Bigarray.Complex32
     ;fill_value = Complex.zero}
   in
-  let chain = [`Transpose [||]; `Bytes Little] in
+  let chain = [`Transpose [||]; `Bytes LE] in
   assert_bool
     "" @@ 
     Result.is_error @@
@@ -193,7 +193,7 @@ let tests = [
   assert_bool
     "Transpose codec with misisng dimensions should fail chain creation." @@ 
     Result.is_error @@
-    Chain.create decoded_repr [`Transpose [|4; 0; 1|]; `Bytes Little])
+    Chain.create decoded_repr [`Transpose [|4; 0; 1|]; `Bytes LE])
 ;
 
 "test sharding indexed codec" >:: (fun _ ->
@@ -323,8 +323,8 @@ let tests = [
   let cfg =
     {chunk_shape = [|3; 5; 5|]
     ;index_location = Start
-    ;index_codecs = [`Bytes Little; `Crc32c]
-    ;codecs = [`Bytes Big]}
+    ;index_codecs = [`Bytes LE; `Crc32c]
+    ;codecs = [`Bytes BE]}
   in
   let chain = [`ShardingIndexed cfg] in
   (*test failure for chunk shape not evenly dividing shard. *)
@@ -440,7 +440,7 @@ let tests = [
       decoded_repr.shape
       decoded_repr.fill_value
   in
-  let chain = [`Bytes Little] in
+  let chain = [`Bytes LE] in
   List.iter
     (fun level ->
       let c =

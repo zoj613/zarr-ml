@@ -62,13 +62,13 @@ let test_store
   `ShardingIndexed {
     chunk_shape = [|5; 1; 5|];
     index_location = Start;
-    index_codecs = [`Bytes Big];
-    codecs = [`Bytes Little; `Gzip L2]}
+    index_codecs = [`Bytes BE];
+    codecs = [`Bytes LE; `Gzip L2]}
   in
   let cfg =
     {chunk_shape = [|2; 5; 5|]
     ;index_location = End
-    ;index_codecs = [`Bytes Little; `Crc32c]
+    ;index_codecs = [`Bytes LE; `Crc32c]
     ;codecs = [`Transpose [|2; 0; 1|]; nested_sharding; `Gzip L1]} in
   let anode = ArrayNode.(gnode / "arrnode") |> Result.get_ok in
   let r =
@@ -99,7 +99,7 @@ let test_store
 
   let r =
     M.create_array
-      ~codecs:[`Bytes Big]
+      ~codecs:[`Bytes BE]
       ~shape:[|100; 100; 50|]
       ~chunks:[|10; 15; 20|]
       Bigarray.Complex64

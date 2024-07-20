@@ -34,7 +34,7 @@ let array_node =
   Result.get_ok @@ ArrayNode.(group_node / "name");;
 
 FilesystemStore.create_array
-  ~codecs:[`Transpose [|2; 0; 1|]; `Bytes Big; `Gzip L2]
+  ~codecs:[`Transpose [|2; 0; 1|]; `Bytes BE; `Gzip L2]
   ~shape:[|100; 100; 50|]
   ~chunks:[|10; 15; 20|]
   Bigarray.Float32 
@@ -75,8 +75,8 @@ R[73,1]    -INF    -INF     -INF     -INF    -INF     -INF *)
 ```ocaml
 let config =
   {chunk_shape = [|5; 3; 5|]
-  ;codecs = [`Transpose [|2; 0; 1|]; `Bytes Little; `Gzip L5]
-  ;index_codecs = [`Bytes Big; `Crc32c]
+  ;codecs = [`Transpose [|2; 0; 1|]; `Bytes LE; `Gzip L5]
+  ;index_codecs = [`Bytes BE; `Crc32c]
   ;index_location = Start};;
 
 let shard_node = Result.get_ok @@ ArrayNode.(group_node / "another");;

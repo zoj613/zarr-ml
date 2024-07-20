@@ -5,7 +5,6 @@ module RegularGrid : sig
   type t
   val create : array_shape:int array -> int array -> (t, [> error]) result
   val chunk_shape : t -> int array
-  val grid_shape : t -> int array -> int array
   val indices : t -> int array -> int array list
   val index_coord_pair : t -> int array -> int array * int array
   val ( = ) : t -> t -> bool

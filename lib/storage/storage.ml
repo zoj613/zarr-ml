@@ -6,7 +6,7 @@ open Node
 
 module Ndarray = Owl.Dense.Ndarray.Generic
 module ArraySet = Util.ArraySet
-module Arraytbl = Util.Arraytbl
+module ArrayMap = Util.ArrayMap
 module AM = Metadata.ArrayMetadata
 module GM = Metadata.GroupMetadata
 
@@ -125,11 +125,16 @@ module Make (M : STORE) : S with type t = M.t = struct
        `Store_write (
          "input array's kind is not compatible with node's data type."))
     >>= fun () ->
-    let coords = Indexing.coords_of_slice slice arr_shape in
-    let tbl = Arraytbl.create @@ Array.length coords in
-    Ndarray.iteri (fun i y ->
-      let k, c = AM.index_coord_pair meta coords.(i) in
-      Arraytbl.add tbl k (c, y)) x;
+    let m =
+      Array.fold_left
+        (fun acc (co, y) ->
+          let k, c = AM.index_coord_pair meta co in
+          ArrayMap.update k (function
+            | None -> Some [(c, y)]
+            | Some l -> Some ((c, y) :: l)) acc)
+        ArrayMap.empty @@ Array.combine
+          (Indexing.coords_of_slice slice arr_shape) (Ndarray.to_array x)
+    in
     let fill_value = AM.fillvalue_of_kind meta kind in
     let repr = {kind; fill_value; shape = AM.chunk_shape meta} in
     let prefix = ArrayNode.to_key node ^ "/" in
@@ -137,7 +142,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     ArraySet.fold
       (fun idx acc ->
         acc >>= fun () ->
-        let pairs = Arraytbl.find_all tbl idx in 
+        let pairs = ArrayMap.find idx m in
         let ckey = prefix ^ AM.chunk_key meta idx in
         if Codecs.Chain.is_just_sharding chain && is_member t ckey then
           Codecs.Chain.partial_encode
@@ -155,7 +160,7 @@ module Make (M : STORE) : S with type t = M.t = struct
           >>= fun arr ->
           List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
           Codecs.Chain.encode chain arr >>| set t ckey)
-      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok ())
+      (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) (Ok ())
 
   let get_array :
     ArrayNode.t ->
@@ -178,12 +183,18 @@ module Make (M : STORE) : S with type t = M.t = struct
       Result.error @@
       `Store_read "slice shape is not compatible with node's shape.")
     >>= fun slice_shape ->
-    let coords = Indexing.coords_of_slice slice arr_shape in
-    let tbl = Arraytbl.create @@ Array.length coords in
-    Array.iteri
-      (fun i y ->
-        let k, c = AM.index_coord_pair meta y in
-        Arraytbl.add tbl k (i, c)) coords;
+    let icoords =
+      Array.mapi
+        (fun i v -> i, v) @@ Indexing.coords_of_slice slice arr_shape
+    in
+    let m =
+      Array.fold_left
+        (fun acc (i, y) ->
+          let k, c = AM.index_coord_pair meta y in
+          ArrayMap.update k (function
+            | None -> Some [(i, c)]
+            | Some l -> Some ((i, c) :: l)) acc) ArrayMap.empty icoords
+    in
     let chain = AM.codecs meta in
     let prefix = ArrayNode.to_key node ^ "/" in
     let fill_value = AM.fillvalue_of_kind meta kind in
@@ -191,7 +202,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     ArraySet.fold
       (fun idx acc ->
         acc >>= fun xs ->
-        let pairs = Arraytbl.find_all tbl idx in
+        let pairs = ArrayMap.find idx m in
         let ckey = prefix ^ AM.chunk_key meta idx in
         if Codecs.Chain.is_just_sharding chain && is_member t ckey then
           Codecs.Chain.partial_decode
@@ -206,7 +217,7 @@ module Make (M : STORE) : S with type t = M.t = struct
          | Error `Store_read _ ->
             Result.ok @@
             List.fold_left (fun a (i, _) -> (i, fill_value) :: a) xs pairs)
-      (ArraySet.of_seq @@ Arraytbl.to_seq_keys tbl) (Ok [])
+      (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) (Ok [])
     >>| fun pairs ->
     (* sorting restores the C-order of the decoded array coordinates. *)
     let v =

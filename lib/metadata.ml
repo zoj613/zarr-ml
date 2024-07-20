@@ -280,17 +280,12 @@ module ArrayMetadata = struct
 
   let codecs t = t.codecs
 
-  let ndim t = Array.length @@ shape t
-
   let dimension_names t = t.dimension_names
 
   let attributes t = t.attributes
 
   let chunk_shape t =
     RegularGrid.chunk_shape t.chunk_grid
-
-  let grid_shape t shape =
-    RegularGrid.grid_shape t.chunk_grid shape
 
   let index_coord_pair t coord =
     RegularGrid.index_coord_pair t.chunk_grid coord

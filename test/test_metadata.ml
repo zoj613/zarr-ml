@@ -1,8 +1,11 @@
 open OUnit2
 open Zarr
 
+let flatten_fstring s =
+  String.(split_on_char ' ' s |> concat "" |> split_on_char '\n' |> concat "")
+
 let decode_bad_group_metadata ~str ~msg = 
-  match GroupMetadata.of_yojson @@ Yojson.Safe.from_string str with
+  match GroupMetadata.decode str with
   | Ok _ ->
     assert_failure
       "Impossible to decode an ill-formed JSON group metadata document.";
@@ -51,12 +54,11 @@ let test_array_metadata
     ?dimension_names:string option list ->
     shape:int array ->
     chunks:int array ->
-    grid_shape:int array ->
     (a, b) Bigarray.kind ->
     (c, d) Bigarray.kind ->
     a ->
     unit
-  = fun ?dimension_names ~shape ~chunks ~grid_shape kind bad_kind fv ->
+  = fun ?dimension_names ~shape ~chunks kind bad_kind fv ->
   let meta =
     match dimension_names with
     | Some d ->
@@ -84,19 +86,9 @@ let test_array_metadata
     ArrayMetadata.codecs meta;
 
   assert_equal
-    ~printer:string_of_int
-    (Array.length shape)
-    (ArrayMetadata.ndim meta);
-
-  assert_equal
     ~printer:show_int_array
     chunks @@
     ArrayMetadata.chunk_shape meta;
-
-  assert_equal
-    ~printer:show_int_array
-    grid_shape @@
-    ArrayMetadata.grid_shape meta shape;
 
   let show_int_array_tuple =
     [%show: int array * int array]
@@ -164,7 +156,7 @@ let test_array_metadata
 
 (* test decoding an ill-formed array metadata with an expected error message.*)
 let decode_bad_array_metadata ~str ~msg = 
-  match ArrayMetadata.of_yojson @@ Yojson.Safe.from_string str with
+  match ArrayMetadata.decode str with
   | Ok _ ->
     assert_failure
       "Impossible to decode an ill-formed JSON array metadata document.";
@@ -185,11 +177,10 @@ let test_encode_decode_fill_value fv =
     "chunk_key_encoding": {"name": "default"},
     "attributes": {"question": 7}}|} fv
   in
-  let expected = Yojson.Safe.from_string str in
-  match ArrayMetadata.of_yojson expected with
+  match ArrayMetadata.decode str with
   | Ok meta ->
     assert_equal
-      ~printer:Yojson.Safe.show expected @@ ArrayMetadata.to_yojson meta
+      ~printer:Fun.id (flatten_fstring str) (ArrayMetadata.encode meta)
   | Error _ ->
     assert_failure
       "Decoding a well formed Array metadata doc should not fail."
@@ -208,9 +199,7 @@ let test_decode_encode_chunk_key name sep (key, exp_encode, exp_null) =
     "chunk_key_encoding":
       {"name": %s, "configuration": {"separator": %s}}}|} name sep
   in
-  let expected = Yojson.Safe.from_string str
-  in
-  match ArrayMetadata.of_yojson expected with
+  match ArrayMetadata.decode str with
   | Ok meta ->
     assert_equal
       ~printer:Fun.id
@@ -221,9 +210,7 @@ let test_decode_encode_chunk_key name sep (key, exp_encode, exp_null) =
       exp_null @@
       ArrayMetadata.chunk_key meta [||];
     assert_equal
-      ~printer:Yojson.Safe.show
-      expected
-      (ArrayMetadata.to_yojson meta)
+      ~printer:Fun.id (flatten_fstring str) @@ ArrayMetadata.encode meta
   | Error _ ->
     assert_failure
       "Decoding a well formed Array metadata should not fail."
@@ -478,7 +465,7 @@ let array = [
     "chunk_grid":
       {"name": "regular", "configuration": {"chunk_shape": [10, 10]}},
     "chunk_key_encoding": {"name": "v2"}}|} in
-  (match ArrayMetadata.of_yojson @@ Yojson.Safe.from_string str with
+  (match ArrayMetadata.decode str with
   | Ok meta ->
     (* we except it to use the default "." separator. *)
     assert_equal
@@ -641,14 +628,12 @@ let array = [
 
   let shape = [|10; 10; 10|] in
   let chunks = [|5; 2; 6|] in
-  let grid_shape = [|2; 5; 2|] in
   let dimension_names = [Some "x"; None; Some "z"] in
 
   (* tests using char data type. *)
   test_array_metadata
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Char
     Bigarray.Float32
     '?';
@@ -658,7 +643,6 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Int8_signed
     Bigarray.Float32
     0;
@@ -668,7 +652,6 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Int8_unsigned
     Bigarray.Float32
     0;
@@ -678,7 +661,6 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Int16_signed
     Bigarray.Float32
     0;
@@ -688,7 +670,6 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Int16_unsigned
     Bigarray.Float32
     0;
@@ -698,7 +679,6 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Int32
     Bigarray.Float32
     Int32.max_int;
@@ -708,7 +688,6 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Int64
     Bigarray.Float32
     0L;
@@ -718,7 +697,6 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Float32
     Bigarray.Int
     Float.neg_infinity;
@@ -728,7 +706,6 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Float64
     Bigarray.Int
     Float.neg_infinity;
@@ -738,7 +715,6 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Complex32
     Bigarray.Float32
     Complex.zero;
@@ -748,7 +724,6 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Complex64
     Bigarray.Float32
     Complex.zero;
@@ -758,7 +733,6 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Int
     Bigarray.Float32
     Int.max_int;
@@ -768,7 +742,6 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    ~grid_shape
     Bigarray.Nativeint
     Bigarray.Float32
     0n)

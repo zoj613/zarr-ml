@@ -57,9 +57,6 @@ module ArrayMetadata : sig
   val shape : t -> int array
   (** [shape t] returns the shape of the zarr array represented by metadata type [t]. *)
 
-  val ndim : t -> int
-  (** [ndim t] returns the number of dimension in a Zarr array. *)
-
   val chunk_shape : t -> int array
   (** [chunk_shape t] returns the shape a chunk in this zarr array. *)
 
@@ -84,10 +81,6 @@ module ArrayMetadata : sig
   (** [codecs t] Returns a type representing the chain of codecs applied
       when decoding/encoding a Zarr array chunk. *)
 
-  val grid_shape : t -> int array -> int array
-  (** [grip_shape t] returns the shape of the Zarr array's regular chunk grid,
-      as defined in the Zarr V3 specification. *)
-
   val index_coord_pair : t -> int array -> int array * int array
   (** [index_coord_pair t coord] maps a coordinate of this Zarr array to
       a pair of chunk index and coordinate {i within} that chunk. *)
@@ -111,14 +104,6 @@ module ArrayMetadata : sig
   val ( = ) : t -> t -> bool
   (** [a = b] returns true if [a] [b] are equal array metadata documents
       and false otherwise. *)
-
-  val of_yojson : Yojson.Safe.t -> (t, string) result
-  (** [of_yojson json] converts a [Yojson.Safe.t] object into a {!ArrayMetadata.t}
-     and returns an error message upon failure. *)
-
-  val to_yojson : t -> Yojson.Safe.t
-  (** [to_yojson t] serializes an array metadata type into a [Yojson.Safe.t]
-      object. *)
 end
 
 module GroupMetadata : sig
@@ -141,13 +126,6 @@ module GroupMetadata : sig
   val update_attributes : t -> Yojson.Safe.t -> t
   (** [update_attributes t json] returns a new metadata type with an updated
       attribute field containing contents in [json]. *)
-
-  val of_yojson : Yojson.Safe.t -> (t, string) result
-  (** [of_yojson json] converts a [Yojson.Safe.t] object into a {!GroupMetadata.t}
-     and returns an error message upon failure. *)
-
-  val to_yojson : t -> Yojson.Safe.t
-  (** [to_yojson t] serializes a group metadata type into a [Yojson.Safe.t] object. *)
 
   val show : t -> string
   (** [show t] pretty-prints the contents of the group metadata type t. *)

@@ -18,7 +18,7 @@ let test_store
     true @@
     M.group_exists store gnode;
 
-  (match M.group_metadata gnode store with
+  (match M.group_metadata store gnode with
   | Ok meta ->
     assert_equal
       ~printer:GroupMetadata.show GroupMetadata.default meta
@@ -33,7 +33,7 @@ let test_store
 
   assert_bool
     "Cannot retrive metadata of a node not in the store." @@
-    Result.is_error @@ M.group_metadata gnode store;
+    Result.is_error @@ M.group_metadata store gnode;
   assert_equal 
     ~printer:[%show: ArrayNode.t list * GroupNode.t list]
     ([], []) @@
@@ -44,7 +44,7 @@ let test_store
     ~metadata:GroupMetadata.(update_attributes default attrs)
     store
     gnode;
-  (match M.group_metadata gnode store with
+  (match M.group_metadata store gnode with
   | Ok meta ->
     assert_equal
       ~printer:Yojson.Safe.show
@@ -84,17 +84,17 @@ let test_store
   in
   assert_equal (Ok ()) r;
   let slice = Owl_types.[|R [0; 20]; I 10; R []|] in
-  let r = M.get_array anode slice Bigarray.Complex64 store in
+  let r = M.get_array store anode slice Bigarray.Complex64 in
   assert_bool "" @@ Result.is_ok r;
   let expected = Ndarray.create Bigarray.Complex64 [|21; 1; 50|] Complex.one in
-  let r = M.set_array anode slice expected store in
+  let r = M.set_array store anode slice expected in
   assert_equal (Ok ()) r;
-  let got = Result.get_ok @@ M.get_array anode slice Bigarray.Complex64 store in
+  let got = Result.get_ok @@ M.get_array store anode slice Bigarray.Complex64 in
   assert_equal ~printer:Owl_pretty.dsnda_to_string expected got;
   let x' = Ndarray.map (fun v -> Complex.(add v one)) got in
-  let r = M.set_array anode slice x' store in
+  let r = M.set_array store anode slice x' in
   assert_equal (Ok ()) r;
-  let r = M.get_array anode slice Bigarray.Complex64 store in
+  let r = M.get_array store anode slice Bigarray.Complex64 in
   assert_bool "" @@ Result.is_ok r;
 
   let r =
@@ -108,38 +108,38 @@ let test_store
       store in
   assert_equal (Ok ()) r;
   let expected = Ndarray.create Bigarray.Complex64 [|21; 1; 50|] Complex.zero in
-  let got = Result.get_ok @@ M.get_array anode slice Bigarray.Complex64 store in
+  let got = Result.get_ok @@ M.get_array store anode slice Bigarray.Complex64 in
   assert_equal ~printer:Owl_pretty.dsnda_to_string expected got;
   let x' = Ndarray.map (fun v -> Complex.(add v one)) got in
-  let r = M.set_array anode slice x' store in
+  let r = M.set_array store anode slice x' in
   assert_equal (Ok ()) r;
-  let got = Result.get_ok @@ M.get_array anode slice Bigarray.Complex64 store in
+  let got = Result.get_ok @@ M.get_array store anode slice Bigarray.Complex64 in
   assert_equal ~printer:Owl_pretty.dsnda_to_string x' got;
   assert_bool
     "get_array can only work with the correct array kind" @@
-    Result.is_error @@ M.get_array anode slice Bigarray.Int32 store;
+    Result.is_error @@ M.get_array store anode slice Bigarray.Int32;
   assert_bool
     "get_array slice shape must be the same as the array's." @@
     Result.is_error @@
     M.get_array
+      store
       anode
       Owl_types.[|R [0; 20]; I 10; R []; R [] |]
-      Bigarray.Complex64
-      store;
+      Bigarray.Complex64;
 
   let bad_slice = Owl_types.[|R [0; 20]; I 10; I 0|] in
   assert_bool
     "slice written to store must have the same
     shape as the array to be written" @@
     Result.is_error @@
-    M.set_array anode bad_slice x' store;
+    M.set_array store anode bad_slice x';
   let bad_arr =
     Ndarray.create Bigarray.Int32 [|21; 1; 50|] Int32.max_int in
   assert_bool
     "slice written to store must have the same
     shape as the array to be written" @@
     Result.is_error @@
-    M.set_array anode slice bad_arr store;
+    M.set_array store anode slice bad_arr;
 
   let child = GroupNode.of_path "/some/child" |> Result.get_ok in
   M.create_group store child;
@@ -172,7 +172,7 @@ let test_store
   assert_equal (Ok ()) r;
   let meta =
     Result.get_ok @@
-    M.array_metadata anode store in
+    M.array_metadata store anode in
   assert_equal
     ~printer:[%show: int array]
     new_shape @@
@@ -183,7 +183,7 @@ let test_store
 
   assert_bool
     "Cannot get array metadata from a node not a member of store" @@
-    Result.is_error @@ M.array_metadata fake store;
+    Result.is_error @@ M.array_metadata store fake;
 
   M.erase_array_node store anode;
   (* test clearing of store *)

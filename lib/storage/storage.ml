@@ -55,11 +55,11 @@ module Make (M : STORE) : S with type t = M.t = struct
     >>| AM.encode >>| set t (ArrayNode.to_metakey node) >>| fun () ->
     make_implicit_groups_explicit t @@ Some (ArrayNode.parent node)
 
-  let group_metadata node t =
+  let group_metadata t node =
     get t @@ GroupNode.to_metakey node >>= fun bytes ->
     GM.decode bytes >>? fun msg -> `Store_read msg
 
-  let array_metadata node t =
+  let array_metadata t node =
     get t @@ ArrayNode.to_metakey node >>= fun bytes ->
     AM.decode bytes >>? fun msg -> `Store_read msg
 
@@ -103,12 +103,12 @@ module Make (M : STORE) : S with type t = M.t = struct
   let erase_all_nodes t = erase_prefix t ""
 
   let set_array :
+    t ->
     ArrayNode.t ->
     Owl_types.index array ->
     ('a, 'b) Ndarray.t ->
-    t ->
     (unit, [> error ]) result
-  = fun node slice x t ->
+  = fun t node slice x ->
     get t @@ ArrayNode.to_metakey node >>= fun bytes ->
     AM.decode bytes >>? (fun msg -> `Store_write msg) >>= fun meta ->
     let arr_shape = AM.shape meta in
@@ -161,12 +161,12 @@ module Make (M : STORE) : S with type t = M.t = struct
       (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) (Ok ())
 
   let get_array :
+    t ->
     ArrayNode.t ->
     Owl_types.index array ->
     ('a, 'b) Bigarray.kind ->
-    t ->
     (('a, 'b) Ndarray.t, [> error]) result
-  = fun node slice kind t ->
+  = fun t node slice kind ->
     get t @@ ArrayNode.to_metakey node >>= fun bytes ->
     AM.decode bytes >>? (fun msg -> `Store_read msg) >>= fun meta ->
     (if AM.is_valid_kind meta kind then

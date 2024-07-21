@@ -40,10 +40,10 @@ let bytes_encode_decode
 let tests = [
 "test codec chain" >:: (fun _ ->
   let decoded_repr
-    : (float, Bigarray.float32_elt) array_repr =
+    : (int, Bigarray.int16_signed_elt) array_repr =
     {shape = [|10; 15; 10|]
-    ;kind = Bigarray.Float32
-    ;fill_value = (-10.)}
+    ;kind = Bigarray.Int16_signed
+    ;fill_value = 10}
   in
   let shard_cfg =
     {chunk_shape = [|2; 5; 5|]
@@ -323,7 +323,7 @@ let tests = [
   let cfg =
     {chunk_shape = [|3; 5; 5|]
     ;index_location = Start
-    ;index_codecs = [`Bytes LE; `Crc32c]
+    ;index_codecs = [`Transpose [|0; 3; 1; 2|]; `Bytes LE; `Crc32c]
     ;codecs = [`Bytes BE]}
   in
   let chain = [`ShardingIndexed cfg] in
@@ -361,20 +361,6 @@ let tests = [
   | Error _ ->
     assert_failure
       "Successfully encoded array should decode without fail");
-
-  (* test if including a transpose codec for index_codec chain results in
-    a failure. *)
-  let chain' =
-   [`ShardingIndexed {cfg with
-      chunk_shape = [|5; 3; 5|]
-      ;index_codecs = `Transpose [|0; 3; 1; 2|] :: cfg.index_codecs}]
-  in
-  let cc = Chain.create decoded_repr chain' |> Result.get_ok in
-  assert_bool
-    "shard index chain can't be encoded since Owl does not support transposing
-    Int64 types.  See:
-    https://github.com/owlbarn/owl/issues/671#issuecomment-2211303040" @@
-    Result.is_error @@ Chain.encode cc arr;
 
   (* test correctness of decoding nested sharding codecs.*)
   let str =

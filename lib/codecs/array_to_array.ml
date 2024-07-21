@@ -1,6 +1,5 @@
 open Codecs_intf
 
-module Ndarray = Owl.Dense.Ndarray.Generic
 
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/transpose/v1.0.html *)
 module TransposeCodec = struct
@@ -28,7 +27,6 @@ module TransposeCodec = struct
           "transpose order max element is larger than
           the decoded representation dimensionality." in
         Result.error @@ `Transpose_order (t, msg)
-
 
   let parse_order o =
     if Array.length o = 0 then
@@ -66,14 +64,24 @@ module TransposeCodec = struct
     else
       Ok ()
 
-  let encode o x =
-    try Ok (Ndarray.transpose ~axis:o x) with
-    | Failure s -> Error (`Transpose_order (o, s))
+  (* NOTE: See https://github.com/owlbarn/owl/issues/671#issuecomment-2241761001 *)
+  let transpose ?axis x =
+    let module A = Owl.Dense.Ndarray.Any in
+    let module N = Owl.Dense.Ndarray.Generic in
+    try
+      let y = A.transpose ?axis @@ A.init_nd (N.shape x) @@ N.get x in
+      Result.ok @@ N.init_nd (N.kind x) (A.shape y) @@ A.get y
+    with
+    | Assert_failure _ ->
+      Result.error @@
+      `Transpose_order (Option.get axis, "Invalid transpose order.")
+
+  let encode o x = transpose ~axis:o x
 
   let decode o x =
     let inv_order = Array.(make (length o) 0) in
     Array.iteri (fun i x -> inv_order.(x) <- i) o;
-    Ok (Ndarray.transpose ~axis:inv_order x)
+    transpose ~axis:inv_order x
 
   let to_yojson order =
     let o = 

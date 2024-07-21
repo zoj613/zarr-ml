@@ -75,12 +75,12 @@ module type S = sig
       This operation can fail if the codec chain is not well defined. *)
 
   val array_metadata
-    : ArrayNode.t -> t -> (ArrayMetadata.t, [> error ]) result
+    : t -> ArrayNode.t -> (ArrayMetadata.t, [> error ]) result
   (** [array_metadata node t] returns the metadata of array node [node].
       This operation returns an error if node is not a member of store [t]. *)
 
   val group_metadata
-    : GroupNode.t -> t -> (GroupMetadata.t, [> error ]) result
+    : t -> GroupNode.t -> (GroupMetadata.t, [> error ]) result
   (** [group_metadata node t] returns the metadata of group node [node].
       This operation returns an error if node is not a member of store [t].*)
 
@@ -118,27 +118,27 @@ module type S = sig
   (** [array_exists t n] returns [true] if array node [n] is a member
       of store [t] and [false] otherwise. *)
 
-  val set_array
-    : ArrayNode.t ->
-      Owl_types.index array ->
-      ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
-      t ->
-      (unit, [> error | Node.error | Codecs.error ]) result
-  (** [set_array n s x t] writes n-dimensional array [x] to the slice [s]
+  val set_array :
+    t ->
+    ArrayNode.t ->
+    Owl_types.index array ->
+    ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
+    (unit, [> error | Node.error | Codecs.error ]) result
+  (** [set_array t n s x] writes n-dimensional array [x] to the slice [s]
       of array node [n] in store [t]. This operation fails if:
       - the ndarray [x] size does not equal slice [s].
       - the kind of [x] is not compatible with node [n]'s data type as
         described in its metadata document.
       - If there is a problem decoding/encoding node [n] chunks.*)
 
-  val get_array
-    : ArrayNode.t ->
-      Owl_types.index array ->
-      ('a, 'b) Bigarray.kind ->
-      t ->
-      (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
-      ,[> error | Node.error | Codecs.error ]) result
-  (** [get_array n s k t] reads an n-dimensional array of size determined
+  val get_array :
+    t ->
+    ArrayNode.t ->
+    Owl_types.index array ->
+    ('a, 'b) Bigarray.kind ->
+    (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
+    ,[> error | Node.error | Codecs.error ]) result
+  (** [get_array t n s k] reads an n-dimensional array of size determined
       by slice [s] from array node [n]. This operation fails if:
       - If there is a problem decoding/encoding node [n] chunks.
       - kind [k] is not compatible with node [n]'s data type as described

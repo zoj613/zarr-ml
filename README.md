@@ -47,17 +47,17 @@ FilesystemStore.create_array
 let slice = Owl_types.[|R [0; 20]; I 10; R []|];;
 let x =
   Result.get_ok @@
-  FilesystemStore.get_array array_node slice Bigarray.Float32 store;;
+  FilesystemStore.get_array store array_node slice Bigarray.Float32;;
 
 (* Do some computation on the array slice *)
 let x' = Ndarray.map (fun _ -> Owl_stats_dist.uniform_rvs 0. 10.) x;;
-FilesystemStore.set_array array_node slice x' store;;
+FilesystemStore.set_array store array_node slice x';;
 
 FilesystemStore.get_array
+  store
   array_node
   Owl_types.[|R [0; 73]; L [10; 16]; R[0; 5]|]
-  Bigarray.Float32
-  store;;
+  Bigarray.Float32;;
 (*           C0      C1       C2       C3      C4       C5 
  R[0,0]   6.106 4.76659   2.6251  5.76799 3.95144  1.95656 
  R[0,1]    -INF    -INF     -INF     -INF    -INF     -INF 
@@ -102,7 +102,7 @@ FilesystemStore.reshape store array_node [|25; 32; 10|];;
 
 let meta =
   Result.get_ok @@
-  FilesystemStore.group_metadata group_node store;;
+  FilesystemStore.group_metadata store group_node;;
 GroupMetadata.show meta;; (* pretty prints the contents of the metadata *)
 
 FilesystemStore.array_exists store shard_node;;

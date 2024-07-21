@@ -253,9 +253,7 @@ end = struct
       Array.fold_right
         (fun y acc ->
           let k, c = RegularGrid.index_coord_pair grid y in
-          ArrayMap.update k (function
-            | None -> Some [(c, Ndarray.get x y)]
-            | Some l -> Some ((c, Ndarray.get x y) :: l)) acc)
+          add_to_list k (c, Ndarray.get x y) acc)
         (Indexing.coords_of_slice slice shard_shape) ArrayMap.empty
     in
     let kind = Ndarray.kind x in
@@ -349,9 +347,7 @@ end = struct
       List.fold_left
         (fun acc (c, v) ->
           let id, co = RegularGrid.index_coord_pair grid c in
-          ArrayMap.update id (function
-            | None -> Some [(co, v)]
-            | Some l -> Some ((co, v) :: l)) acc) ArrayMap.empty pairs
+          add_to_list id (co, v) acc) ArrayMap.empty pairs
     in
     let inner = {repr with shape = t.chunk_shape} in
     let icoords = Array.map (fun v -> [|v; v|]) @@ Ndarray.shape idx_arr in
@@ -407,9 +403,7 @@ end = struct
       Array.fold_left
         (fun acc (i, y) ->
           let k, c = RegularGrid.index_coord_pair grid y in
-          ArrayMap.update k (function
-            | None -> Some [(i, c)]
-            | Some l -> Some ((i, c) :: l)) acc) ArrayMap.empty icoords
+          add_to_list k (i, c) acc) ArrayMap.empty icoords
     in
     let inner = {repr with shape = t.chunk_shape} in
     ArraySet.fold
@@ -452,9 +446,7 @@ end = struct
       List.fold_left
         (fun acc (i, y) ->
           let id, c = RegularGrid.index_coord_pair grid y in
-          ArrayMap.update id (function
-            | None -> Some [(i, c)]
-            | Some l -> Some ((i, c) :: l)) acc) ArrayMap.empty pairs
+          add_to_list id (i, c) acc) ArrayMap.empty pairs
     in
     let inner = {repr with shape = t.chunk_shape} in
     ArraySet.fold

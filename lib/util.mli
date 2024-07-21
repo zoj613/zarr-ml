@@ -65,3 +65,7 @@ val prod : int array -> int
 
 val max : int array -> int
 (** [max x] returns the maximum element of an integer array [x]. *)
+
+val add_to_list : int array -> 'a -> 'a list ArrayMap.t -> 'a list ArrayMap.t
+(** [add_to_list k v map] is [map] with [k] mapped to [l] such that [l]
+    is [v :: ArrayMap.find k map] if [k] was bound in [map] and [v] otherwise.*)

@@ -129,9 +129,7 @@ module Make (M : STORE) : S with type t = M.t = struct
       Array.fold_left
         (fun acc (co, y) ->
           let k, c = AM.index_coord_pair meta co in
-          ArrayMap.update k (function
-            | None -> Some [(c, y)]
-            | Some l -> Some ((c, y) :: l)) acc)
+          add_to_list k (c, y) acc)
         ArrayMap.empty @@ Array.combine
           (Indexing.coords_of_slice slice arr_shape) (Ndarray.to_array x)
     in
@@ -191,9 +189,7 @@ module Make (M : STORE) : S with type t = M.t = struct
       Array.fold_left
         (fun acc (i, y) ->
           let k, c = AM.index_coord_pair meta y in
-          ArrayMap.update k (function
-            | None -> Some [(i, c)]
-            | Some l -> Some ((i, c) :: l)) acc) ArrayMap.empty icoords
+          add_to_list k (i, c) acc) ArrayMap.empty icoords
     in
     let chain = AM.codecs meta in
     let prefix = ArrayNode.to_key node ^ "/" in

@@ -103,3 +103,8 @@ let max x =
   Array.fold_left
     (fun acc v ->
       if v <= acc then acc else v) Int.min_int x
+
+let add_to_list k v map =
+  ArrayMap.update k (function
+    | None -> Some [v]
+    | Some l -> Some (v :: l)) map

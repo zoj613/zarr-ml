@@ -2,6 +2,8 @@
 
 (name zarr)
 
+(version 0.1.0)
+
 (generate_opam_files true)
 
 (source
@@ -13,11 +15,11 @@
 
 (license BSD-3-Clause)
 
-(documentation https://zoj613.github.io/zarr-ml/zarr/Zarr/index.html)
+(documentation https://zoj613.github.io/zarr-ml)
 
 (package
  (name zarr)
- (synopsis "A short synopsis")
+ (synopsis "An Ocaml implementation of the  Zarr V3 specification.")
  (description "A longer description")
  (depends
    dune
@@ -33,6 +35,6 @@
    (bisect_ppx
      (and :dev (>= 2.5.0) :with-test)))
  (tags
-  (topics "to describe" your project)))
+  ("zarr" "chunked arrays" "zarr version 3")))
 
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project

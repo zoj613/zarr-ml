@@ -32,8 +32,8 @@ end
 module Little = struct
   let contents = Buffer.contents
   let add_int8 = Buffer.add_int8
-  let add_char buf v = Char.code v |> add_int8 buf
   let add_uint8 = Buffer.add_uint8
+  let add_char buf v = Char.code v |> add_uint8 buf
   let add_int16 = Buffer.add_int16_le
   let add_uint16 = Buffer.add_uint16_le
   let add_int32 = Buffer.add_int32_le
@@ -50,8 +50,8 @@ module Little = struct
     Int64.bits_of_float im |> add_int64 buf
 
   let get_int8 = String.get_int8
-  let get_char buf i = get_int8 buf i |> Char.chr
   let get_uint8 = String.get_uint8
+  let get_char buf i = get_uint8 buf i |> Char.chr
   let get_int16 = String.get_int16_le
   let get_uint16 = String.get_uint16_le
   let get_int32 = String.get_int32_le
@@ -71,8 +71,8 @@ end
 module Big = struct
   let contents = Buffer.contents
   let add_int8 = Buffer.add_int8
-  let add_char buf v = Char.code v |> add_int8 buf
   let add_uint8 = Buffer.add_uint8
+  let add_char buf v = Char.code v |> add_uint8 buf
   let add_int16 = Buffer.add_int16_be
   let add_uint16 = Buffer.add_uint16_be
   let add_int32 = Buffer.add_int32_be
@@ -89,8 +89,8 @@ module Big = struct
     Int64.bits_of_float im |> Buffer.add_int64_be buf
 
   let get_int8 = String.get_int8
-  let get_char buf i = get_int8 buf i |> Char.chr
   let get_uint8 = String.get_uint8
+  let get_char buf i = get_uint8 buf i |> Char.chr
   let get_int16 = String.get_int16_be
   let get_uint16 = String.get_uint16_be
   let get_int32 = String.get_int32_be

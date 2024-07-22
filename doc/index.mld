@@ -1,0 +1,19 @@
+{0 The [zarr] library}
+
+The Zarr library provides an OCaml implementation of the Zarr version 3
+storage format specification for chunked & compressed multi-dimensional
+arrays, designed for use in parallel computing. The storage format is used
+by many companies including Google, NASA, Microsoft and {{:https://zarr.dev/adopters/}many others}.
+Zarr's goal is to provide the following features:
+- Chunk multi-dimensional arrays along any dimension.
+- Store arrays in memory, on disk, inside a Zip file or any remote storage backend.
+- Read and write arrays concurrently from multiple threads or processes. 
+- Organize arrays into hierarchies using groups.
+
+See {{:https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html}Zarr V3 specification}.
+
+Author: Zolisa Bleki
+
+{1 Entry Point}
+
+The entry point of this library is the module {!zarr}.

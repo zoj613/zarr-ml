@@ -43,7 +43,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     node
     t
     =
-    let repr = {kind; fill_value; shape = chunks} in
+    let repr = Codecs.{kind; fill_value; shape = chunks} in
     Codecs.Chain.create repr codecs >>= fun chain ->
     AM.create
       ~sep ~codecs:chain ~dimension_names ~attributes ~shape
@@ -132,7 +132,7 @@ module Make (M : STORE) : S with type t = M.t = struct
           (Indexing.coords_of_slice slice arr_shape) (Ndarray.to_array x)
     in
     let fill_value = AM.fillvalue_of_kind meta kind in
-    let repr = {kind; fill_value; shape = AM.chunk_shape meta} in
+    let repr = Codecs.{kind; fill_value; shape = AM.chunk_shape meta} in
     let prefix = ArrayNode.to_key node ^ "/" in
     let chain = AM.codecs meta in
     ArraySet.fold
@@ -192,7 +192,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     let chain = AM.codecs meta in
     let prefix = ArrayNode.to_key node ^ "/" in
     let fill_value = AM.fillvalue_of_kind meta kind in
-    let repr = {kind; fill_value; shape = AM.chunk_shape meta} in
+    let repr = Codecs.{kind; fill_value; shape = AM.chunk_shape meta} in
     ArraySet.fold
       (fun idx acc ->
         acc >>= fun xs ->

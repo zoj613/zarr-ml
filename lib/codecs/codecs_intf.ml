@@ -41,6 +41,11 @@ type error =
 
 type partial_setter = ?append:bool -> (int * string) list -> unit
 
+type ('a, 'b) array_repr =
+  {kind : ('a, 'b) Bigarray.kind
+  ;shape : int array
+  ;fill_value : 'a}
+
 module type Interface = sig
   (** The type of [array -> array] codecs. *)
   type arraytoarray =
@@ -105,4 +110,11 @@ module type Interface = sig
     | `Sharding of int array * int array * string ]
 
   type partial_setter = ?append:bool -> (int * string) list -> unit
+
+  (** The type summarizing the decoded/encoded representation of a Zarr array
+      or chunk. *)
+  type ('a, 'b) array_repr =
+    {kind : ('a, 'b) Bigarray.kind
+    ;shape : int array
+    ;fill_value : 'a}
 end

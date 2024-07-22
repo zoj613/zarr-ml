@@ -30,7 +30,7 @@ module Chain = struct
   type t = bytestobytes internal_chain
 
   let rec create : 
-    type a b. (a, b) Util.array_repr -> codec_chain -> (t, [> error ]) result
+    type a b. (a, b) array_repr -> codec_chain -> (t, [> error ]) result
     = fun repr cc ->
     let a2a, rest =
       List.partition_map
@@ -100,7 +100,7 @@ module Chain = struct
       (string list, [> `Store_read of string | error] as 'c) result) ->
     partial_setter ->
     int ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     (int array * 'a) list ->
     (unit, 'c) result
     = fun t f g bsize repr pairs ->
@@ -114,7 +114,7 @@ module Chain = struct
     ((int * int option) list ->
       (string list, [> `Store_read of string | error ] as 'c) result) ->
     int ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     (int * int array) list ->
     ((int * 'a) list, 'c) result
     = fun t f s repr pairs ->
@@ -125,7 +125,7 @@ module Chain = struct
 
   let decode :
     t ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     string ->
     (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
     ,[> `Store_read of string | error]) result

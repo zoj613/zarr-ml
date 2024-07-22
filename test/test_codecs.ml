@@ -1,5 +1,4 @@
 open OUnit2
-open Zarr
 open Zarr.Codecs
 
 module Ndarray = Owl.Dense.Ndarray.Generic

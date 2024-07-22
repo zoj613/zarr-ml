@@ -1,10 +1,3 @@
-type ('a, 'b) array_repr =
-  {kind : ('a, 'b) Bigarray.kind
-  ;shape : int array
-  ;fill_value : 'a}
-(** The type summarizing the decoded/encoded representation of a Zarr array
-    or chunk. *)
-
 module ExtPoint : sig
   (** The type representing a JSON extension point metadata configuration. *)
 

@@ -59,7 +59,7 @@ let test_array_metadata
     a ->
     unit
   = fun ?dimension_names ~shape ~chunks kind bad_kind fv ->
-  let repr : (a, b) array_repr = {kind; fill_value = fv; shape = chunks} in
+  let repr = Codecs.{kind; fill_value = fv; shape = chunks} in
   let codecs = Result.get_ok @@ Codecs.Chain.create repr [`Bytes LE] in
   let meta =
     match dimension_names with

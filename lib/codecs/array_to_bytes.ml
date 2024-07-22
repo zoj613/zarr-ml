@@ -42,7 +42,7 @@ module BytesCodec = struct
   let decode :
     type a b.
     string ->
-    (a, b) Util.array_repr ->
+    (a, b) array_repr ->
     endianness ->
     ((a, b) Ndarray.t, [> `Store_read of string | error]) result
     = fun buf decoded t ->
@@ -88,7 +88,7 @@ end
 module rec ArrayToBytes : sig
   val parse :
     array_tobytes ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     (unit, [> error]) result
   val compute_encoded_size : int -> array_tobytes -> int
   val default : array_tobytes
@@ -98,7 +98,7 @@ module rec ArrayToBytes : sig
     (string, [> error]) result
   val decode :
     array_tobytes ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     string ->
     (('a, 'b) Ndarray.t, [> `Store_read of string | error]) result
   val of_yojson : Yojson.Safe.t -> (array_tobytes, string) result
@@ -128,7 +128,7 @@ end = struct
 
   let decode :
     array_tobytes ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     string ->
     (('a, 'b) Ndarray.t, [> error]) result
     = fun t repr b ->
@@ -150,7 +150,7 @@ end
 
 and ShardingIndexedCodec : sig
   type t = internal_shard_config
-  val parse : t -> ('a, 'b) Util.array_repr -> (unit, [> error]) result
+  val parse : t -> ('a, 'b) array_repr -> (unit, [> error]) result
   val compute_encoded_size : int -> t -> int
   val encode : t -> ('a, 'b) Ndarray.t -> (string, [> error]) result
   val partial_encode :
@@ -159,7 +159,7 @@ and ShardingIndexedCodec : sig
       (string list, [> `Store_read of string | error ] as 'c) result) ->
     partial_setter ->
     int ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     (int array * 'a) list ->
     (unit, 'c) result
   val partial_decode :
@@ -167,12 +167,12 @@ and ShardingIndexedCodec : sig
     ((int * int option) list ->
       (string list, [> `Store_read of string | error ] as 'c) result) ->
     int ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     (int * int array) list ->
     ((int * 'a) list, 'c) result
   val decode :
     t ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     string ->
     (('a, 'b) Ndarray.t, [> `Store_read of string | error]) result
   val of_yojson : Yojson.Safe.t -> (t, string) result
@@ -191,7 +191,7 @@ end = struct
 
   let parse :
     internal_shard_config ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     (unit, [> error]) result
     = fun t r ->
     (match Array.(length r.shape = length t.chunk_shape) with
@@ -282,7 +282,7 @@ end = struct
   let rec decode_chain :
     type a b.
     bytestobytes internal_chain ->
-    (a, b) Util.array_repr ->
+    (a, b) array_repr ->
     string ->
     ((a, b) Ndarray.t, [> error]) result
     = fun t repr x ->
@@ -328,7 +328,7 @@ end = struct
       (string list, [> `Store_read of string | error ]) result) ->
     partial_setter ->
     int ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     (int array * 'a) list ->
     (unit, [> `Store_read of string | error ]) result
     = fun t get_partial set_partial bytesize repr pairs ->
@@ -386,7 +386,7 @@ end = struct
 
   and decode :
     t ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     string ->
     (('a, 'b) Ndarray.t, [> `Store_read of string | error]) result
     = fun t repr b ->
@@ -427,7 +427,7 @@ end = struct
     ((int * int option) list ->
       (string list, [> `Store_read of string | error ]) result) ->
     int ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     (int * int array) list ->
     ((int * 'a) list, [> `Store_read of string | error ]) result
     = fun t get_partial bsize repr pairs ->

@@ -15,7 +15,7 @@ module Chain : sig
   (** [create r c] returns a type representing a chain of codecs defined by
       chain [c] and decoded array representation type [r]. *)
   val create :
-    ('a, 'b) Util.array_repr -> codec_chain -> (t, [> error ]) result
+    ('a, 'b) array_repr -> codec_chain -> (t, [> error ]) result
 
   (** [is_just_sharding t] is [true] if the codec chain [t] contains only
       the [sharding_indexed] codec. *)
@@ -32,7 +32,7 @@ module Chain : sig
       and decoded representation type [repr]. Returns an error upon failure.*)
   val decode :
     t ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     string ->
     (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
     ,[> `Store_read of string | error ]) result
@@ -43,7 +43,7 @@ module Chain : sig
       (string list, [> `Store_read of string | error ] as 'c) result) ->
     partial_setter ->
     int ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     (int array * 'a) list ->
     (unit, 'c) result
 
@@ -52,7 +52,7 @@ module Chain : sig
     ((int * int option) list ->
       (string list, [> `Store_read of string | error ] as 'c) result) ->
     int ->
-    ('a, 'b) Util.array_repr ->
+    ('a, 'b) array_repr ->
     (int * int array) list ->
     ((int * 'a) list, 'c) result
 

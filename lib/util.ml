@@ -8,11 +8,6 @@ module ExtPoint = struct
     cmp x.configuration y.configuration
 end
 
-type ('a, 'b) array_repr =
-  {kind : ('a, 'b) Bigarray.kind
-  ;shape : int array
-  ;fill_value : 'a}
-
 module ComparableArray = struct
   type t = int array
   let compare = Stdlib.compare

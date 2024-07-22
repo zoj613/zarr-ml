@@ -8,8 +8,8 @@ module TransposeCodec = struct
   let compute_encoded_representation
     : type a b.
       int array ->
-      (a, b) Util.array_repr ->
-      ((a, b) Util.array_repr, [> error]) result
+      (a, b) array_repr ->
+      ((a, b) array_repr, [> error]) result
     = fun t decoded ->
       try
         let shape = Array.map (fun x -> decoded.shape.(x)) t in
@@ -45,7 +45,7 @@ module TransposeCodec = struct
 
   let parse
     : type a b.
-      (a, b) Util.array_repr ->
+      (a, b) array_repr ->
       int array ->
       (unit, [> error]) result
     = fun repr o ->
@@ -124,8 +124,8 @@ module ArrayToArray = struct
 
   let compute_encoded_representation :
     arraytoarray ->
-    ('a, 'b) Util.array_repr ->
-    (('a, 'b) Util.array_repr, [> error]) result
+    ('a, 'b) array_repr ->
+    (('a, 'b) array_repr, [> error]) result
     = fun t repr ->
     match t with
     | `Transpose o ->

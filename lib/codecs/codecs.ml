@@ -78,9 +78,6 @@ module Chain = struct
     >>= ArrayToBytes.parse a2b >>| fun () ->
     {a2a; a2b; b2b}
 
-  let default : t =
-    {a2a = []; a2b = ArrayToBytes.default; b2b = []}
-
   let encode :
     t ->
     ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->

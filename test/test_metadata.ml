@@ -59,14 +59,16 @@ let test_array_metadata
     a ->
     unit
   = fun ?dimension_names ~shape ~chunks kind bad_kind fv ->
+  let repr : (a, b) array_repr = {kind; fill_value = fv; shape = chunks} in
+  let codecs = Result.get_ok @@ Codecs.Chain.create repr [`Bytes LE] in
   let meta =
     match dimension_names with
     | Some d ->
       Result.get_ok @@
-      ArrayMetadata.create ~shape ~dimension_names:d kind fv chunks
+      ArrayMetadata.create ~codecs ~shape ~dimension_names:d kind fv chunks
     | None ->
       Result.get_ok @@
-      ArrayMetadata.create ~shape kind fv chunks
+      ArrayMetadata.create ~codecs ~shape kind fv chunks
   in
   (match ArrayMetadata.encode meta |> ArrayMetadata.decode with
   | Ok v ->
@@ -81,9 +83,6 @@ let test_array_metadata
   assert_equal
     ~printer:show_int_array shape @@ ArrayMetadata.shape meta;
 
-  assert_equal
-    Codecs.Chain.default @@
-    ArrayMetadata.codecs meta;
 
   assert_equal
     ~printer:show_int_array

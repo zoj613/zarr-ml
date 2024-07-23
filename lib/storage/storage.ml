@@ -35,7 +35,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     ?(sep=`Slash)
     ?(dimension_names=[])
     ?(attributes=`Null)
-    ?codecs
+    ~codecs
     ~shape
     ~chunks
     kind
@@ -44,14 +44,13 @@ module Make (M : STORE) : S with type t = M.t = struct
     t
     =
     let repr = {kind; fill_value; shape = chunks} in
-    (match codecs with
-    | Some c -> Codecs.Chain.create repr c
-    | None -> Ok Codecs.Chain.default)
-    >>= fun codecs ->
+    Codecs.Chain.create repr codecs >>= fun chain ->
     AM.create
-      ~sep ~codecs ~dimension_names ~attributes ~shape
+      ~sep ~codecs:chain ~dimension_names ~attributes ~shape
       kind fill_value chunks
-    >>| AM.encode >>| set t (ArrayNode.to_metakey node) >>| fun () ->
+    >>| AM.encode
+    >>| fun encoded ->
+    set t (ArrayNode.to_metakey node) @@ encoded;
     make_implicit_groups_explicit t @@ Some (ArrayNode.parent node)
 
   let group_metadata t node =

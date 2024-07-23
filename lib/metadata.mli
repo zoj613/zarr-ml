@@ -35,17 +35,18 @@ module ArrayMetadata : sig
 
   val create :
     ?sep:[< `Dot | `Slash > `Slash ] ->
-    ?codecs:Codecs.Chain.t ->
     ?dimension_names:string option list ->
     ?attributes:Yojson.Safe.t ->
+    codecs:Codecs.Chain.t ->
     shape:int array ->
     ('a, 'b) Bigarray.kind ->
     'a ->
     int array ->
     (t, [> error ]) result
-  (** [create ~shape kind fv cshp] Creates a new array metadata document
-      with shape [shape], fill value [fv], data type [kind] and chunk shape
-      [cshp]. This operation returns an error if chunk shape is invalid. *)
+  (** [create ~codecs ~shape kind fv cshp] Creates a new array metadata
+      document with codec chain [codecs], shape [shape], fill value [fv],
+      data type [kind] and chunk shape [cshp]. This operation returns an
+      error if chunk shape is invalid. *)
 
   val encode : t -> string
   (** [encode t] returns a byte string representing a JSON Zarr array metadata. *)

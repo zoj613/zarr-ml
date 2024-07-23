@@ -20,12 +20,11 @@ module Make (M : STORE) : S with type t = M.t = struct
   let array_exists t node =
     M.is_member t @@ ArrayNode.to_metakey node
 
-  let rec create_group ?metadata t node =
+  let rec create_group ?(attrs=`Null) t node =
     if group_exists t node then ()
     else
-      (match metadata, GroupNode.to_metakey node with
-      | Some m, k -> set t k @@ GM.encode m;
-      | None, k -> set t k @@ GM.(default |> encode));
+      let k = GroupNode.to_metakey node in
+      set t k GM.(update_attributes default attrs |> encode);
       make_implicit_groups_explicit t @@ GroupNode.parent node
 
   and make_implicit_groups_explicit t = function

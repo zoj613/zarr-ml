@@ -8,9 +8,6 @@ end
 module ArrayMap : sig include Map.S with type key = int array end
 (** A finite map over integer array keys. *)
 
-module ArraySet : sig include Set.S with type elt = int array end
-(** A hash set of integer array elements. *)
-
 module Result_syntax : sig
   (** Result monad operator syntax. *)
 

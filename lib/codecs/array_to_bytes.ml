@@ -260,8 +260,8 @@ end = struct
     let buf = Buffer.create @@ Ndarray.size_in_bytes x in
     let icoords = Array.map (fun v -> [|v; v|]) idx_shp in
     icoords.(Array.length shard_shape) <- [|0; 1|];
-    ArraySet.fold
-      (fun idx acc ->
+    List.fold_left
+      (fun acc idx ->
         acc >>= fun offset ->
         let v = Array.of_list @@ snd @@ List.split @@ ArrayMap.find idx m in
         let x' = Ndarray.of_array kind v t.chunk_shape in
@@ -270,8 +270,7 @@ end = struct
         Array.iteri (fun i v -> icoords.(i).(0) <- v; icoords.(i).(1) <- v) idx;
         let nb = Int64.of_int @@ String.length b in
         Ndarray.set_index shard_idx icoords [|offset; nb|];
-        Int64.add offset nb)
-      (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) (Ok 0L)
+        Int64.add offset nb) (Ok 0L) (fst @@ List.split @@ ArrayMap.bindings m)
     >>= fun _ ->
     encode_chain (t.index_codecs :> bytestobytes internal_chain) shard_idx
     >>| fun ib ->
@@ -352,8 +351,8 @@ end = struct
     let inner = {repr with shape = t.chunk_shape} in
     let icoords = Array.map (fun v -> [|v; v|]) @@ Ndarray.shape idx_arr in
     icoords.(Array.length t.chunk_shape) <- [|0; 1|];
-    ArraySet.fold
-      (fun idx acc ->
+    List.fold_left
+      (fun acc idx ->
         acc >>= fun (bsize, shard_idx) ->
         let z = ArrayMap.find idx m in
         let p = Bigarray.array1_of_genarray @@ Ndarray.slice_left shard_idx idx in
@@ -375,8 +374,7 @@ end = struct
             shard_idx icoords Int64.[|of_int bsize; of_int nb'|];
           set_partial ~append:true [bsize, s];
           bsize + nb', shard_idx))
-      (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) @@
-      Ok (bytesize - pad, idx_arr)
+      (Ok (bytesize - pad, idx_arr)) (fst @@ List.split @@ ArrayMap.bindings m)
     >>= fun (bytesize, shard_idx) ->
     encode_chain (t.index_codecs :> bytestobytes internal_chain) shard_idx
     >>| fun ib ->
@@ -406,8 +404,8 @@ end = struct
           add_to_list k (i, c) acc) ArrayMap.empty icoords
     in
     let inner = {repr with shape = t.chunk_shape} in
-    ArraySet.fold
-      (fun idx acc ->
+    List.fold_left
+      (fun acc idx ->
         acc >>= fun xs ->
         let pairs = ArrayMap.find idx m in
         let p = Bigarray.array1_of_genarray @@ Ndarray.slice_left shard_idx idx in
@@ -415,7 +413,7 @@ end = struct
         decode_chain t.codecs inner c >>| fun arr ->
         List.fold_left
           (fun a (i, c) -> (i, Ndarray.get arr c) :: a) xs pairs)
-      (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) (Ok [])
+      (Ok []) (fst @@ List.split @@ ArrayMap.bindings m)
     >>| fun pairs ->
     let v =
       Array.of_list @@ snd @@ List.split @@
@@ -449,8 +447,8 @@ end = struct
           add_to_list id (i, c) acc) ArrayMap.empty pairs
     in
     let inner = {repr with shape = t.chunk_shape} in
-    ArraySet.fold
-      (fun idx acc ->
+    List.fold_left
+      (fun acc idx ->
         acc >>= fun (shard_idx, xs) ->
         let z = ArrayMap.find idx m in
         let p = Bigarray.array1_of_genarray @@ Ndarray.slice_left shard_idx idx in
@@ -458,8 +456,7 @@ end = struct
         List.hd >>=
         decode_chain t.codecs inner >>| fun arr ->
         shard_idx, xs @ List.map (fun (i, c) -> (i, Ndarray.get arr c)) z)
-      (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) @@
-      Ok (idx_arr, [])
+      (Ok (idx_arr, [])) @@ fst @@ List.split @@ ArrayMap.bindings m
     >>| snd
 
   let rec chain_to_yojson chain =

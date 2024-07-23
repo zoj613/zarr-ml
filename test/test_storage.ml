@@ -40,20 +40,15 @@ let test_store
     M.find_all_nodes store;
 
   let attrs = `Assoc [("questions", `String "answer")] in
-  M.create_group 
-    ~metadata:GroupMetadata.(update_attributes default attrs)
-    store
-    gnode;
+  M.create_group ~attrs store gnode;
   (match M.group_metadata store gnode with
   | Ok meta ->
     assert_equal
-      ~printer:Yojson.Safe.show
-      attrs @@
-      GroupMetadata.attributes meta
+      ~printer:Yojson.Safe.show attrs @@ GroupMetadata.attributes meta
   | Error _ ->
     assert_failure
-      "group node created with specified values should
-      have metadata with said values.");
+      "group node created with specified attributes should
+      have metadata with said attributes.");
 
   let fake = ArrayNode.(gnode / "non-member") |> Result.get_ok in
   assert_equal ~printer:string_of_bool false @@ M.array_exists store fake;

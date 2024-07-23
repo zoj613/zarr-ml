@@ -45,10 +45,9 @@ module type S = sig
   type t
   (** The storage type. *)
 
-  val create_group
-    : ?metadata:GroupMetadata.t -> t -> GroupNode.t -> unit
-  (** [create_group ~meta t node] creates a group node in store [t]
-      containing metadata [meta]. This is a no-op if [node]
+  val create_group : ?attrs:Yojson.Safe.t -> t -> GroupNode.t -> unit
+  (** [create_group ?attrs t node] creates a group node in store [t]
+      containing attributes [attrs]. This is a no-op if [node]
       is already a member of this store. *)
 
   val create_array

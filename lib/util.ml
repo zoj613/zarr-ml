@@ -8,14 +8,10 @@ module ExtPoint = struct
     cmp x.configuration y.configuration
 end
 
-module ComparableArray = struct
+module ArrayMap = Map.Make (struct
   type t = int array
   let compare = Stdlib.compare
-end
-
-module ArraySet = Set.Make (ComparableArray)
-
-module ArrayMap = Map.Make (ComparableArray)
+end)
 
 module Result_syntax = struct
   let ( >>= ) = Result.bind

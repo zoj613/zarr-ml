@@ -5,10 +5,14 @@ open Util.Result_syntax
 open Node
 
 module Ndarray = Owl.Dense.Ndarray.Generic
-module ArraySet = Util.ArraySet
 module ArrayMap = Util.ArrayMap
 module AM = Metadata.ArrayMetadata
 module GM = Metadata.GroupMetadata
+
+module ArraySet = Set.Make (struct
+  type t = int array
+  let compare = Stdlib.compare
+end)
 
 module Make (M : STORE) : S with type t = M.t = struct
   include M
@@ -132,8 +136,8 @@ module Make (M : STORE) : S with type t = M.t = struct
     let repr = Codecs.{kind; fill_value; shape = AM.chunk_shape meta} in
     let prefix = ArrayNode.to_key node ^ "/" in
     let chain = AM.codecs meta in
-    ArraySet.fold
-      (fun idx acc ->
+    List.fold_left
+      (fun acc idx ->
         acc >>= fun () ->
         let pairs = ArrayMap.find idx m in
         let ckey = prefix ^ AM.chunk_key meta idx in
@@ -153,7 +157,7 @@ module Make (M : STORE) : S with type t = M.t = struct
           >>= fun arr ->
           List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
           Codecs.Chain.encode chain arr >>| set t ckey)
-      (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) (Ok ())
+      (Ok ()) (fst @@ List.split @@ ArrayMap.bindings m)
 
   let get_array :
     t ->
@@ -189,8 +193,8 @@ module Make (M : STORE) : S with type t = M.t = struct
     let prefix = ArrayNode.to_key node ^ "/" in
     let fill_value = AM.fillvalue_of_kind meta kind in
     let repr = Codecs.{kind; fill_value; shape = AM.chunk_shape meta} in
-    ArraySet.fold
-      (fun idx acc ->
+    List.fold_left
+      (fun acc idx ->
         acc >>= fun xs ->
         let pairs = ArrayMap.find idx m in
         let ckey = prefix ^ AM.chunk_key meta idx in
@@ -207,7 +211,7 @@ module Make (M : STORE) : S with type t = M.t = struct
          | Error `Store_read _ ->
             Result.ok @@
             List.fold_left (fun a (i, _) -> (i, fill_value) :: a) xs pairs)
-      (ArraySet.of_seq @@ fst @@ Seq.split @@ ArrayMap.to_seq m) (Ok [])
+      (Ok []) (fst @@ List.split @@ ArrayMap.bindings m)
     >>| fun pairs ->
     (* sorting restores the C-order of the decoded array coordinates. *)
     let v =
@@ -228,7 +232,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     let s = ArraySet.of_list @@ AM.chunk_indices meta oldshape in
     let s' = ArraySet.of_list @@ AM.chunk_indices meta newshape in
     ArraySet.iter
-      (fun v -> erase t @@ pre ^ AM.chunk_key meta v) ArraySet.(diff s s');
+      (fun v -> erase t @@ pre ^ AM.chunk_key meta v) @@ ArraySet.diff s s';
     set t mkey @@ AM.encode @@ AM.update_shape meta newshape
 end
 

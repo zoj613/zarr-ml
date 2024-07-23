@@ -300,7 +300,7 @@ module ArrayMetadata = struct
     Yojson.Safe.to_string @@ to_yojson t
 
   let decode b = 
-    of_yojson @@ Yojson.Safe.from_string b
+    of_yojson @@ Yojson.Safe.from_string b >>? fun msg -> `Store_read msg
 
   let update_attributes t attrs =
     {t with attributes = attrs}
@@ -398,7 +398,7 @@ module GroupMetadata = struct
     Ok {zarr_format; node_type; attributes}
 
   let decode s = 
-    of_yojson @@ Yojson.Safe.from_string s
+    of_yojson @@ Yojson.Safe.from_string s >>? fun msg -> `Store_read msg
 
   let encode t =
     Yojson.Safe.to_string @@ to_yojson t

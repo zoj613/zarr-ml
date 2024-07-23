@@ -51,7 +51,7 @@ module ArrayMetadata : sig
   val encode : t -> string
   (** [encode t] returns a byte string representing a JSON Zarr array metadata. *)
 
-  val decode : string -> (t, string) result
+  val decode : string -> (t, [> `Store_read of string ]) result
   (** [decode s] decodes a bytes string [s] into a {!ArrayMetadata.t}
       type, and returns an error if the decoding process fails. *)
 
@@ -120,7 +120,7 @@ module GroupMetadata : sig
   val encode : t -> string
   (** [encode t] returns a byte string representing a JSON Zarr group metadata. *)
 
-  val decode : string -> (t, string) result
+  val decode : string -> (t, [> `Store_read of string ]) result
   (** [decode s] decodes a bytes string [s] into a {!t} type, and returns
       an error if the decoding process fails. *)
 

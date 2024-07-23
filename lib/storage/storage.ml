@@ -54,12 +54,10 @@ module Make (M : STORE) : S with type t = M.t = struct
     make_implicit_groups_explicit t @@ Some (ArrayNode.parent node)
 
   let group_metadata t node =
-    get t @@ GroupNode.to_metakey node >>= fun bytes ->
-    GM.decode bytes >>? fun msg -> `Store_read msg
+    get t @@ GroupNode.to_metakey node >>= GM.decode
 
   let array_metadata t node =
-    get t @@ ArrayNode.to_metakey node >>= fun bytes ->
-    AM.decode bytes >>? fun msg -> `Store_read msg
+    get t @@ ArrayNode.to_metakey node >>= AM.decode
 
   (* Assumes without checking that [metakey] is a valid node metadata key.*)
   let unsafe_node_type t metakey =
@@ -107,8 +105,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     ('a, 'b) Ndarray.t ->
     (unit, [> error ]) result
   = fun t node slice x ->
-    get t @@ ArrayNode.to_metakey node >>= fun bytes ->
-    AM.decode bytes >>? (fun msg -> `Store_write msg) >>= fun meta ->
+    get t @@ ArrayNode.to_metakey node >>= AM.decode >>= fun meta ->
     let arr_shape = AM.shape meta in
     (if Ndarray.shape x = Indexing.slice_shape slice arr_shape then 
         Ok ()
@@ -165,8 +162,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     ('a, 'b) Bigarray.kind ->
     (('a, 'b) Ndarray.t, [> error]) result
   = fun t node slice kind ->
-    get t @@ ArrayNode.to_metakey node >>= fun bytes ->
-    AM.decode bytes >>? (fun msg -> `Store_read msg) >>= fun meta ->
+    get t @@ ArrayNode.to_metakey node >>= AM.decode >>= fun meta ->
     (if AM.is_valid_kind meta kind then
         Ok ()
       else
@@ -221,8 +217,7 @@ module Make (M : STORE) : S with type t = M.t = struct
 
   let reshape t node newshape =
     let mkey = ArrayNode.to_metakey node in
-    get t mkey  >>= fun bytes ->
-    AM.decode bytes >>? (fun msg -> `Store_write msg) >>= fun meta ->
+    get t mkey >>= AM.decode >>= fun meta ->
     let oldshape = AM.shape meta in
     (if Array.length newshape = Array.length oldshape then
       Ok ()

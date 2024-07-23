@@ -9,7 +9,7 @@ let decode_bad_group_metadata ~str ~msg =
   | Ok _ ->
     assert_failure
       "Impossible to decode an ill-formed JSON group metadata document.";
-  | Error s ->
+  | Error (`Store_read s) ->
     assert_equal ~printer:Fun.id msg s
 
 let group = [
@@ -159,7 +159,7 @@ let decode_bad_array_metadata ~str ~msg =
   | Ok _ ->
     assert_failure
       "Impossible to decode an ill-formed JSON array metadata document.";
-  | Error s ->
+  | Error (`Store_read s) ->
     assert_equal ~printer:Fun.id msg s
 
 let test_encode_decode_fill_value fv =

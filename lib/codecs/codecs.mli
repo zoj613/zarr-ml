@@ -17,10 +17,6 @@ module Chain : sig
   val create :
     ('a, 'b) Util.array_repr -> codec_chain -> (t, [> error ]) result
 
-  (** [default] returns the default codec chain that contains only
-      the required codecs as defined in the Zarr Version 3 specification. *)
-  val default : t
-
   (** [is_just_sharding t] is [true] if the codec chain [t] contains only
       the [sharding_indexed] codec. *)
   val is_just_sharding : t -> bool

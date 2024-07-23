@@ -116,9 +116,9 @@ module ArrayMetadata = struct
 
   let create
     ?(sep=`Slash)
-    ?(codecs=Codecs.Chain.default)
     ?(dimension_names=[])
     ?(attributes=`Null)
+    ~codecs
     ~shape
     kind
     fv

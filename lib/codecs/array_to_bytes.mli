@@ -2,23 +2,22 @@ open Codecs_intf
 
 module ArrayToBytes : sig
   val parse :
-    array_tobytes ->
+    arraytobytes ->
     ('a, 'b) array_repr ->
     (unit, [> error]) result
-  val compute_encoded_size : int -> array_tobytes -> int
-  val default : array_tobytes
+  val compute_encoded_size : int -> fixed_arraytobytes -> int
   val encode :
-    array_tobytes ->
+    arraytobytes ->
     ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
     (string, [> error]) result
   val decode :
-    array_tobytes ->
+    arraytobytes ->
     ('a, 'b) array_repr ->
     string ->
     (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
     ,[> `Store_read of string | error]) result
-  val of_yojson : Yojson.Safe.t -> (array_tobytes, string) result
-  val to_yojson : array_tobytes -> Yojson.Safe.t
+  val of_yojson : Yojson.Safe.t -> (arraytobytes, string) result
+  val to_yojson : arraytobytes -> Yojson.Safe.t
 end
 
 module ShardingIndexedCodec : sig

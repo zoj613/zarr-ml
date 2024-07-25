@@ -17,20 +17,27 @@ type endianness = LE | BE
 
 type loc = Start | End
 
-type array_tobytes =
-  [ `Bytes of endianness
-  | `ShardingIndexed of internal_shard_config ]
+type fixed_arraytobytes =
+  [ `Bytes of endianness ]
+
+type variable_arraytobytes =
+  [ `ShardingIndexed of internal_shard_config ]
 
 and internal_shard_config =
   {chunk_shape : int array
-  ;codecs : bytestobytes internal_chain
-  ;index_codecs : fixed_bytestobytes internal_chain
+  ;codecs :
+    ([fixed_arraytobytes | `ShardingIndexed of internal_shard_config ]
+    ,bytestobytes) internal_chain
+  ;index_codecs : (fixed_arraytobytes, fixed_bytestobytes) internal_chain
+
   ;index_location : loc}
 
-and 'a internal_chain =
+and ('a, 'b) internal_chain =
   {a2a : arraytoarray list
-  ;a2b : array_tobytes
-  ;b2b : 'a list}
+  ;a2b : 'a
+  ;b2b : 'b list}
+
+type arraytobytes = [ fixed_arraytobytes | variable_arraytobytes ]
 
 type error =
   [ `Extension of string 
@@ -77,28 +84,31 @@ module type Interface = sig
   type loc = Start | End
 
   (** The type of [array -> bytes] codecs. *)
-  type arraytobytes =
-    [ `Bytes of endianness
-    | `ShardingIndexed of shard_config ]
+  type fixed_arraytobytes =
+    [ `Bytes of endianness ]
+
+  type variable_array_tobytes =
+    [ `ShardingIndexed of shard_config ]
 
   (** A type representing the Sharding indexed codec's configuration parameters. *)
   and shard_config =
     {chunk_shape : int array
     ;codecs :
       [ arraytoarray
-      | `Bytes of endianness
+      | fixed_arraytobytes
       | `ShardingIndexed of shard_config
       | bytestobytes ] list
     ;index_codecs :
-      [ arraytoarray
-      | `Bytes of endianness
-      | `ShardingIndexed of shard_config
-      | fixed_bytestobytes ] list
+      [ arraytoarray | fixed_arraytobytes | fixed_bytestobytes ] list
     ;index_location : loc}
+
+  (** The type of [array -> bytes] codecs. *)
+  type array_tobytes =
+    [ fixed_arraytobytes | variable_array_tobytes ]
 
   (** A type used to build a user-defined chain of codecs when creating a Zarr array. *)
   type codec_chain =
-    [ arraytoarray | arraytobytes | bytestobytes ] list
+    [ arraytoarray | array_tobytes | bytestobytes ] list
 
   (** The type of errors returned upon failure when an calling a function
     on a {!Chain} type. *)

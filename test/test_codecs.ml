@@ -382,8 +382,30 @@ let tests = [
     in
     let r = Chain.of_yojson @@ Yojson.Safe.from_string str in
     assert_bool
-      "Encoding this nested sharding chain should not fail" @@
-      Result.is_ok r)
+      "Encoding this nested sharding chain should not fail" @@ Result.is_ok r;
+  (* test if decoding of indexed_codec with sharding for array->bytes fails.*)
+  let str =
+    {|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"index_location": "start",
+          "chunk_shape": [5, 5, 5],
+          "codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}],
+          "index_codecs":
+            [{"name": "sharding_indexed",
+               "configuration":
+                 {"index_location": "end",
+                  "chunk_shape": [5, 5, 5, 1],
+                  "index_codecs":
+                    [{"name": "bytes", "configuration": {"endian": "big"}}],
+                  "codecs":
+                    [{"name": "bytes", "configuration": {"endian": "big"}}]}}]}}]|}
+    in
+    let r = Chain.of_yojson @@ Yojson.Safe.from_string str in
+    assert_bool
+      "Decoding of index_codec chain with sharding should fail" @@
+      Result.is_error r)
 ;
 
 

@@ -5,29 +5,31 @@ open Util.Result_syntax
 
 include Codecs_intf
 
-type arraytobytes =
-  [ `Bytes of endianness
-  | `ShardingIndexed of shard_config ]
+type fixed_arraytobytes =
+  [ `Bytes of endianness ]
+
+type variable_array_tobytes =
+  [ `ShardingIndexed of shard_config ]
 
 and shard_config =
   {chunk_shape : int array
   ;codecs :
     [ arraytoarray
-    | `Bytes of endianness
+    | fixed_arraytobytes
     | `ShardingIndexed of shard_config
     | bytestobytes ] list
   ;index_codecs :
-    [ arraytoarray
-    | `Bytes of endianness
-    | `ShardingIndexed of shard_config
-    | fixed_bytestobytes ] list
+    [ arraytoarray | fixed_arraytobytes | fixed_bytestobytes ] list
   ;index_location : loc}
 
+type array_tobytes =
+  [ fixed_arraytobytes | variable_array_tobytes ]
+
 type codec_chain =
-  [ arraytoarray | arraytobytes | bytestobytes ] list
+  [ arraytoarray | array_tobytes | bytestobytes ] list
 
 module Chain = struct
-  type t = bytestobytes internal_chain
+  type t = (arraytobytes, bytestobytes) internal_chain
 
   let rec create : 
     type a b. (a, b) array_repr -> codec_chain -> (t, [> error ]) result
@@ -36,7 +38,7 @@ module Chain = struct
       List.partition_map
         (function
         | #arraytoarray as c -> Either.left c
-        | #arraytobytes as c -> Either.right c
+        | #array_tobytes as c -> Either.right c
         | #bytestobytes as c -> Either.right c) cc
     in
     List.fold_right
@@ -44,13 +46,13 @@ module Chain = struct
         acc >>= fun (l, r) ->
         match c with
         | #bytestobytes as c -> Ok (l, c :: r)
-        | `Bytes e -> Ok (`Bytes e :: l, r)
+        | #fixed_arraytobytes as c -> Ok (c :: l, r)
         | `ShardingIndexed cfg ->
           create repr cfg.codecs >>= fun codecs ->
           create
             {repr with shape = Array.append repr.shape [|2|]}
             (cfg.index_codecs :> codec_chain) >>= fun index_codecs ->
-          (* coerse to a fixed_bytestobytes internal_chain list type *)
+          (* coerse to a fixed codec internal_chain list type *)
           let b2b =
             fst @@
             List.partition_map
@@ -58,11 +60,19 @@ module Chain = struct
               | #fixed_bytestobytes as c -> Either.left c
               | c -> Either.right c) index_codecs.b2b
           in
+          let a2b =
+            List.hd @@
+            fst @@
+            List.partition_map
+              (function
+              | #fixed_arraytobytes as c -> Either.left c
+              | c -> Either.right c) [index_codecs.a2b]
+          in
           let cfg' : internal_shard_config =
             {codecs
             ;chunk_shape = cfg.chunk_shape
             ;index_location = cfg.index_location
-            ;index_codecs = {index_codecs with b2b}}
+            ;index_codecs = {index_codecs with a2b; b2b}}
           in Ok (`ShardingIndexed cfg' :: l, r)) rest (Ok ([], []))
     >>= fun result ->
     (match result with

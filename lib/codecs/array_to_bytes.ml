@@ -35,10 +35,6 @@ module BytesCodec = struct
     | Int -> Ndarray.iter (add_int buf) x; Ok (contents buf)
     | Nativeint -> Ndarray.iter (add_nativeint buf) x; Ok (contents buf)
 
-  let mk_array kind shape init_fn =
-    let x = Array.init (Util.prod shape) init_fn in
-    Ok (Ndarray.of_array kind x shape)
-
   let decode :
     type a b.
     string ->
@@ -50,19 +46,19 @@ module BytesCodec = struct
     let open (val endian_module t) in
     let k, shp = decoded.kind, decoded.shape in
     match k, kind_size_in_bytes k with
-    | Char, _ -> mk_array k shp @@ get_char buf
-    | Int8_signed, _ -> mk_array k shp @@ get_int8 buf
-    | Int8_unsigned, _ -> mk_array k shp @@ get_int8 buf
-    | Int16_signed, s -> mk_array k shp @@ fun i -> get_int16 buf (i*s)
-    | Int16_unsigned, s -> mk_array k shp @@ fun i -> get_uint16 buf (i*s)
-    | Int32, s -> mk_array k shp @@ fun i -> get_int32 buf (i*s)
-    | Int64, s -> mk_array k shp @@ fun i -> get_int64 buf (i*s)
-    | Float32, s -> mk_array k shp @@ fun i -> get_float32 buf (i*s)
-    | Float64, s -> mk_array k shp @@ fun i -> get_float64 buf (i*s)
-    | Complex32, s -> mk_array k shp @@ fun i -> get_complex32 buf (i*s)
-    | Complex64, s -> mk_array k shp @@ fun i -> get_complex64 buf (i*s)
-    | Int, s -> mk_array k shp @@ fun i -> get_int buf (i*s)
-    | Nativeint, s -> mk_array k shp @@ fun i -> get_nativeint buf (i*s)
+    | Char, _ -> Ok (Ndarray.init k shp @@ get_char buf)
+    | Int8_signed, _ -> Ok (Ndarray.init k shp @@ get_int8 buf)
+    | Int8_unsigned, _ -> Ok (Ndarray.init k shp @@ get_uint8 buf)
+    | Int16_signed, s -> Ok (Ndarray.init k shp @@ fun i -> get_int16 buf (i*s))
+    | Int16_unsigned, s -> Ok (Ndarray.init k shp @@ fun i -> get_uint16 buf (i*s))
+    | Int32, s -> Ok (Ndarray.init k shp @@ fun i -> get_int32 buf (i*s))
+    | Int64, s -> Ok (Ndarray.init k shp @@ fun i -> get_int64 buf (i*s))
+    | Float32, s -> Ok (Ndarray.init k shp @@ fun i -> get_float32 buf (i*s))
+    | Float64, s -> Ok (Ndarray.init k shp @@ fun i -> get_float64 buf (i*s))
+    | Complex32, s -> Ok (Ndarray.init k shp @@ fun i -> get_complex32 buf (i*s))
+    | Complex64, s -> Ok (Ndarray.init k shp @@ fun i -> get_complex64 buf (i*s))
+    | Int, s -> Ok (Ndarray.init k shp @@ fun i -> get_int buf (i*s))
+    | Nativeint, s -> Ok (Ndarray.init k shp @@ fun i -> get_nativeint buf (i*s))
 
   let to_yojson e =
     let endian =
@@ -80,8 +76,7 @@ module BytesCodec = struct
       (match e with
       | "little" -> Ok LE
       | "big" -> Ok BE
-      | s ->
-        Result.error @@ "Unsupported bytes endianness: " ^ s)
+      | s -> Error ("Unsupported bytes endianness: " ^ s))
     | _ -> Error "Invalid bytes codec configuration."
 end
 

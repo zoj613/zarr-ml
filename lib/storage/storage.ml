@@ -136,10 +136,9 @@ module Make (M : STORE) : S with type t = M.t = struct
     let repr = Codecs.{kind; fill_value; shape = AM.chunk_shape meta} in
     let prefix = ArrayNode.to_key node ^ "/" in
     let chain = AM.codecs meta in
-    List.fold_left
-      (fun acc idx ->
+    ArrayMap.fold
+      (fun idx pairs acc ->
         acc >>= fun () ->
-        let pairs = ArrayMap.find idx m in
         let ckey = prefix ^ AM.chunk_key meta idx in
         if Codecs.Chain.is_just_sharding chain && is_member t ckey then
           Codecs.Chain.partial_encode
@@ -156,8 +155,7 @@ module Make (M : STORE) : S with type t = M.t = struct
             Result.ok @@ Ndarray.create repr.kind repr.shape repr.fill_value)
           >>= fun arr ->
           List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
-          Codecs.Chain.encode chain arr >>| set t ckey)
-      (Ok ()) (fst @@ List.split @@ ArrayMap.bindings m)
+          Codecs.Chain.encode chain arr >>| set t ckey) m (Ok ())
 
   let get_array :
     t ->
@@ -193,10 +191,9 @@ module Make (M : STORE) : S with type t = M.t = struct
     let prefix = ArrayNode.to_key node ^ "/" in
     let fill_value = AM.fillvalue_of_kind meta kind in
     let repr = Codecs.{kind; fill_value; shape = AM.chunk_shape meta} in
-    List.fold_left
-      (fun acc idx ->
+    ArrayMap.fold
+      (fun idx pairs acc ->
         acc >>= fun xs ->
-        let pairs = ArrayMap.find idx m in
         let ckey = prefix ^ AM.chunk_key meta idx in
         if Codecs.Chain.is_just_sharding chain && is_member t ckey then
           Codecs.Chain.partial_decode
@@ -210,8 +207,8 @@ module Make (M : STORE) : S with type t = M.t = struct
               (fun a (i, c) -> (i, Ndarray.get arr c) :: a) xs pairs
          | Error `Store_read _ ->
             Result.ok @@
-            List.fold_left (fun a (i, _) -> (i, fill_value) :: a) xs pairs)
-      (Ok []) (fst @@ List.split @@ ArrayMap.bindings m)
+            List.fold_left
+              (fun a (i, _) -> (i, fill_value) :: a) xs pairs) m (Ok [])
     >>| fun pairs ->
     (* sorting restores the C-order of the decoded array coordinates. *)
     let v =

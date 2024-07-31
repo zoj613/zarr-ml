@@ -273,24 +273,21 @@ end = struct
         (Indexing.coords_of_slice slice shard_shape) ArrayMap.empty
     in
     let kind = Ndarray.kind x in
-    let buf = Buffer.create @@ Ndarray.size_in_bytes x in
-    List.fold_left
-      (fun acc idx ->
-        acc >>= fun offset ->
-        let v = Array.of_list @@ snd @@ List.split @@ ArrayMap.find idx m in
+    ArrayMap.fold
+      (fun idx pairs acc ->
+        acc >>= fun (offset, xs) ->
+        let v = Array.of_list @@ snd @@ List.split pairs in
         let x' = Ndarray.of_array kind v t.chunk_shape in
         encode_chain t.codecs x' >>| fun b ->
-        Buffer.add_string buf b;
         let nb = Uint64.of_int @@ String.length b in
         Any.set shard_idx (Array.append idx [|0|]) offset;
         Any.set shard_idx (Array.append idx [|1|]) nb;
-        Uint64.(offset + nb))
-      (Ok Uint64.zero) (fst @@ List.split @@ ArrayMap.bindings m)
-    >>= fun _ ->
+        Uint64.(offset + nb), b :: xs) m @@ Ok (Uint64.zero, [])
+    >>= fun (_, xs) ->
     encode_index_chain t.index_codecs shard_idx >>| fun ib ->
     match t.index_location with
-    | Start -> ib ^ Buffer.contents buf
-    | End -> Buffer.(add_string buf ib; contents buf)
+    | Start -> String.concat "" @@ ib :: List.rev xs
+    | End -> String.concat "" @@ List.rev @@ ib :: xs
 
   let decode_chain :
     (arraytobytes, bytestobytes) internal_chain ->
@@ -399,8 +396,8 @@ end = struct
           add_to_list id (co, v) acc) ArrayMap.empty pairs
     in
     let inner = {repr with shape = t.chunk_shape} in
-    List.fold_left
-      (fun acc idx ->
+    ArrayMap.fold
+      (fun idx z acc ->
         acc >>= fun (bsize, shard_idx) ->
         let ofs_coord = Array.append idx [|0|] in
         let nb_coord = Array.append idx [|1|] in
@@ -408,7 +405,6 @@ end = struct
         let nb = Any.get shard_idx nb_coord |> Uint64.to_int in
         get_partial [pad + offset, Some nb] >>= fun l ->
         decode_chain t.codecs inner @@ List.hd l >>= fun arr ->
-        let z = ArrayMap.find idx m in
         List.iter (fun (c, v) -> Ndarray.set arr c v) z;
         encode_chain t.codecs arr >>| fun s ->
         let nb' = String.length s in
@@ -419,8 +415,7 @@ end = struct
           (Any.set shard_idx ofs_coord @@ Uint64.of_int bsize;
           Any.set shard_idx nb_coord @@ Uint64.of_int nb';
           set_partial ~append:true [bsize, s];
-          bsize + nb', shard_idx))
-      (Ok (bytesize - pad, idx_arr)) (fst @@ List.split @@ ArrayMap.bindings m)
+          bsize + nb', shard_idx)) m (Ok (bytesize - pad, idx_arr))
     >>= fun (bytesize, shard_idx) ->
     encode_index_chain t.index_codecs shard_idx >>| fun ib ->
     match t.index_location with
@@ -450,16 +445,14 @@ end = struct
           add_to_list k (i, c) acc) ArrayMap.empty icoords
     in
     let inner = {repr with shape = t.chunk_shape} in
-    List.fold_left
-      (fun acc idx ->
+    ArrayMap.fold
+      (fun idx pairs acc ->
         acc >>= fun xs ->
         let ofs = Any.get shard_idx @@ Array.append idx [|0|] |> Uint64.to_int in
         let nb = Any.get shard_idx @@ Array.append idx [|1|] |> Uint64.to_int in
         decode_chain t.codecs inner @@ String.sub b' ofs nb >>| fun arr ->
         List.fold_left
-          (fun a (i, c) ->
-            (i, Ndarray.get arr c) :: a) xs @@ ArrayMap.find idx m)
-      (Ok []) (fst @@ List.split @@ ArrayMap.bindings m)
+          (fun a (i, c) -> (i, Ndarray.get arr c) :: a) xs pairs) m (Ok [])
     >>| fun pairs ->
     let v =
       Array.of_list @@ snd @@ List.split @@
@@ -493,16 +486,15 @@ end = struct
           add_to_list id (i, c) acc) ArrayMap.empty pairs
     in
     let inner = {repr with shape = t.chunk_shape} in
-    List.fold_left
-      (fun acc idx ->
+    ArrayMap.fold
+      (fun idx z acc ->
         acc >>= fun (shard_idx, xs) ->
         let ofs = Any.get shard_idx @@ Array.append idx [|0|] |> Uint64.to_int in
         let nb = Any.get shard_idx @@ Array.append idx [|1|] |> Uint64.to_int in
         get_partial [pad + ofs, Some nb] >>= fun l ->
         decode_chain t.codecs inner @@ List.hd l >>| fun arr ->
-        let z = ArrayMap.find idx m in
         shard_idx, xs @ List.map (fun (i, c) -> (i, Ndarray.get arr c)) z)
-      (Ok (idx_arr, [])) @@ fst @@ List.split @@ ArrayMap.bindings m
+      m @@ Ok (idx_arr, [])
     >>| snd
 
   let chain_to_yojson chain =

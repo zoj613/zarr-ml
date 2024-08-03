@@ -1,38 +1,47 @@
-module HashableString = struct
+module StrMap = Map.Make(struct
   type t = string
-  let hash = Hashtbl.hash
-  let equal = String.equal
-end
+  let compare = String.compare
+end)
 
-module StrMap = Hashtbl.Make (HashableString)
-
-let create () = StrMap.create 16
+let create () = Atomic.make StrMap.empty
 
 module Impl = struct
-  type t = string StrMap.t
+  type t = string StrMap.t Atomic.t
 
   let get t key =
     Option.to_result
-      ~none:(`Store_read (key ^ " not found.")) @@
-      StrMap.find_opt t key
+      ~none:(`Store_read (Printf.sprintf "%s not found." key)) @@
+      StrMap.find_opt key @@ Atomic.get t
 
-  let set t key value =
-    StrMap.replace t key value
+  let rec set t key value =
+    let m = Atomic.get t in
+    let m' = StrMap.add key value m in
+    let success = Atomic.compare_and_set t m m' in
+    if not success then set t key value
 
   let list t =
-    StrMap.to_seq_keys t |> List.of_seq
+    fst @@ List.split @@ StrMap.bindings @@ Atomic.get t
 
-  let is_member = StrMap.mem
+  let is_member t key =
+    StrMap.mem key @@ Atomic.get t
 
-  let erase = StrMap.remove
+  let rec erase t key =
+    let m = Atomic.get t in
+    let m' = StrMap.update key (Fun.const None) m in
+    let success = Atomic.compare_and_set t m m' in
+    if not success then erase t key
 
   let size t key =
-    get t key |> Result.get_ok |> String.length
+    String.length @@ StrMap.find key @@ Atomic.get t
 
-  let erase_prefix t pre =
-    StrMap.filter_map_inplace
-      (fun k v ->
-        if String.starts_with ~prefix:pre k then None else Some v) t
+  let rec erase_prefix t pre =
+    let m = Atomic.get t in
+    let m' = 
+      StrMap.filter_map
+        (fun k v ->
+          if String.starts_with ~prefix:pre k then None else Some v) m in
+    let success = Atomic.compare_and_set t m m' in
+    if not success then erase_prefix t pre
 
   let get_partial_values t key ranges =
     Storage_intf.Base.get_partial_values

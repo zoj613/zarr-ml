@@ -8,10 +8,17 @@ module ExtPoint = struct
     cmp x.configuration y.configuration
 end
 
-module ArrayMap = Map.Make (struct
-  type t = int array
-  let compare = Stdlib.compare
-end)
+module ArrayMap = struct
+  include Map.Make (struct
+    type t = int array
+    let compare = Stdlib.compare
+  end)
+
+  let add_to_list k v map =
+    update k (function
+      | None -> Some [v]
+      | Some l -> Some (v :: l)) map
+end
 
 module Result_syntax = struct
   let ( >>= ) = Result.bind
@@ -20,7 +27,6 @@ module Result_syntax = struct
     match x with
     | Ok v -> Ok (f v)
     | Error _ as e -> e
-
   let ( >>? ) x f =  (* map_error *)
     match x with
     | Ok _ as k -> k
@@ -94,8 +100,3 @@ let max x =
   Array.fold_left
     (fun acc v ->
       if v <= acc then acc else v) Int.min_int x
-
-let add_to_list k v map =
-  ArrayMap.update k (function
-    | None -> Some [v]
-    | Some l -> Some (v :: l)) map

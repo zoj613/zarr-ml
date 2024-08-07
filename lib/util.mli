@@ -5,8 +5,13 @@ module ExtPoint : sig
   val ( = ) : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
 end
 
-module ArrayMap : sig include Map.S with type key = int array end
 (** A finite map over integer array keys. *)
+module ArrayMap : sig
+  include Map.S with type key = int array
+  val add_to_list : int array -> 'a -> 'a list t -> 'a list t
+  (** [add_to_list k v map] is [map] with [k] mapped to [l] such that [l]
+      is [v :: ArrayMap.find k map] if [k] was bound in [map] and [v] otherwise.*)
+end
 
 module Result_syntax : sig
   (** Result monad operator syntax. *)
@@ -56,6 +61,3 @@ val prod : int array -> int
 val max : int array -> int
 (** [max x] returns the maximum element of an integer array [x]. *)
 
-val add_to_list : int array -> 'a -> 'a list ArrayMap.t -> 'a list ArrayMap.t
-(** [add_to_list k v map] is [map] with [k] mapped to [l] such that [l]
-    is [v :: ArrayMap.find k map] if [k] was bound in [map] and [v] otherwise.*)

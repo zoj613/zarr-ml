@@ -74,9 +74,8 @@ module Make (M : STORE) : S with type t = M.t = struct
       (fun (l, r) pre ->
         let p = "/" ^ String.(length pre - 1 |> sub pre 0) in
         if unsafe_node_type t (pre ^ "zarr.json") = "array" then
-          (Result.get_ok @@ ArrayNode.of_path p) :: l, r
-        else
-          l, (Result.get_ok @@ GroupNode.of_path p) :: r)
+          ArrayNode.of_path p :: l, r
+        else l, GroupNode.of_path p :: r)
       ([], []) (snd @@ list_dir t @@ GroupNode.to_prefix node)
 
   let find_all_nodes t =
@@ -86,9 +85,8 @@ module Make (M : STORE) : S with type t = M.t = struct
           if String.ends_with ~suffix:"/zarr.json" key then
             let p = "/" ^ String.(length key - 10 |> sub key 0) in
             if unsafe_node_type t key = "array" then
-              (Result.get_ok @@ ArrayNode.of_path p) :: l, r
-            else
-              l, (Result.get_ok @@ GroupNode.of_path p) :: r
+              ArrayNode.of_path p :: l, r
+            else l, GroupNode.of_path p :: r
           else acc) ([], []) (list_prefix t "")
     with
     | [], [] as xs -> xs

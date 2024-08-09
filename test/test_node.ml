@@ -1,34 +1,28 @@
 open OUnit2
 open Zarr.Node
 
-
 let group_node = [
 "group node tests" >:: (fun _ ->
-  let creation_failure = "Creation of group node should not fail." in
-  let r = GroupNode.(root / "somename") in
-  assert_bool creation_failure @@ Result.is_ok r;
+  let n = GroupNode.(root / "somename") in
 
   (* test node invariants *)
-  let n = Result.get_ok r in
-  let msg = "Creation of group node should not succeed." in
   List.iter
-    (fun x -> assert_bool msg @@ Result.is_error x) @@
-    List.map (GroupNode.create n) [""; "na/me"; "...."; "__name"];
+    (fun x ->
+      assert_raises (Failure "node invariant") @@ fun () ->
+        GroupNode.create n x)
+    [""; "na/me"; "...."; "__name"];
 
   (* creation from string path *)
   let r = GroupNode.of_path "/" in
-  assert_bool creation_failure @@ Result.is_ok r;
-  assert_equal
-    ~printer:GroupNode.show GroupNode.root @@ Result.get_ok r;
+  assert_equal ~printer:GroupNode.show GroupNode.root r;
   List.iter
-    (fun x -> assert_bool msg @@ Result.is_error x) @@
-    List.map
-      GroupNode.of_path @@
-      [""; "na/meas"; "/some/..."; "/root/__name"; "/sd/"];
+    (fun x ->
+      assert_raises (Failure "node invariant") @@ fun () ->
+        GroupNode.of_path x)
+    [""; "na/meas"; "/some/..."; "/root/__name"; "/sd/"];
 
   (* node name tests *)
-  let s = "/some/dir/moredirs/path/pname" in
-  let n = GroupNode.of_path s |> Result.get_ok in
+  let n = GroupNode.of_path "/some/dir/moredirs/path/pname" in
   assert_equal "pname" @@ GroupNode.name n;
   assert_equal "" @@ GroupNode.name GroupNode.root;
 
@@ -106,28 +100,24 @@ let group_node = [
 
 let array_node = [
 "array node tests" >:: (fun _ ->
-  let r = ArrayNode.(GroupNode.root / "somename") in
-  assert_bool "" @@ Result.is_ok r;
+  let _ = ArrayNode.(GroupNode.root / "somename") in
 
   (* test node invariants *)
-  let msg = "Creation of group node should not succeed." in
   List.iter
-    (fun x -> assert_bool msg @@ Result.is_error x) @@
-    List.map
-      (ArrayNode.create GroupNode.root)
-      [""; "na/me"; "...."; "__name"];
+    (fun x ->
+      assert_raises (Failure "node invariant") @@ fun () ->
+        ArrayNode.create GroupNode.root x)
+    [""; "na/me"; "...."; "__name"];
 
   (* creation from string path *)
-  let msg = "creating an array node from an illformed path is impossible" in
   List.iter
-    (fun x -> assert_bool msg @@ Result.is_error x) @@
-    List.map
-      ArrayNode.of_path @@
-      ["/"; ""; "na/meas"; "/some/..."; "/root/__name"; "/sd/"];
+    (fun x -> assert_raises (Failure "node invariant") @@ fun () ->
+      ArrayNode.of_path x)
+    ["/"; ""; "na/meas"; "/some/..."; "/root/__name"; "/sd/"];
 
   (* node name tests *)
   let s = "/some/dir/moredirs/path/pname" in
-  let n = ArrayNode.of_path s |> Result.get_ok in
+  let n = ArrayNode.of_path s in
   assert_equal "pname" @@ ArrayNode.name n;
   assert_equal ~printer:Fun.id s @@ ArrayNode.show n;
 
@@ -135,16 +125,15 @@ let array_node = [
   assert_equal
     ~printer:GroupNode.show
     GroupNode.root @@
-    ArrayNode.parent (ArrayNode.of_path "/nodename" |> Result.get_ok);
+    ArrayNode.parent @@ ArrayNode.of_path "/nodename";
 
   (* equality tests *)
-  let n' = (ArrayNode.of_path s |> Result.get_ok) in
-  assert_equal
-    ~printer:ArrayNode.show n n';
+  let n' = ArrayNode.of_path s in
+  assert_equal ~printer:ArrayNode.show n n';
   assert_equal true ArrayNode.(n = n');
   assert_equal
     false @@
-    ArrayNode.(n = Result.get_ok @@ ArrayNode.of_path (s ^ "/more"));
+    ArrayNode.(n = ArrayNode.of_path (s ^ "/more"));
 
   (* ancestory tests *)
   assert_equal
@@ -154,7 +143,7 @@ let array_node = [
     (ArrayNode.ancestors n
       |> List.map GroupNode.show
       |> List.fast_sort String.compare);
-  let m = ArrayNode.of_path "/some" |> Result.get_ok in
+  let m = ArrayNode.of_path "/some" in
   assert_equal true @@ ArrayNode.is_parent m GroupNode.root;
 
   (* stringify tests *)

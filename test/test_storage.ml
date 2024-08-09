@@ -29,7 +29,7 @@ let test_store
 
   M.erase_group_node store gnode;
   (* tests deleting a non-existant group *)
-  M.erase_group_node store @@ Result.get_ok @@ GroupNode.(root / "nonexist");
+  M.erase_group_node store GroupNode.(root / "nonexist");
 
   assert_bool
     "Cannot retrive metadata of a node not in the store." @@
@@ -50,7 +50,7 @@ let test_store
       "group node created with specified attributes should
       have metadata with said attributes.");
 
-  let fake = ArrayNode.(gnode / "non-member") |> Result.get_ok in
+  let fake = ArrayNode.(gnode / "non-member") in
   assert_equal ~printer:string_of_bool false @@ M.array_exists store fake;
 
   let nested_sharding =
@@ -65,7 +65,7 @@ let test_store
     ;index_location = End
     ;index_codecs = [`Bytes LE; `Crc32c]
     ;codecs = [`Transpose [|2; 0; 1|]; nested_sharding; `Gzip L1]} in
-  let anode = ArrayNode.(gnode / "arrnode") |> Result.get_ok in
+  let anode = ArrayNode.(gnode / "arrnode") in
   let r =
     M.create_array
       ~sep:`Dot
@@ -136,7 +136,7 @@ let test_store
     Result.is_error @@
     M.set_array store anode slice bad_arr;
 
-  let child = GroupNode.of_path "/some/child" |> Result.get_ok in
+  let child = GroupNode.of_path "/some/child" in
   M.create_group store child;
   (match M.find_child_nodes store gnode with
   | arrays, groups ->
@@ -150,7 +150,7 @@ let test_store
       List.map GroupNode.to_path groups);
 
   (* test getting child nodes of a group not a member of this store. *)
-  let g = (Result.get_ok @@ GroupNode.(root / "fakegroup")) in
+  let g = GroupNode.(root / "fakegroup") in
   assert_equal ([], []) @@ M.find_child_nodes store g;
 
   let ac, gc = M.find_all_nodes store in

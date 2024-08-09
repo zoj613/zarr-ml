@@ -122,7 +122,7 @@ module type S = sig
     ArrayNode.t ->
     Owl_types.index array ->
     ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
-    (unit, [> error | Node.error | Codecs.error ]) result
+    (unit, [> error | Codecs.error ]) result
   (** [set_array t n s x] writes n-dimensional array [x] to the slice [s]
       of array node [n] in store [t]. This operation fails if:
       - the ndarray [x] size does not equal slice [s].
@@ -136,7 +136,7 @@ module type S = sig
     Owl_types.index array ->
     ('a, 'b) Bigarray.kind ->
     (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
-    ,[> error | Node.error | Codecs.error ]) result
+    ,[> error | Codecs.error ]) result
   (** [get_array t n s k] reads an n-dimensional array of size determined
       by slice [s] from array node [n]. This operation fails if:
       - If there is a problem decoding/encoding node [n] chunks.

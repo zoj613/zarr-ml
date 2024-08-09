@@ -10,12 +10,6 @@
     - must not be a string composed only of period characters, e.g. "." or "..".
     - must not start with the reserved prefix "__".*)
 
-type error =
-  [ `Node_invariant of string ]
-(** The error type for operations on node types. It is returned by
-    functions that create an array or group node type when one or more of a
-    node's invariants are not satisfied as defined in the Zarr V3 specification.*)
-
 module GroupNode : sig
   type t
   (** The type of a Group node. *)
@@ -23,15 +17,16 @@ module GroupNode : sig
   val root : t
   (** creates the root node *)
 
-  val create : t -> string -> (t, [> error]) result
-  (** [create p n] returns a group node with parent [p] and name [n]
-      or an error if this operation fails. *)
+  val create : t -> string -> t
+  (** [create p n] returns a group node with parent [p] and name [n].
+      @raise Failure if node invariants are not satisfied. *)
 
-  val ( / ) : t -> string -> (t, [> error]) result
+  val ( / ) : t -> string -> t
   (** The infix operator alias of {!create} *)
 
-  val of_path : string -> (t, [> error]) result
-  (** [of_path s] returns a node from string [s] or an error upon failure. *)
+  val of_path : string -> t 
+  (** [of_path s] returns a node from string [s].
+      @raise Failure if node invariants are not satisfied. *)
 
   val to_path : t -> string
   (** [to_path n] returns node [n] as a string path. *)
@@ -80,16 +75,16 @@ module ArrayNode : sig
   type t
   (** The type of an array node. *)
 
-  val create : GroupNode.t -> string -> (t, [> error]) result
-  (** [create p n] returns an array node with parent [p] and name [n]
-      or an error if this operation fails. *)
+  val create : GroupNode.t -> string -> t
+  (** [create p n] returns an array node with parent [p] and name [n].
+      @raise Failure if node invariants are not satisfied. *)
 
-  val ( / ) : GroupNode.t -> string -> (t, [> error]) result
+  val ( / ) : GroupNode.t -> string -> t
   (** The infix operator alias of {!ArrayNode.create} *)
 
-  val of_path : string -> (t, [> error]) result
-  (** [of_path s] returns an array node from string [s] or an error
-      upon failure. *)
+  val of_path : string -> t
+  (** [of_path s] returns an array node from string [s].
+      @raise Failure if node invariants are not satisfied. *)
 
   val to_path : t -> string
   (** [to_path n] returns array node [n] as a string path. *)

@@ -5,10 +5,6 @@
     array and group metadata. Both types are stored under the key
     [zarr.json] within the prefix of a group or array.*)
 
-type error =
-  [ `Metadata of string ]
-(** A type for Metadata operation errors. *)
-
 module FillValue : sig
   type t =
     | Char of char  (** A single character string. *)
@@ -42,7 +38,7 @@ module ArrayMetadata : sig
     ('a, 'b) Bigarray.kind ->
     'a ->
     int array ->
-    (t, [> error ]) result
+    t
   (** [create ~codecs ~shape kind fv cshp] Creates a new array metadata
       document with codec chain [codecs], shape [shape], fill value [fv],
       data type [kind] and chunk shape [cshp]. This operation returns an

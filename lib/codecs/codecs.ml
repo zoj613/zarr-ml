@@ -95,10 +95,8 @@ module Chain = struct
     = fun t x ->
     List.fold_left
       (fun acc c -> acc >>= ArrayToArray.encode c) (Ok x) t.a2a
-    >>= fun y ->
-    List.fold_left
-      (fun acc c -> acc >>= BytesToBytes.encode c)
-      (ArrayToBytes.encode t.a2b y) t.b2b
+    >>= ArrayToBytes.encode t.a2b >>| fun y ->
+    List.fold_left BytesToBytes.encode y t.b2b
 
   let is_just_sharding : t -> bool = function
     | {a2a = []; a2b = `ShardingIndexed _; b2b = []} -> true
@@ -140,9 +138,7 @@ module Chain = struct
     (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
     ,[> `Store_read of string | error]) result
     = fun t repr x ->
-    List.fold_right
-      (fun c acc -> acc >>= BytesToBytes.decode c) t.b2b (Ok x)
-    >>= fun y ->
+    let y = List.fold_right BytesToBytes.decode t.b2b x in
     (* compute the last encoded representation of array->array codec chain.
        This becomes the decoded representation of the array->bytes decode
        procedure. *)

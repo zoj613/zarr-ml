@@ -10,12 +10,13 @@ module GzipCodec = struct
     | 0 -> Ok L0 | 1 -> Ok L1 | 2 -> Ok L2 | 3 -> Ok L3
     | 4 -> Ok L4 | 5 -> Ok L5 | 6 -> Ok L6 | 7 -> Ok L7
     | 8 -> Ok L8 | 9 -> Ok L9 | i ->
-      Error ("Invalid Gzip compression level: " ^ (string_of_int i))
+      Error (Printf.sprintf "Invalid Gzip level %d" i)
 
   let encode l x =
-    Result.ok @@ Ezgzip.compress ~level:(to_int l) x
+    Ezgzip.compress ~level:(to_int l) x
 
-  let decode x = Ezgzip.decompress x
+  let decode x =
+    Result.get_ok @@ Ezgzip.decompress x
 
   let to_yojson l =
     `Assoc
@@ -23,10 +24,8 @@ module GzipCodec = struct
     ;("configuration", `Assoc ["level", `Int (to_int l)])]
 
   let of_yojson x =
-    let open Util.Result_syntax in
     match Yojson.Safe.Util.(member "configuration" x |> to_assoc) with
-    | [("level", `Int i)] ->
-      of_int i >>| fun level -> `Gzip level
+    | [("level", `Int i)] -> Result.bind (of_int i) @@ fun l -> Ok (`Gzip l)
     | _ -> Error "Invalid Gzip configuration."
 end
 
@@ -39,11 +38,10 @@ module Crc32cCodec = struct
     let buf = Buffer.create size in
     Buffer.add_string buf x;
     Buffer.add_int32_le buf @@
-    Checkseum.Crc32c.(default |> digest_string x 0 size |> to_int32);
-    Result.ok @@ Buffer.contents buf
+    Checkseum.Crc32c.(default |> unsafe_digest_string x 0 size |> to_int32);
+    Buffer.contents buf
 
-  let decode x =
-    Ok String.(length x - 4 |> sub x 0)
+  let decode x = String.(length x - 4 |> sub x 0)
 
   let to_yojson =
     `Assoc [("name", `String "crc32c")]
@@ -60,7 +58,7 @@ module BytesToBytes = struct
     = fun input_size -> function
     | `Crc32c -> Crc32cCodec.compute_encoded_size input_size
 
-  let encode t x = match t with
+  let encode x = function
     | `Gzip l -> GzipCodec.encode l x
     | `Crc32c -> Crc32cCodec.encode x
 
@@ -76,5 +74,5 @@ module BytesToBytes = struct
     match Util.get_name x with
     | "gzip" -> GzipCodec.of_yojson x
     | "crc32c" -> Crc32cCodec.of_yojson x
-    | s -> Error ("bytes->bytes codec not supported: " ^ s)
+    | s -> Error (Printf.sprintf "codec %s is not supported." s)
 end

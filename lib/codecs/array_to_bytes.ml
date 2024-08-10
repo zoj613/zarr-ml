@@ -223,10 +223,8 @@ end = struct
     = fun t x ->
     List.fold_left
       (fun acc c -> acc >>= ArrayToArray.encode c) (Ok x) t.a2a
-    >>= fun y ->
-    List.fold_left
-      (fun acc c -> acc >>= BytesToBytes.encode c)
-      (ArrayToBytes.encode t.a2b y) t.b2b
+    >>= ArrayToBytes.encode t.a2b >>| fun y ->
+    List.fold_left BytesToBytes.encode y t.b2b
 
   let encode_index_chain :
     (fixed_arraytobytes, fixed_bytestobytes) internal_chain ->
@@ -239,18 +237,15 @@ end = struct
     | `Transpose o :: _ -> Result.ok @@ Any.transpose ~axis:o x)
     >>= fun y ->
     let buf = Bytes.create @@ 8 * Any.numel y in
-    let z =
-      match t.a2b with
-      | `Bytes LE ->
-        Any.iteri (fun i v -> Uint64.to_bytes_little_endian v buf (i*8)) y;
-        Ok (Bytes.to_string buf)
-      | `Bytes BE ->
-        Any.iteri (fun i v -> Uint64.to_bytes_big_endian v buf (i*8)) y;
-        Ok (Bytes.to_string buf)
-    in
-    List.fold_left
-      (fun acc c -> acc >>= BytesToBytes.encode c)
-      z (t.b2b :> bytestobytes list)
+    (match t.a2b with
+    | `Bytes LE ->
+      Any.iteri (fun i v -> Uint64.to_bytes_little_endian v buf (i*8)) y;
+      Ok (Bytes.to_string buf)
+    | `Bytes BE ->
+      Any.iteri (fun i v -> Uint64.to_bytes_big_endian v buf (i*8)) y;
+      Ok (Bytes.to_string buf))
+    >>| fun z ->
+    List.fold_left BytesToBytes.encode z (t.b2b :> bytestobytes list)
 
   let encode :
     internal_shard_config ->
@@ -295,14 +290,12 @@ end = struct
     string ->
     (('a, 'b) Ndarray.t, [> error]) result
     = fun t repr x ->
+    let y = List.fold_right BytesToBytes.decode t.b2b x in
     List.fold_left
       (fun acc c ->
         acc >>= ArrayToArray.compute_encoded_representation c)
       (Ok repr) t.a2a
     >>= fun repr' ->
-    List.fold_right
-      (fun c acc -> acc >>= BytesToBytes.decode c) t.b2b (Ok x)
-    >>= fun y ->
     List.fold_right
       (fun c acc -> acc >>= ArrayToArray.decode c)
       t.a2a (ArrayToBytes.decode t.a2b repr' y)
@@ -314,15 +307,13 @@ end = struct
     (Stdint.uint64 Any.arr, [> error]) result
     = fun t repr x ->
     let open Stdint in
+    let y =
+    List.fold_right BytesToBytes.decode (t.b2b :> bytestobytes list) x in
     List.fold_left
       (fun acc c ->
         acc >>= ArrayToArray.compute_encoded_representation c)
       (Ok repr) t.a2a
     >>= fun repr' ->
-    List.fold_right
-      (fun c acc -> acc >>= BytesToBytes.decode c)
-      (t.b2b :> bytestobytes list) (Ok x)
-    >>= fun y -> 
     let buf = Bytes.of_string y in
     let arr =
       match t.a2b with

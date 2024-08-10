@@ -1,9 +1,6 @@
 open Extensions
 open Util.Result_syntax
 
-type error =
-  [ `Metadata of string ]
-
 module FillValue = struct
   type t =
     | Char of char
@@ -58,8 +55,8 @@ module FillValue = struct
     | `List [`Float re; `Float im] ->
       Ok (FloatComplex Complex.{re; im})
     | `List [`String _ as a; `String _ as b] ->
-        of_yojson a >>= fun x ->
-        of_yojson b >>= fun y ->
+        Result.bind (of_yojson a) @@ fun x ->
+        Result.bind (of_yojson b) @@ fun y ->
         (match x, y with
         | Float re, Float im ->
           Ok (FFComplex Complex.{re; im})
@@ -124,12 +121,8 @@ module ArrayMetadata = struct
     fv
     chunks
     =
-    RegularGrid.create ~array_shape:shape chunks
-    >>? (fun (`Extension msg) -> `Metadata msg)
-    >>| fun chunk_grid ->
     {shape
     ;codecs
-    ;chunk_grid
     ;attributes
     ;dimension_names
     ;zarr_format = 3
@@ -137,7 +130,8 @@ module ArrayMetadata = struct
     ;storage_transformers = []
     ;fill_value = FillValue.of_kind kind fv
     ;data_type = Datatype.of_kind kind
-    ;chunk_key_encoding = ChunkKeyEncoding.create sep}
+    ;chunk_key_encoding = ChunkKeyEncoding.create sep
+    ;chunk_grid = RegularGrid.create ~array_shape:shape chunks}
 
   let to_yojson t =
     let shape =
@@ -222,8 +216,8 @@ module ArrayMetadata = struct
     | `Null -> Error "array metadata must contain a chunk_grid field." 
     | xs ->
       RegularGrid.of_yojson xs >>= fun grid -> 
-      RegularGrid.(create ~array_shape:shape @@ chunk_shape grid)
-      >>? fun (`Extension msg) -> msg)
+      try Ok (RegularGrid.(create ~array_shape:shape @@ chunk_shape grid)) with
+      | RegularGrid.Grid_shape_mismatch -> Error "grid shape mismatch.")
     >>= fun chunk_grid ->
 
     (match member "chunk_key_encoding" x with 

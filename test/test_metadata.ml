@@ -64,10 +64,8 @@ let test_array_metadata
   let meta =
     match dimension_names with
     | Some d ->
-      Result.get_ok @@
       ArrayMetadata.create ~codecs ~shape ~dimension_names:d kind fv chunks
     | None ->
-      Result.get_ok @@
       ArrayMetadata.create ~codecs ~shape kind fv chunks
   in
   (match ArrayMetadata.encode meta |> ArrayMetadata.decode with
@@ -439,11 +437,9 @@ let array = [
     "fill_value": "0x7fc00000"}|}
   in
   decode_bad_array_metadata
-    ~str:(template {|"regular"|} {|[1, 20, 20]|})
-    ~msg:"grid chunk and array shape must have the same the length.";
+    ~str:(template {|"regular"|} {|[1, 20, 20]|}) ~msg:"grid shape mismatch.";
   decode_bad_array_metadata
-    ~str:(template {|"regular"|} {|[100000, 20]|})
-    ~msg:"grid chunk dimension size must not be larger than array's.";
+    ~str:(template {|"regular"|} {|[100000, 20]|}) ~msg:"grid shape mismatch.";
   decode_bad_array_metadata
     ~str:(template {|"regular"|} {|[-4, 4]|})
     ~msg:"Regular grid chunk_shape must only contain positive integers.";

@@ -1,20 +1,13 @@
-type error =
-  [ `Extension of string ]
-
 module RegularGrid = struct
   type t = int array
 
+  exception Grid_shape_mismatch
+
   let chunk_shape t = t
 
-  let create ~array_shape chunk_shape =
-    match chunk_shape, array_shape with
-    | c, a when Array.(length c <> length a) ->
-      let msg = "grid chunk and array shape must have the same the length." in
-      Result.error @@ `Extension msg
-    | c, a when Util.(max c > max a) -> 
-      let msg = "grid chunk dimension size must not be larger than array's." in
-      Result.error @@ `Extension msg
-    | c, _ -> Ok c
+  let create ~array_shape cs =
+    if Array.(length cs <> length array_shape) || Util.(max cs > max array_shape)
+    then raise Grid_shape_mismatch else cs
 
   let ceildiv x y =
     Float.(to_int @@ ceil (of_int x /. of_int y))

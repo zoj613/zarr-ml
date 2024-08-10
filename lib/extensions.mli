@@ -1,9 +1,7 @@
-type error =
-  [ `Extension of string ]
-
 module RegularGrid : sig
   type t
-  val create : array_shape:int array -> int array -> (t, [> error]) result
+  exception Grid_shape_mismatch
+  val create : array_shape:int array -> int array -> t
   val chunk_shape : t -> int array
   val indices : t -> int array -> int array list
   val index_coord_pair : t -> int array -> int array * int array

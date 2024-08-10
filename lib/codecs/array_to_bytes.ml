@@ -263,7 +263,7 @@ end = struct
     let cps = Array.map2 (/) shard_shape t.chunk_shape in
     let idx_shp = Array.append cps [|2|] in
     let shard_idx = Any.create idx_shp Uint64.max_int in
-    RegularGrid.create ~array_shape:shard_shape t.chunk_shape >>= fun grid ->
+    let grid = RegularGrid.create ~array_shape:shard_shape t.chunk_shape in
     let slice = Array.make (Ndarray.num_dims x) @@ Owl_types.R [] in
     let m =
       Array.fold_right
@@ -388,7 +388,7 @@ end = struct
       | End -> get_partial [bytesize - is, None], 0 in
     ibytes >>= fun xs ->
     decode_index t cps @@ List.hd xs >>= fun (idx_arr, _) ->
-    RegularGrid.create ~array_shape:repr.shape t.chunk_shape >>= fun grid ->
+    let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
     let m =
       List.fold_left
         (fun acc (c, v) ->
@@ -432,7 +432,7 @@ end = struct
     let open Stdint in
     let cps = Array.map2 (/) repr.shape t.chunk_shape in
     decode_index t cps b >>= fun (shard_idx, b') ->
-    RegularGrid.create ~array_shape:repr.shape t.chunk_shape >>= fun grid ->
+    let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
     let slice = Array.make (Array.length repr.shape) @@ Owl_types.R [] in
     let icoords =
       Array.mapi
@@ -478,7 +478,7 @@ end = struct
       | End -> get_partial [bsize - is, None], 0 in
     ibytes >>= fun xs ->
     decode_index t cps @@ List.hd xs >>= fun (idx_arr, _) ->
-    RegularGrid.create ~array_shape:repr.shape t.chunk_shape >>= fun grid ->
+    let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
     let m =
       List.fold_left
         (fun acc (i, y) ->

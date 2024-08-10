@@ -32,8 +32,8 @@ module Chain = struct
   type t = (arraytobytes, bytestobytes) internal_chain
 
   let rec create : 
-    type a b. (a, b) array_repr -> codec_chain -> (t, [> error ]) result
-    = fun repr cc ->
+    type a b. int array -> codec_chain -> (t, [> error ]) result
+    = fun shp cc ->
     let a2a, rest =
       List.partition_map
         (function
@@ -48,9 +48,9 @@ module Chain = struct
         | #bytestobytes as c -> Ok (l, c :: r)
         | #fixed_arraytobytes as c -> Ok (c :: l, r)
         | `ShardingIndexed cfg ->
-          create repr cfg.codecs >>= fun codecs ->
+          create shp cfg.codecs >>= fun codecs ->
           create
-            {repr with shape = Array.append repr.shape [|2|]}
+            (Array.append shp [|2|])
             (cfg.index_codecs :> codec_chain) >>= fun index_codecs ->
           (* coerse to a fixed codec internal_chain list type *)
           let b2b =
@@ -81,10 +81,10 @@ module Chain = struct
     >>= fun (a2b, b2b) ->
     List.fold_left
       (fun acc c ->
-        acc >>= fun r ->
-        ArrayToArray.parse c r >>= fun () ->
-        ArrayToArray.compute_encoded_representation c r)
-      (Ok repr) a2a
+        acc >>= fun s ->
+        ArrayToArray.parse c s >>= fun () ->
+        ArrayToArray.compute_encoded_representation c s)
+      (Ok shp) a2a
     >>= ArrayToBytes.parse a2b >>| fun () ->
     {a2a; a2b; b2b}
 
@@ -145,11 +145,11 @@ module Chain = struct
     List.fold_left
       (fun acc c ->
         acc >>= ArrayToArray.compute_encoded_representation c)
-      (Ok repr) t.a2a
-    >>= fun repr' ->
+      (Ok repr.shape) t.a2a
+    >>= fun shape ->
     List.fold_right
       (fun c acc -> acc >>= ArrayToArray.decode c)
-      t.a2a (ArrayToBytes.decode t.a2b repr' y)
+      t.a2a (ArrayToBytes.decode t.a2b {repr with shape} y)
 
   let ( = ) : t -> t -> bool = fun x y ->
     x.a2a = y.a2a && x.a2b = y.a2b && x.b2b = y.b2b

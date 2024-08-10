@@ -47,8 +47,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     node
     t
     =
-    let repr = Codecs.{kind; fill_value; shape = chunks} in
-    Codecs.Chain.create repr codecs >>| fun chain ->
+    Codecs.Chain.create chunks codecs >>| fun chain ->
     set t (ArrayNode.to_metakey node) @@
     AM.encode @@
     AM.create
@@ -130,7 +129,7 @@ module Make (M : STORE) : S with type t = M.t = struct
           (Indexing.coords_of_slice slice arr_shape) (Ndarray.to_array x)
     in
     let fill_value = AM.fillvalue_of_kind meta kind in
-    let repr = Codecs.{kind; fill_value; shape = AM.chunk_shape meta} in
+    let repr = Codecs.{kind; shape = AM.chunk_shape meta} in
     let prefix = ArrayNode.to_key node ^ "/" in
     let chain = AM.codecs meta in
     ArrayMap.fold
@@ -149,7 +148,7 @@ module Make (M : STORE) : S with type t = M.t = struct
           (match get t ckey with
           | Ok b -> Codecs.Chain.decode chain repr b
           | Error `Store_read _ ->
-            Result.ok @@ Ndarray.create repr.kind repr.shape repr.fill_value)
+            Result.ok @@ Ndarray.create repr.kind repr.shape fill_value)
           >>= fun arr ->
           List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
           Codecs.Chain.encode chain arr >>| set t ckey) m (Ok ())
@@ -187,7 +186,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     let chain = AM.codecs meta in
     let prefix = ArrayNode.to_key node ^ "/" in
     let fill_value = AM.fillvalue_of_kind meta kind in
-    let repr = Codecs.{kind; fill_value; shape = AM.chunk_shape meta} in
+    let repr = Codecs.{kind; shape = AM.chunk_shape meta} in
     ArrayMap.fold
       (fun idx pairs acc ->
         acc >>= fun xs ->

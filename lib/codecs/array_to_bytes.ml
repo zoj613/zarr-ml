@@ -83,10 +83,7 @@ end
 module Any = Owl.Dense.Ndarray.Any
 
 module rec ArrayToBytes : sig
-  val parse :
-    arraytobytes ->
-    ('a, 'b) array_repr ->
-    (unit, [> error]) result
+  val parse : arraytobytes -> int array -> (unit, [> error]) result
   val compute_encoded_size : int -> fixed_arraytobytes -> int
   val encode :
     arraytobytes ->
@@ -101,10 +98,10 @@ module rec ArrayToBytes : sig
   val to_yojson : arraytobytes -> Yojson.Safe.t
 end = struct
 
-  let parse t decoded_repr =
+  let parse t shp =
     match t with
     | `Bytes _ -> Ok ()
-    | `ShardingIndexed c -> ShardingIndexedCodec.parse c decoded_repr
+    | `ShardingIndexed c -> ShardingIndexedCodec.parse c shp
 
   let compute_encoded_size :
     int -> fixed_arraytobytes -> int
@@ -143,7 +140,7 @@ end
 
 and ShardingIndexedCodec : sig
   type t = internal_shard_config
-  val parse : t -> ('a, 'b) array_repr -> (unit, [> error]) result
+  val parse : t -> int array -> (unit, [> error]) result
   val encode : t -> ('a, 'b) Ndarray.t -> (string, [> error]) result
   val partial_encode :
     t ->
@@ -172,41 +169,39 @@ and ShardingIndexedCodec : sig
 end = struct
   type t = internal_shard_config  
 
-  let parse_chain :
-    ('a, 'b) array_repr ->
-    (arraytobytes, bytestobytes) internal_chain ->
+  let parse_chain : int array -> (arraytobytes, bytestobytes) internal_chain ->
     (unit, [> error ]) result
-    = fun repr chain ->
+    = fun shape chain ->
     List.fold_left
       (fun acc c ->
-        acc >>= fun r ->
-        ArrayToArray.parse c r >>= fun () ->
-        ArrayToArray.compute_encoded_representation c r)
-      (Ok repr) chain.a2a
+        acc >>= fun s ->
+        ArrayToArray.parse c s >>= fun () ->
+        ArrayToArray.compute_encoded_representation c s)
+      (Ok shape) chain.a2a
     >>= ArrayToBytes.parse chain.a2b
 
   let parse :
     internal_shard_config ->
-    ('a, 'b) array_repr ->
+    int array ->
     (unit, [> error]) result
-    = fun t r ->
-    (match Array.(length r.shape = length t.chunk_shape) with
+    = fun t shape ->
+    (match Array.(length shape = length t.chunk_shape) with
     | true -> Ok ()
     | false ->
       let msg = "chunk_shape size must equal the dimensionality of its shard." in
-      Result.error @@ `Sharding (t.chunk_shape, r.shape, msg))
+      Result.error @@ `Sharding (t.chunk_shape, shape, msg))
     >>= fun () ->
     (match
-      Array.for_all2 (fun x y -> (x mod y) = 0) r.shape t.chunk_shape
+      Array.for_all2 (fun x y -> (x mod y) = 0) shape t.chunk_shape
     with
     | true -> Ok ()
     | false ->
       let msg = "chunk_shape must evenly divide the size of the shard shape." in
-      Result.error @@ `Sharding (t.chunk_shape, r.shape, msg))
+      Result.error @@ `Sharding (t.chunk_shape, shape, msg))
     >>= fun () ->
-    parse_chain r t.codecs >>= fun () ->
+    parse_chain shape t.codecs >>= fun () ->
     parse_chain
-      {r with shape = Array.append r.shape [|2|]}
+      (Array.append shape [|2|])
       (t.index_codecs :> (arraytobytes, bytestobytes) internal_chain) 
 
   let compute_encoded_size input_size chain =
@@ -294,35 +289,33 @@ end = struct
     List.fold_left
       (fun acc c ->
         acc >>= ArrayToArray.compute_encoded_representation c)
-      (Ok repr) t.a2a
-    >>= fun repr' ->
+      (Ok repr.shape) t.a2a
+    >>= fun shape ->
     List.fold_right
       (fun c acc -> acc >>= ArrayToArray.decode c)
-      t.a2a (ArrayToBytes.decode t.a2b repr' y)
+      t.a2a (ArrayToBytes.decode t.a2b {repr with shape} y)
 
   let decode_index_chain :
     (fixed_arraytobytes, fixed_bytestobytes) internal_chain ->
-    (int64, Bigarray.int64_elt) array_repr ->
+    int array ->
     string ->
     (Stdint.uint64 Any.arr, [> error]) result
-    = fun t repr x ->
+    = fun t shape x ->
     let open Stdint in
     let y =
     List.fold_right BytesToBytes.decode (t.b2b :> bytestobytes list) x in
     List.fold_left
       (fun acc c ->
         acc >>= ArrayToArray.compute_encoded_representation c)
-      (Ok repr) t.a2a
-    >>= fun repr' ->
+      (Ok shape) t.a2a
+    >>= fun shape' ->
     let buf = Bytes.of_string y in
     let arr =
       match t.a2b with
       | `Bytes LE ->
-        Any.init repr'.shape @@ fun i ->
-          Uint64.of_bytes_little_endian buf (i*8)
+        Any.init shape' @@ fun i -> Uint64.of_bytes_little_endian buf (i*8)
       | `Bytes BE ->
-        Any.init repr'.shape @@ fun i ->
-          Uint64.of_bytes_big_endian buf (i*8)
+        Any.init shape' @@ fun i -> Uint64.of_bytes_big_endian buf (i*8)
     in
     match t.a2a with
     | [] -> Ok arr
@@ -351,12 +344,7 @@ end = struct
       | End -> String.sub b o l, String.sub b 0 o
       | Start -> String.sub b 0 l, String.sub b l o
     in
-    decode_index_chain
-      t.index_codecs
-      {fill_value = Int64.max_int
-      ;kind = Bigarray.Int64
-      ;shape = Array.append cps [|2|]}
-      index_bytes
+    decode_index_chain t.index_codecs (Array.append cps [|2|]) index_bytes
     >>| fun decoded -> decoded, rest
 
   let partial_encode :

@@ -1,10 +1,7 @@
 open Codecs_intf
 
 module ArrayToBytes : sig
-  val parse :
-    arraytobytes ->
-    ('a, 'b) array_repr ->
-    (unit, [> error]) result
+  val parse : arraytobytes -> int array -> (unit, [> error]) result
   val compute_encoded_size : int -> fixed_arraytobytes -> int
   val encode :
     arraytobytes ->

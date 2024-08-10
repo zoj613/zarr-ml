@@ -12,19 +12,17 @@ let decode_chain ~str ~msg =
     assert_equal ~printer:Fun.id msg s)
 
 let bytes_encode_decode
-  : type a b . (a, b) array_repr -> unit
-  = fun decoded_repr ->
+  : type a b . (a, b) array_repr -> a -> unit
+  = fun decoded_repr fill_value ->
     List.iter
       (fun bytes_codec ->
         let chain = [bytes_codec] in
-        let r = Chain.create decoded_repr chain in
+        let r = Chain.create decoded_repr.shape chain in
         assert_bool
           "creating correct bytes codec chain should not fail." @@
           Result.is_ok r;
         let c = Result.get_ok r in
-        let arr =
-          Ndarray.create
-            decoded_repr.kind decoded_repr.shape decoded_repr.fill_value in
+        let arr = Ndarray.create decoded_repr.kind decoded_repr.shape fill_value in
         let encoded = Chain.encode c arr in
         assert_bool
           "encoding of well formed chain should not fail." @@
@@ -38,12 +36,9 @@ let bytes_encode_decode
 
 let tests = [
 "test codec chain" >:: (fun _ ->
-  let decoded_repr
-    : (int, Bigarray.int16_signed_elt) array_repr =
-    {shape = [|10; 15; 10|]
-    ;kind = Bigarray.Int16_signed
-    ;fill_value = 10}
-  in
+  let shape = [|10; 15; 10|] in
+  let kind = Bigarray.Int16_signed in
+  let fill_value = 10 in
   let shard_cfg =
     {chunk_shape = [|2; 5; 5|]
     ;index_location = End
@@ -55,35 +50,27 @@ let tests = [
   in
   assert_bool
     "Chain with incorrect transpose dimension order cannot be created" @@
-    Result.is_error @@
-    Chain.create decoded_repr chain; 
+    Result.is_error @@ Chain.create shape chain; 
 
   let chain  =
     [`Transpose [|2; 1; 0|]; `ShardingIndexed shard_cfg; `Bytes BE]
   in
   assert_bool
     "Chain with more than 1 array->bytes codec cannot be created" @@
-    Result.is_error @@
-    Chain.create decoded_repr chain; 
+    Result.is_error @@ Chain.create shape chain; 
 
   let chain =
-    [`Transpose [|2; 1; 0|]; `ShardingIndexed shard_cfg; `Crc32c; `Gzip L9]
-  in
-  let c = Chain.create decoded_repr chain in
+    [`Transpose [|2; 1; 0|]; `ShardingIndexed shard_cfg; `Crc32c; `Gzip L9] in
+  let c = Chain.create shape chain in
   assert_bool "" @@ Result.is_ok c;
   let c = Result.get_ok c in
-  let arr =
-    Ndarray.create
-      decoded_repr.kind
-      decoded_repr.shape
-      decoded_repr.fill_value
-  in
+  let arr = Ndarray.create kind shape fill_value in
   let enc = Chain.encode c arr in
   assert_bool
     "enc should be successfully encoded" @@
     Result.is_ok enc;
   let encoded = Result.get_ok enc in
-  (match Chain.decode c decoded_repr encoded with
+  (match Chain.decode c {shape; kind} encoded with
   | Ok v ->
     assert_bool "" @@ Ndarray.equal arr v;
   | Error _ ->
@@ -155,15 +142,10 @@ let tests = [
     let r = Chain.encode c arr in
     assert_bool "Encoding this chain should not fail" @@ Result.is_ok r;
     (* use config with too large order to decode encoded array.*)
-    let cfg =
-      Result.get_ok @@ Chain.of_yojson @@ Yojson.Safe.from_string str in
-    let repr : (Complex.t, Bigarray.complex32_elt) array_repr =
-      {shape = Ndarray.shape arr
-      ;kind = Ndarray.kind arr
-      ;fill_value =
-        Ndarray.get arr @@ Array.make (Ndarray.num_dims arr) 0}
-    in
-    let r2 = Chain.decode cfg repr (Result.get_ok r) in
+    let cfg = Result.get_ok @@ Chain.of_yojson @@ Yojson.Safe.from_string str in
+    let shape = Ndarray.shape arr in
+    let kind = Ndarray.kind arr in
+    let r2 = Chain.decode cfg {shape; kind} (Result.get_ok r) in
     assert_bool "This should never pass" @@ Result.is_error r2;
     (* use config with too small order to decode encoded array.*)
     let str =
@@ -171,28 +153,19 @@ let tests = [
         {"name": "bytes", "configuration": {"endian": "little"}}]|} in
     let cfg =
       Result.get_ok @@ Chain.of_yojson @@ Yojson.Safe.from_string str in
-    let r2 = Chain.decode cfg repr (Result.get_ok r) in
+    let r2 = Chain.decode cfg {shape; kind} (Result.get_ok r) in
     assert_bool "This should never pass" @@ Result.is_error r2;
   | Error _ ->
     assert_failure
       "Decoding a well formed JSON codec field should not fail.");
 
   (* test encoding of chain with an empty or too big transpose order. *)
-  let decoded_repr
-    : (Complex.t, Bigarray.complex32_elt) array_repr =
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Complex32
-    ;fill_value = Complex.zero}
-  in
+  let shape = [|2; 2; 2|] in
   let chain = [`Transpose [||]; `Bytes LE] in
-  assert_bool
-    "" @@ 
-    Result.is_error @@
-    Chain.create decoded_repr chain;
+  assert_bool "" @@ Result.is_error @@ Chain.create shape chain;
   assert_bool
     "Transpose codec with misisng dimensions should fail chain creation." @@ 
-    Result.is_error @@
-    Chain.create decoded_repr [`Transpose [|4; 0; 1|]; `Bytes LE])
+    Result.is_error @@ Chain.create shape [`Transpose [|4; 0; 1|]; `Bytes LE])
 ;
 
 "test sharding indexed codec" >:: (fun _ ->
@@ -313,12 +286,8 @@ let tests = [
             [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
     ~msg:"Must be exactly one array->bytes codec.";
 
-  let decoded_repr
-    : (float, Bigarray.float64_elt) array_repr =
-    {shape = [|10; 15; 10|]
-    ;kind = Bigarray.Float64
-    ;fill_value = (-10.)}
-  in
+  let shape = [|10; 15; 10|] in
+  let kind = Bigarray.Float64 in
   let cfg =
     {chunk_shape = [|3; 5; 5|]
     ;index_location = Start
@@ -329,32 +298,27 @@ let tests = [
   (*test failure for chunk shape not evenly dividing shard. *)
   assert_bool
     "chunk shape must always evenly divide a shard" @@
-    Result.is_error @@ Chain.create decoded_repr chain; 
+    Result.is_error @@ Chain.create shape chain; 
   (* test failure for chunk shape length not equal to dimensionality of shard.*)
   assert_bool
     "chunk shape must have same size as shard dimensionality" @@
-    Result.is_error @@ Chain.create decoded_repr @@ 
+    Result.is_error @@ Chain.create shape @@ 
     [`ShardingIndexed {cfg with chunk_shape = [|5|]}];
 
   let chain = [`ShardingIndexed {cfg with chunk_shape = [|5; 3; 5|]}] in
-  let c = Chain.create decoded_repr chain in
+  let c = Chain.create shape chain in
   assert_bool
     "Well formed shard config should not fail Chain creation" @@
     Result.is_ok c;
   let c = Result.get_ok c in
 
-  let arr =
-    Ndarray.create
-      decoded_repr.kind
-      decoded_repr.shape
-      decoded_repr.fill_value
-  in
+  let arr = Ndarray.create kind shape (-10.) in
   let enc = Chain.encode c arr in
   assert_bool
     "shard chain should be successfully encoded" @@
     Result.is_ok enc;
   let encoded = Result.get_ok enc in
-  (match Chain.decode c decoded_repr encoded with
+  (match Chain.decode c {shape; kind} encoded with
   | Ok v ->
     assert_equal ~printer:Owl_pretty.dsnda_to_string arr v;
   | Error _ ->
@@ -435,23 +399,14 @@ let tests = [
     [0; 1; 2; 3; 4; 5; 6; 7; 8; 9];
 
   (* test encoding/decoding for various compression levels *)
-  let decoded_repr
-    : (Complex.t, Bigarray.complex64_elt) array_repr =
-    {shape = [|10; 15; 10|]
-    ;kind = Bigarray.Complex64
-    ;fill_value = Complex.one}
-  in
-  let arr =
-    Ndarray.create
-      decoded_repr.kind
-      decoded_repr.shape
-      decoded_repr.fill_value
-  in
+  let shape = [|10; 15; 10|] in
+  let kind = Bigarray.Complex64 in
+  let fill_value = Complex.one in
+  let arr = Ndarray.create kind shape fill_value in
   let chain = [`Bytes LE] in
   List.iter
     (fun level ->
-      let c =
-        Chain.create decoded_repr @@ chain @ [`Gzip level] in
+      let c = Chain.create shape @@ chain @ [`Gzip level] in
       assert_bool
         "Creating `Gzip chain should not fail." @@
         Result.is_ok c;
@@ -461,7 +416,7 @@ let tests = [
         "enc should be successfully encoded" @@
         Result.is_ok enc;
       let encoded = Result.get_ok enc in
-      match Chain.decode c decoded_repr encoded with
+      match Chain.decode c {shape; kind} encoded with
       | Ok v ->
         assert_equal ~printer:Owl_pretty.dsnda_to_string arr v;
       | Error _ ->
@@ -479,81 +434,43 @@ let tests = [
     ~str:{|[{"name": "bytes", "configuration": {"wrong": 5}}]|}
     ~msg:"Must be exactly one array->bytes codec.";
   
+  let shape = [|2; 2; 2|] in
   (* test encoding/decoding of Char *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Char
-    ;fill_value = '?'};
+  bytes_encode_decode {shape; kind = Bigarray.Char} '?';
 
   (* test encoding/decoding of int8 *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Int8_signed
-    ;fill_value = 0};
+  bytes_encode_decode {shape; kind = Bigarray.Int8_signed} 0;
 
   (* test encoding/decoding of uint8 *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Int8_unsigned
-    ;fill_value = 0};
+  bytes_encode_decode {shape; kind = Bigarray.Int8_unsigned} 0;
 
   (* test encoding/decoding of int16 *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Int16_signed
-    ;fill_value = 0};
+  bytes_encode_decode {shape; kind = Bigarray.Int16_signed} 0;
 
   (* test encoding/decoding of uint16 *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Int16_unsigned
-    ;fill_value = 0};
+  bytes_encode_decode {shape; kind = Bigarray.Int16_unsigned} 0;
 
   (* test encoding/decoding of int32 *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Int32
-    ;fill_value = 0l};
+  bytes_encode_decode {shape; kind = Bigarray.Int32} 0l;
 
   (* test encoding/decoding of int64 *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Int64
-    ;fill_value = 0L};
+  bytes_encode_decode {shape; kind = Bigarray.Int64} 0L;
 
   (* test encoding/decoding of float32 *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Float32
-    ;fill_value = 0.0};
+  bytes_encode_decode {shape; kind = Bigarray.Float32} 0.0;
 
   (* test encoding/decoding of float64 *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Float64
-    ;fill_value = 0.0};
+  bytes_encode_decode {shape; kind = Bigarray.Float64} 0.0;
 
   (* test encoding and decoding of Complex32 *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Complex32
-    ;fill_value = Complex.zero};
+  bytes_encode_decode {shape; kind = Bigarray.Complex32} Complex.zero;
 
   (* test encoding/decoding of complex64 *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Complex64
-    ;fill_value = Complex.zero};
+  bytes_encode_decode {shape; kind = Bigarray.Complex64} Complex.zero;
 
   (* test encoding/decoding of int *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Int
-    ;fill_value = Int.max_int};
+  bytes_encode_decode {shape; kind = Bigarray.Int} Int.max_int;
 
   (* test encoding/decoding of int *)
-  bytes_encode_decode
-    {shape = [|2; 2; 2|]
-    ;kind = Bigarray.Nativeint
-    ;fill_value = Nativeint.max_int})
+  bytes_encode_decode {shape; kind = Bigarray.Nativeint} Nativeint.max_int)
 ]

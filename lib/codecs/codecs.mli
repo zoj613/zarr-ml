@@ -12,10 +12,9 @@ module Chain : sig
       decoding/encoding a Zarr array chunk. *)
   type t
 
-  (** [create r c] returns a type representing a chain of codecs defined by
-      chain [c] and decoded array representation type [r]. *)
-  val create :
-    ('a, 'b) array_repr -> codec_chain -> (t, [> error ]) result
+  (** [create s c] returns a type representing a chain of codecs defined by
+      chain [c] and chunk shape [s]. *)
+  val create : int array -> codec_chain -> (t, [> error ]) result
 
   (** [is_just_sharding t] is [true] if the codec chain [t] contains only
       the [sharding_indexed] codec. *)

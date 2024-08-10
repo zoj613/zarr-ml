@@ -1,26 +1,21 @@
 open Codecs_intf
 
-
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/transpose/v1.0.html *)
 module TransposeCodec = struct
   let compute_encoded_size input_size = input_size
 
-  let compute_encoded_representation
-    : type a b.
-      int array ->
-      (a, b) array_repr ->
-      ((a, b) array_repr, [> error]) result
-    = fun t decoded ->
+  let compute_encoded_representation :
+    type a b. order:int array -> int array -> (int array, [> error]) result
+    = fun ~order:t shape ->
       try
-        let shape = Array.map (fun x -> decoded.shape.(x)) t in
+        let shape' = Array.map (fun x -> shape.(x)) t in
         (* transpose codec should not lead to change in array size*)
-        if Util.prod shape <> Util.prod decoded.shape then
+        if Util.prod shape' <> Util.prod shape then
           let msg =
             "transpose order leads to a change in encoded
             representation size, which is prohibited." in
           Result.error @@ `Transpose_order (t, msg)
-        else
-          Ok {decoded with shape}
+        else Ok shape'
       with
       | Invalid_argument _ ->
         let msg =
@@ -43,14 +38,10 @@ module TransposeCodec = struct
       else
         Result.ok @@ `Transpose o
 
-  let parse
-    : type a b.
-      (a, b) array_repr ->
-      int array ->
-      (unit, [> error]) result
-    = fun repr o ->
+  let parse : type a b. order:int array -> int array -> (unit, [> error]) result
+    = fun ~order:o shp ->
     ignore @@ parse_order o;
-    let max = Array.length repr.shape in
+    let max = Array.length shp in
     if Array.length o <> max then
       let msg =
         "Transpose order must have the same length
@@ -61,8 +52,7 @@ module TransposeCodec = struct
         "Largest value of transpose order must not be larger than
         then dimensionality of the decoded representation." in
       Result.error @@ `Transpose_order (o, msg)
-    else
-      Ok ()
+    else Ok ()
 
   (* NOTE: See https://github.com/owlbarn/owl/issues/671#issuecomment-2241761001 *)
   let transpose ?axis x =
@@ -115,21 +105,19 @@ module TransposeCodec = struct
 end
 
 module ArrayToArray = struct
-  let parse t decoded_repr =
+  let parse t shp =
     match t with
-    | `Transpose o -> TransposeCodec.parse decoded_repr o
+    | `Transpose o -> TransposeCodec.parse ~order:o shp
 
   let compute_encoded_size input_size = function
     | `Transpose _ -> TransposeCodec.compute_encoded_size input_size
 
   let compute_encoded_representation :
-    arraytoarray ->
-    ('a, 'b) array_repr ->
-    (('a, 'b) array_repr, [> error]) result
-    = fun t repr ->
+    arraytoarray -> int array -> (int array, [> error]) result
+    = fun t shape ->
     match t with
     | `Transpose o ->
-      TransposeCodec.compute_encoded_representation o repr
+      TransposeCodec.compute_encoded_representation ~order:o shape
 
   let encode t x =
     match t with

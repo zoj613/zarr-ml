@@ -50,8 +50,7 @@ type partial_setter = ?append:bool -> (int * string) list -> unit
 
 type ('a, 'b) array_repr =
   {kind : ('a, 'b) Bigarray.kind
-  ;shape : int array
-  ;fill_value : 'a}
+  ;shape : int array}
 
 module type Interface = sig
   (** The type of [array -> array] codecs. *)
@@ -125,6 +124,5 @@ module type Interface = sig
       or chunk. *)
   type ('a, 'b) array_repr =
     {kind : ('a, 'b) Bigarray.kind
-    ;shape : int array
-    ;fill_value : 'a}
+    ;shape : int array}
 end

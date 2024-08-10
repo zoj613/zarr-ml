@@ -33,7 +33,7 @@ module Chain = struct
 
   let rec create : 
     type a b. int array -> codec_chain -> (t, [> error ]) result
-    = fun shp cc ->
+    = fun shape cc ->
     let a2a, rest =
       List.partition_map
         (function
@@ -48,9 +48,9 @@ module Chain = struct
         | #bytestobytes as c -> Ok (l, c :: r)
         | #fixed_arraytobytes as c -> Ok (c :: l, r)
         | `ShardingIndexed cfg ->
-          create shp cfg.codecs >>= fun codecs ->
+          create shape cfg.codecs >>= fun codecs ->
           create
-            (Array.append shp [|2|])
+            (Array.append shape [|2|])
             (cfg.index_codecs :> codec_chain) >>= fun index_codecs ->
           (* coerse to a fixed codec internal_chain list type *)
           let b2b =
@@ -79,24 +79,21 @@ module Chain = struct
     | [x], r -> Ok (x, r)
     | _ -> Error (`CodecChain "Must be exactly one array->bytes codec."))
     >>= fun (a2b, b2b) ->
-    List.fold_left
-      (fun acc c ->
-        acc >>= fun s ->
-        ArrayToArray.parse c s >>= fun () ->
-        ArrayToArray.compute_encoded_representation c s)
-      (Ok shp) a2a
-    >>= ArrayToBytes.parse a2b >>| fun () ->
-    {a2a; a2b; b2b}
+    ArrayToBytes.parse a2b @@
+    (match a2a with
+    | [] -> shape
+    | l -> 
+      ArrayToArray.parse (List.hd l) shape;
+      List.fold_left ArrayToArray.compute_encoded_representation shape l)
+    >>| fun () -> {a2a; a2b; b2b}
 
   let encode :
     t ->
     ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
     (string, [> error ]) result
     = fun t x ->
-    List.fold_left
-      (fun acc c -> acc >>= ArrayToArray.encode c) (Ok x) t.a2a
-    >>= ArrayToBytes.encode t.a2b >>| fun y ->
-    List.fold_left BytesToBytes.encode y t.b2b
+    ArrayToBytes.encode t.a2b @@ List.fold_left ArrayToArray.encode x t.a2a
+    >>| fun y -> List.fold_left BytesToBytes.encode y t.b2b
 
   let is_just_sharding : t -> bool = function
     | {a2a = []; a2b = `ShardingIndexed _; b2b = []} -> true
@@ -138,18 +135,12 @@ module Chain = struct
     (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
     ,[> `Store_read of string | error]) result
     = fun t repr x ->
+    let shape =
+      List.fold_left
+        ArrayToArray.compute_encoded_representation repr.shape t.a2a in
     let y = List.fold_right BytesToBytes.decode t.b2b x in
-    (* compute the last encoded representation of array->array codec chain.
-       This becomes the decoded representation of the array->bytes decode
-       procedure. *)
-    List.fold_left
-      (fun acc c ->
-        acc >>= ArrayToArray.compute_encoded_representation c)
-      (Ok repr.shape) t.a2a
-    >>= fun shape ->
-    List.fold_right
-      (fun c acc -> acc >>= ArrayToArray.decode c)
-      t.a2a (ArrayToBytes.decode t.a2b {repr with shape} y)
+    ArrayToBytes.decode t.a2b {repr with shape} y >>| fun a ->
+    List.fold_right ArrayToArray.decode t.a2a a
 
   let ( = ) : t -> t -> bool = fun x y ->
     x.a2a = y.a2a && x.a2b = y.a2b && x.b2b = y.b2b
@@ -160,7 +151,9 @@ module Chain = struct
       (ArrayToBytes.to_yojson t.a2b) ::
       List.map BytesToBytes.to_yojson t.b2b)
 
-  let of_yojson : Yojson.Safe.t -> (t, string) result = fun x ->
+  let of_yojson :
+    int array -> Yojson.Safe.t -> (t, string) result
+    = fun chunk_shape x ->
     let filter_partition f encoded =
       List.fold_right (fun c (l, r) ->
         match f c with
@@ -171,11 +164,11 @@ module Chain = struct
     | [] -> Error "No codec specified."
     | y -> Ok y)
     >>= fun codecs ->
-    (match filter_partition ArrayToBytes.of_yojson codecs with
+    (match filter_partition (ArrayToBytes.of_yojson chunk_shape) codecs with
     | [x], rest -> Ok (x, rest)
     | _ -> Error "Must be exactly one array->bytes codec.")
     >>= fun (a2b, rest) ->
-    let a2a, rest = filter_partition ArrayToArray.of_yojson rest in
+    let a2a, rest = filter_partition (ArrayToArray.of_yojson chunk_shape) rest in
     let b2b, rest = filter_partition BytesToBytes.of_yojson rest in
     match rest with
     | [] -> Ok {a2a; a2b; b2b}

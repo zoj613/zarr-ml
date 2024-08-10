@@ -201,8 +201,26 @@ module ArrayMetadata = struct
     | _ -> Error "data_type field must be a string.")
     >>= fun data_type ->
 
+    (match member "chunk_grid" x with
+    | `Null -> Error "array metadata must contain a chunk_grid field." 
+    | xs ->
+      (match Util.get_name xs, member "configuration" xs with
+      | "regular", `Assoc [("chunk_shape", `List l)] ->
+        (List.fold_right
+          (fun a acc ->
+              acc >>= fun k ->
+              match a with
+              | `Int i when i > 0 -> Ok (i :: k)
+              | _ ->
+                Error "chunk_shape must only contain positive ints.") l (Ok [])
+        >>| Array.of_list >>= fun cs ->
+        try Ok (cs, RegularGrid.create ~array_shape:shape cs) with
+        | RegularGrid.Grid_shape_mismatch -> Error ("grid shape mismatch."))
+      | _ -> Error "Invalid Chunk grid name or configuration."))
+    >>= fun (chunk_shape, chunk_grid) ->
+
     (match member "codecs" x with
-    | `List _ as c -> Codecs.Chain.of_yojson c
+    | `List _ as c -> Codecs.Chain.of_yojson chunk_shape c
     | `Null -> Error "array metadata must contain a codecs field."
     | _ -> Error "codecs field must be a list of objects.")
     >>= fun codecs ->
@@ -211,14 +229,6 @@ module ArrayMetadata = struct
     | `Null -> Error "array metadata must contain a fill_value field."
     | xs -> FillValue.of_yojson xs)
     >>= fun fill_value ->
-
-    (match member "chunk_grid" x with
-    | `Null -> Error "array metadata must contain a chunk_grid field." 
-    | xs ->
-      RegularGrid.of_yojson xs >>= fun grid -> 
-      try Ok (RegularGrid.(create ~array_shape:shape @@ chunk_shape grid)) with
-      | RegularGrid.Grid_shape_mismatch -> Error "grid shape mismatch.")
-    >>= fun chunk_grid ->
 
     (match member "chunk_key_encoding" x with 
     | `Null ->

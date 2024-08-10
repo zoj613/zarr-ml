@@ -6,7 +6,6 @@ module RegularGrid : sig
   val indices : t -> int array -> int array list
   val index_coord_pair : t -> int array -> int array * int array
   val ( = ) : t -> t -> bool
-  val of_yojson : Yojson.Safe.t -> (t, string) result
   val to_yojson : t -> Yojson.Safe.t
 end
 

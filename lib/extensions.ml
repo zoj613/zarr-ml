@@ -40,26 +40,6 @@ module RegularGrid = struct
     `Assoc
     [("name", `String "regular")
     ;("configuration", `Assoc [("chunk_shape", chunk_shape)])]
-
-  let of_yojson x =
-    let open Util.Result_syntax in
-    match
-      Util.get_name x,
-      Yojson.Safe.Util.(member "configuration" x |> to_assoc)
-    with
-    | "regular", [("chunk_shape", `List xs)] ->
-      List.fold_right
-        (fun a acc ->
-            acc >>= fun k ->
-            match a with
-            | `Int i when i > 0 -> Ok (i :: k)
-            | _ ->
-              let msg =
-                "Regular grid chunk_shape must only contain positive integers."
-              in
-              Error msg) xs (Ok [])
-      >>| Array.of_list
-    | _ -> Error "Invalid Chunk grid name or configuration."
 end
 
 module ChunkKeyEncoding = struct

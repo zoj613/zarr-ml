@@ -94,7 +94,7 @@ module rec ArrayToBytes : sig
     ('a, 'b) array_repr ->
     string ->
     (('a, 'b) Ndarray.t, [> `Store_read of string | error]) result
-  val of_yojson : Yojson.Safe.t -> (arraytobytes, string) result
+  val of_yojson : int array -> Yojson.Safe.t -> (arraytobytes, string) result
   val to_yojson : arraytobytes -> Yojson.Safe.t
 end = struct
 
@@ -130,11 +130,11 @@ end = struct
     | `Bytes endian -> BytesCodec.to_yojson endian
     | `ShardingIndexed c -> ShardingIndexedCodec.to_yojson c
 
-  let of_yojson x =
+  let of_yojson shp x =
     match Util.get_name x with
     | "bytes" -> BytesCodec.of_yojson x >>| fun e -> `Bytes e
     | "sharding_indexed" ->
-      ShardingIndexedCodec.of_yojson x >>| fun c -> `ShardingIndexed c
+      ShardingIndexedCodec.of_yojson shp x >>| fun c -> `ShardingIndexed c
     | _ -> Error ("array->bytes codec not supported: ")
 end
 
@@ -164,7 +164,7 @@ and ShardingIndexedCodec : sig
     ('a, 'b) array_repr ->
     string ->
     (('a, 'b) Ndarray.t, [> `Store_read of string | error]) result
-  val of_yojson : Yojson.Safe.t -> (t, string) result
+  val of_yojson : int array -> Yojson.Safe.t -> (t, string) result
   val to_yojson : t -> Yojson.Safe.t
 end = struct
   type t = internal_shard_config  
@@ -172,13 +172,12 @@ end = struct
   let parse_chain : int array -> (arraytobytes, bytestobytes) internal_chain ->
     (unit, [> error ]) result
     = fun shape chain ->
-    List.fold_left
-      (fun acc c ->
-        acc >>= fun s ->
-        ArrayToArray.parse c s >>= fun () ->
-        ArrayToArray.compute_encoded_representation c s)
-      (Ok shape) chain.a2a
-    >>= ArrayToBytes.parse chain.a2b
+    ArrayToBytes.parse chain.a2b @@
+    (match chain.a2a with
+    | [] -> shape
+    | l ->
+      ArrayToArray.parse (List.hd l) shape;
+      List.fold_left ArrayToArray.compute_encoded_representation shape l)
 
   let parse :
     internal_shard_config ->
@@ -216,10 +215,8 @@ end = struct
     ('a, 'b) Ndarray.t ->
     (string, [> error]) result
     = fun t x ->
-    List.fold_left
-      (fun acc c -> acc >>= ArrayToArray.encode c) (Ok x) t.a2a
-    >>= ArrayToBytes.encode t.a2b >>| fun y ->
-    List.fold_left BytesToBytes.encode y t.b2b
+    ArrayToBytes.encode t.a2b @@ List.fold_left ArrayToArray.encode x t.a2a
+    >>| fun y -> List.fold_left BytesToBytes.encode y t.b2b
 
   let encode_index_chain :
     (fixed_arraytobytes, fixed_bytestobytes) internal_chain ->
@@ -285,15 +282,12 @@ end = struct
     string ->
     (('a, 'b) Ndarray.t, [> error]) result
     = fun t repr x ->
+    let shape =
+      List.fold_left
+        ArrayToArray.compute_encoded_representation repr.shape t.a2a in
     let y = List.fold_right BytesToBytes.decode t.b2b x in
-    List.fold_left
-      (fun acc c ->
-        acc >>= ArrayToArray.compute_encoded_representation c)
-      (Ok repr.shape) t.a2a
-    >>= fun shape ->
-    List.fold_right
-      (fun c acc -> acc >>= ArrayToArray.decode c)
-      t.a2a (ArrayToBytes.decode t.a2b {repr with shape} y)
+    ArrayToBytes.decode t.a2b {repr with shape} y >>| fun a ->
+    List.fold_right ArrayToArray.decode t.a2a a
 
   let decode_index_chain :
     (fixed_arraytobytes, fixed_bytestobytes) internal_chain ->
@@ -302,13 +296,10 @@ end = struct
     (Stdint.uint64 Any.arr, [> error]) result
     = fun t shape x ->
     let open Stdint in
+    let shape' =
+      List.fold_left ArrayToArray.compute_encoded_representation shape t.a2a in
     let y =
-    List.fold_right BytesToBytes.decode (t.b2b :> bytestobytes list) x in
-    List.fold_left
-      (fun acc c ->
-        acc >>= ArrayToArray.compute_encoded_representation c)
-      (Ok shape) t.a2a
-    >>= fun shape' ->
+      List.fold_right BytesToBytes.decode (t.b2b :> bytestobytes list) x in
     let buf = Bytes.of_string y in
     let arr =
       match t.a2b with
@@ -507,9 +498,10 @@ end = struct
        ("codecs", codecs)])]
 
   let chain_of_yojson :
+    int array ->
     Yojson.Safe.t list ->
     ((arraytobytes, bytestobytes) internal_chain, string) result
-    = fun codecs -> 
+    = fun chunk_shape codecs -> 
     let filter_partition f encoded =
       List.fold_right (fun c (l, r) ->
         match f c with
@@ -521,11 +513,11 @@ end = struct
       Error "No codec chain specified for sharding_indexed."
     | y -> Ok y)
     >>= fun codecs ->
-    (match filter_partition ArrayToBytes.of_yojson codecs with
+    (match filter_partition (ArrayToBytes.of_yojson chunk_shape) codecs with
     | [x], rest -> Ok (x, rest)
     | _ -> Error "Must be exactly one array->bytes codec.")
     >>= fun (a2b, rest) ->
-    let a2a, rest = filter_partition ArrayToArray.of_yojson rest in
+    let a2a, rest = filter_partition (ArrayToArray.of_yojson chunk_shape) rest in
     let b2b, rest = filter_partition BytesToBytes.of_yojson rest in
     match rest with
     | [] -> Ok {a2a; a2b; b2b}
@@ -535,7 +527,7 @@ end = struct
         " codec is unsupported or has invalid configuration." in
       Error msg
 
-  let of_yojson x =
+  let of_yojson shard_shape x =
     let assoc =
       Yojson.Safe.Util.(member "configuration" x |> to_assoc)
     in
@@ -568,13 +560,15 @@ end = struct
     | [] ->
       Error "sharding_indexed must have a codecs field"
     | x :: _ ->
-      chain_of_yojson @@ Yojson.Safe.Util.to_list x)
+      chain_of_yojson chunk_shape @@ Yojson.Safe.Util.to_list x)
     >>= fun codecs ->
     (match extract "index_codecs" with
     | [] ->
       Error "sharding_indexed must have a index_codecs field"
     | x :: _ ->
-      chain_of_yojson @@ Yojson.Safe.Util.to_list x)
+      let cps = Array.map2 (/) shard_shape chunk_shape in
+      let idx_shape = Array.append cps [|2|] in
+      chain_of_yojson idx_shape @@ Yojson.Safe.Util.to_list x)
     >>= fun ic ->
     (* Ensure index_codecs only contains fixed size
        array->bytes and bytes->bytes codecs. *)

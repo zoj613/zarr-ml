@@ -13,7 +13,7 @@ module ArrayToBytes : sig
     string ->
     (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
     ,[> `Store_read of string | error]) result
-  val of_yojson : Yojson.Safe.t -> (arraytobytes, string) result
+  val of_yojson : int array -> Yojson.Safe.t -> (arraytobytes, string) result
   val to_yojson : arraytobytes -> Yojson.Safe.t
 end
 

@@ -441,7 +441,7 @@ let array = [
     ~str:(template {|"regular"|} {|[100000, 20]|}) ~msg:"grid shape mismatch.";
   decode_bad_array_metadata
     ~str:(template {|"regular"|} {|[-4, 4]|})
-    ~msg:"Regular grid chunk_shape must only contain positive integers.";
+    ~msg:"chunk_shape must only contain positive ints.";
   decode_bad_array_metadata
     ~str:(template {|"UNKNOWN"|} {|[2, 4]|})
     ~msg:"Invalid Chunk grid name or configuration.";

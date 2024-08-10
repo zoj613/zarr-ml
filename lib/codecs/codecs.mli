@@ -61,7 +61,7 @@ module Chain : sig
 
   (** [of_yojson x] returns a code chain of type {!t} from its json object
       representation. *)
-  val of_yojson : Yojson.Safe.t -> (t, string) result
+  val of_yojson : int array -> Yojson.Safe.t -> (t, string) result
 
   (** [to_yojson x] returns a json object representation of codec chain [x]. *)
   val to_yojson : t -> Yojson.Safe.t

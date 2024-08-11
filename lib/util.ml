@@ -27,10 +27,6 @@ module Result_syntax = struct
     match x with
     | Ok v -> Ok (f v)
     | Error _ as e -> e
-  let ( >>? ) x f =  (* map_error *)
-    match x with
-    | Ok _ as k -> k
-    | Error e -> Error (f e)
 end
 
 module Indexing = struct

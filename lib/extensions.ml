@@ -1,13 +1,11 @@
 module RegularGrid = struct
   type t = int array
 
-  exception Grid_shape_mismatch
-
   let chunk_shape t = t
 
   let create ~array_shape cs =
     if Array.(length cs <> length array_shape) || Util.(max cs > max array_shape)
-    then raise Grid_shape_mismatch else cs
+    then failwith "grid shape mismatch." else cs
 
   let ceildiv x y =
     Float.(to_int @@ ceil (of_int x /. of_int y))

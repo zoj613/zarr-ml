@@ -20,8 +20,6 @@ module Result_syntax : sig
     : ('a, 'e) result -> ('a -> ('b, 'e) result ) -> ('b, 'e) result
   val ( >>| )
     : ('a, 'e) result -> ('a -> 'b) -> ('b, 'e) result
-  val ( >>? )
-    : ('a, 'e) result -> ('e -> 'f) -> ('a, 'f) result
 end
 
 module Indexing : sig

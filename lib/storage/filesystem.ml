@@ -29,7 +29,6 @@ module Impl = struct
     | Sys_error _ -> Error (`Store_read fpath)
 
   let get_partial_values t key ranges =
-    let open Util.Result_syntax in
     In_channel.with_open_gen
       In_channel.[Open_rdonly]
       t.file_perm
@@ -38,18 +37,13 @@ module Impl = struct
         let size = In_channel.length ic |> Int64.to_int in
         List.fold_right
           (fun (rs, len) acc ->
-            acc >>= fun xs ->
             let len' =
               match len with
               | Some l -> l
-              | None -> size - rs
-            in
+              | None -> size - rs in
             In_channel.seek ic @@ Int64.of_int rs;
-            match In_channel.really_input_string ic len' with
-            | Some s -> Ok (s :: xs)
-            | None ->
-              Error (`Store_read "EOF reached before all bytes are read."))
-          ranges (Ok []))
+            (Option.get @@ In_channel.really_input_string ic len') :: acc)
+          ranges [])
 
   let set t key value =
     let filename = key_to_fspath t key in

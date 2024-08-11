@@ -14,22 +14,11 @@ let bytes_encode_decode
     List.iter
       (fun bytes_codec ->
         let chain = [bytes_codec] in
-        let r = Chain.create decoded_repr.shape chain in
-        assert_bool
-          "creating correct bytes codec chain should not fail." @@
-          Result.is_ok r;
-        let c = Result.get_ok r in
+        let c = Chain.create decoded_repr.shape chain in
         let arr = Ndarray.create decoded_repr.kind decoded_repr.shape fill_value in
-        let encoded = Chain.encode c arr in
-        assert_bool
-          "encoding of well formed chain should not fail." @@
-          Result.is_ok encoded;
-        let decoded =
-          Chain.decode c decoded_repr (Result.get_ok encoded) in
-        assert_equal
-          ~printer:Owl_pretty.dsnda_to_string
-          arr
-          (Result.get_ok decoded)) [`Bytes LE; `Bytes BE]
+        let decoded = Chain.decode c decoded_repr @@ Chain.encode c arr in
+        assert_equal ~printer:Owl_pretty.dsnda_to_string arr decoded)
+      [`Bytes LE; `Bytes BE]
 
 let tests = [
 "test codec chain" >:: (fun _ ->
@@ -52,27 +41,16 @@ let tests = [
   let chain  =
     [`Transpose [|2; 1; 0|]; `ShardingIndexed shard_cfg; `Bytes BE]
   in
-  assert_bool
-    "Chain with more than 1 array->bytes codec cannot be created" @@
-    Result.is_error @@ Chain.create shape chain; 
+  assert_raises
+    (Failure "Must be exactly one array->bytes codec.")
+    (fun () -> Chain.create shape chain); 
 
   let chain =
     [`Transpose [|2; 1; 0|]; `ShardingIndexed shard_cfg; `Crc32c; `Gzip L9] in
   let c = Chain.create shape chain in
-  assert_bool "" @@ Result.is_ok c;
-  let c = Result.get_ok c in
   let arr = Ndarray.create kind shape fill_value in
-  let enc = Chain.encode c arr in
-  assert_bool
-    "enc should be successfully encoded" @@
-    Result.is_ok enc;
-  let encoded = Result.get_ok enc in
-  (match Chain.decode c {shape; kind} encoded with
-  | Ok v ->
-    assert_bool "" @@ Ndarray.equal arr v;
-  | Error _ ->
-    assert_failure
-      "Successfully encoded array should decode without fail");
+  let encoded = Chain.encode c arr in
+  assert_equal arr @@ Chain.decode c {shape; kind} encoded;
 
   decode_chain ~shape ~str:"[]" ~msg:"No codec specified.";
   
@@ -282,34 +260,23 @@ let tests = [
   in
   let chain = [`ShardingIndexed cfg] in
   (*test failure for chunk shape not evenly dividing shard. *)
-  assert_bool
-    "chunk shape must always evenly divide a shard" @@
-    Result.is_error @@ Chain.create shape chain; 
+  assert_raises
+    (Failure "chunk_shape must evenly divide size of a shard shape.")
+    (fun () -> Chain.create shape chain);
   (* test failure for chunk shape length not equal to dimensionality of shard.*)
-  assert_bool
-    "chunk shape must have same size as shard dimensionality" @@
-    Result.is_error @@ Chain.create shape @@ 
-    [`ShardingIndexed {cfg with chunk_shape = [|5|]}];
+  assert_raises
+    (Failure "chunk shape must have same size as shard dimensionality.")
+    (fun () ->
+      Chain.create shape @@ [`ShardingIndexed {cfg with chunk_shape = [|5|]}]);
 
   let chain = [`ShardingIndexed {cfg with chunk_shape = [|5; 3; 5|]}] in
   let c = Chain.create shape chain in
-  assert_bool
-    "Well formed shard config should not fail Chain creation" @@
-    Result.is_ok c;
-  let c = Result.get_ok c in
-
   let arr = Ndarray.create kind shape (-10.) in
-  let enc = Chain.encode c arr in
-  assert_bool
-    "shard chain should be successfully encoded" @@
-    Result.is_ok enc;
-  let encoded = Result.get_ok enc in
-  (match Chain.decode c {shape; kind} encoded with
-  | Ok v ->
-    assert_equal ~printer:Owl_pretty.dsnda_to_string arr v;
-  | Error _ ->
-    assert_failure
-      "Successfully encoded array should decode without fail");
+  let encoded = Chain.encode c arr in
+  assert_equal
+    ~printer:Owl_pretty.dsnda_to_string
+    arr @@
+    Chain.decode c {shape; kind} encoded;
 
   (* test correctness of decoding nested sharding codecs.*)
   let str =
@@ -395,21 +362,11 @@ let tests = [
   List.iter
     (fun level ->
       let c = Chain.create shape @@ chain @ [`Gzip level] in
-      assert_bool
-        "Creating `Gzip chain should not fail." @@
-        Result.is_ok c;
-      let c = Result.get_ok c in
-      let enc = Chain.encode c arr in
-      assert_bool
-        "enc should be successfully encoded" @@
-        Result.is_ok enc;
-      let encoded = Result.get_ok enc in
-      match Chain.decode c {shape; kind} encoded with
-      | Ok v ->
-        assert_equal ~printer:Owl_pretty.dsnda_to_string arr v;
-      | Error _ ->
-        assert_failure
-          "Successfully encoded array should decode without fail")
+      let encoded = Chain.encode c arr in
+      assert_equal
+        ~printer:Owl_pretty.dsnda_to_string
+        arr @@
+        Chain.decode c {shape; kind} encoded)
     [L0; L1; L2; L3; L4; L5; L6; L7; L8; L9])
 ;
 "test bytes codec" >:: (fun _ ->

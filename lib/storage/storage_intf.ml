@@ -29,8 +29,7 @@ module type STORE = sig
   type t
   val size : t -> key -> int
   val get : t -> key -> (string, [> `Store_read of string ]) result
-  val get_partial_values :
-    t -> key -> range list -> (string list, [> `Store_read of string ]) result
+  val get_partial_values : t -> key -> range list -> string list
   val set : t -> key -> string -> unit
   val set_partial_values : t -> key -> ?append:bool -> (int * string) list -> unit
   val erase : t -> key -> unit
@@ -61,7 +60,7 @@ module type S = sig
       'a ->
       ArrayNode.t ->
       t ->
-      (unit, [> Codecs.error ]) result
+      unit
   (** [create_array ~sep ~dimension_names ~attributes ~codecs ~shape ~chunks kind fill node t]
       creates an array node in store [t] where:
       - Separator [sep] is used in the array's chunk key encoding.
@@ -71,7 +70,7 @@ module type S = sig
       - The array has shape [shape] and chunk shape [chunks].
       - The array has data kind [kind] and fill value [fv].
       
-      This operation can fail if the codec chain is not well defined. *)
+      @raises Failure if the codec chain is not well defined. *)
 
   val array_metadata
     : t -> ArrayNode.t -> (ArrayMetadata.t, [> error ]) result
@@ -212,14 +211,12 @@ module Base = struct
     StrSet.(elements keys, elements prefixes)
 
   let get_partial_values ~get_fn t key ranges =
-    let open Util.Result_syntax in
     List.fold_right
       (fun (rs, len) acc ->
-        acc >>= fun xs ->
-        get_fn t key >>| fun v ->
+        let v = Result.get_ok @@ get_fn t key in
         (match len with
         | None -> String.sub v rs @@ String.length v - rs
-        | Some l -> String.sub v rs l) :: xs) ranges (Ok [])
+        | Some l -> String.sub v rs l) :: acc) ranges []
 
   let set_partial_values ~set_fn ~get_fn t key append rv =
     List.iter

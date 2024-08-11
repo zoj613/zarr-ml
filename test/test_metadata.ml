@@ -59,7 +59,7 @@ let test_array_metadata
     a ->
     unit
   = fun ?dimension_names ~shape ~chunks kind bad_kind fv ->
-  let codecs = Result.get_ok @@ Codecs.Chain.create chunks [`Bytes LE] in
+  let codecs = Codecs.Chain.create chunks [`Bytes LE] in
   let meta =
     match dimension_names with
     | Some d ->

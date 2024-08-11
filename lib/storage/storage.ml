@@ -47,7 +47,7 @@ module Make (M : STORE) : S with type t = M.t = struct
     node
     t
     =
-    Codecs.Chain.create chunks codecs >>| fun chain ->
+    let chain = Codecs.Chain.create chunks codecs in
     set t (ArrayNode.to_metakey node) @@
     AM.encode @@
     AM.create
@@ -137,6 +137,7 @@ module Make (M : STORE) : S with type t = M.t = struct
         acc >>= fun () ->
         let ckey = prefix ^ AM.chunk_key meta idx in
         if Codecs.Chain.is_just_sharding chain && is_member t ckey then
+          Result.ok @@
           Codecs.Chain.partial_encode
             chain
             (get_partial_values t ckey)
@@ -146,12 +147,12 @@ module Make (M : STORE) : S with type t = M.t = struct
             pairs
         else
           (match get t ckey with
-          | Ok b -> Codecs.Chain.decode chain repr b
+          | Ok b -> Ok (Codecs.Chain.decode chain repr b)
           | Error `Store_read _ ->
             Result.ok @@ Ndarray.create repr.kind repr.shape fill_value)
           >>= fun arr ->
           List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
-          Codecs.Chain.encode chain arr >>| set t ckey) m (Ok ())
+          Ok (set t ckey @@ Codecs.Chain.encode chain arr)) m (Ok ())
 
   let get_array :
     t ->
@@ -192,13 +193,15 @@ module Make (M : STORE) : S with type t = M.t = struct
         acc >>= fun xs ->
         let ckey = prefix ^ AM.chunk_key meta idx in
         if Codecs.Chain.is_just_sharding chain && is_member t ckey then
+          Result.ok @@
+          List.append xs @@
           Codecs.Chain.partial_decode
-            chain (get_partial_values t ckey) (size t ckey) repr pairs >>|
-            List.append xs
+            chain (get_partial_values t ckey) (size t ckey) repr pairs
         else
           match get t ckey with
           | Ok b ->
-            Codecs.Chain.decode chain repr b >>| fun arr ->
+            let arr = Codecs.Chain.decode chain repr b in
+            Result.ok @@
             List.fold_left
               (fun a (i, c) -> (i, Ndarray.get arr c) :: a) xs pairs
          | Error `Store_read _ ->

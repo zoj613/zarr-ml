@@ -215,7 +215,7 @@ module ArrayMetadata = struct
                 Error "chunk_shape must only contain positive ints.") l (Ok [])
         >>| Array.of_list >>= fun cs ->
         try Ok (cs, RegularGrid.create ~array_shape:shape cs) with
-        | RegularGrid.Grid_shape_mismatch -> Error ("grid shape mismatch."))
+        | Failure s -> Error s)
       | _ -> Error "Invalid Chunk grid name or configuration."))
     >>= fun (chunk_shape, chunk_grid) ->
 
@@ -303,8 +303,10 @@ module ArrayMetadata = struct
   let encode t =
     Yojson.Safe.to_string @@ to_yojson t
 
-  let decode b = 
-    of_yojson @@ Yojson.Safe.from_string b >>? fun msg -> `Store_read msg
+  let decode s = 
+    match of_yojson @@ Yojson.Safe.from_string s with
+    | Ok m -> m
+    | Error e -> failwith e
 
   let update_attributes t attrs =
     {t with attributes = attrs}
@@ -402,7 +404,9 @@ module GroupMetadata = struct
     Ok {zarr_format; node_type; attributes}
 
   let decode s = 
-    of_yojson @@ Yojson.Safe.from_string s >>? fun msg -> `Store_read msg
+    match of_yojson @@ Yojson.Safe.from_string s with
+    | Ok m -> m
+    | Error e -> failwith e
 
   let encode t =
     Yojson.Safe.to_string @@ to_yojson t

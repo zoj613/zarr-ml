@@ -1,6 +1,5 @@
 module RegularGrid : sig
   type t
-  exception Grid_shape_mismatch
   val create : array_shape:int array -> int array -> t
   val chunk_shape : t -> int array
   val indices : t -> int array -> int array list

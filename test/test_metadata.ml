@@ -5,12 +5,7 @@ let flatten_fstring s =
   String.(split_on_char ' ' s |> concat "" |> split_on_char '\n' |> concat "")
 
 let decode_bad_group_metadata ~str ~msg = 
-  match GroupMetadata.decode str with
-  | Ok _ ->
-    assert_failure
-      "Impossible to decode an ill-formed JSON group metadata document.";
-  | Error (`Store_read s) ->
-    assert_equal ~printer:Fun.id msg s
+  assert_raises (Failure msg) (fun () -> GroupMetadata.decode str)
 
 let group = [
 "group metadata" >:: (fun _ ->
@@ -19,12 +14,10 @@ let group = [
   let got = GroupMetadata.encode meta in
   assert_equal ~printer:Fun.id expected got;
 
-  (match GroupMetadata.decode got with
-  | Ok v ->
-    assert_equal ~printer:GroupMetadata.show meta v;
-  | Error _ ->
-    assert_failure "Decoding well formed metadata should not fail");
-  assert_bool "" (Result.is_error @@ GroupMetadata.decode {|{"bad_json":0}|});
+  assert_equal ~printer:GroupMetadata.show meta @@ GroupMetadata.decode got;
+  assert_raises
+    (Failure "group metadata must contain a zarr_format field.")
+    (fun () -> GroupMetadata.decode {|{"bad_json":0}|});
 
   let meta' =
     GroupMetadata.update_attributes
@@ -67,28 +60,18 @@ let test_array_metadata
     | None ->
       ArrayMetadata.create ~codecs ~shape kind fv chunks
   in
-  (match ArrayMetadata.encode meta |> ArrayMetadata.decode with
-  | Ok v ->
-    assert_bool "should not fail" @@ ArrayMetadata.(v = meta);
-  | Error _ ->
-    assert_failure "Decoding well formed metadata should not fail");
-
   assert_bool
-    "" (Result.is_error @@ ArrayMetadata.decode {|{"bad_json":0}|});
+    "should not fail"
+    ArrayMetadata.(ArrayMetadata.(encode meta |> decode) = meta);
+  assert_raises
+    (Failure "array metadata must contain a zarr_format field.")
+    (fun () -> ArrayMetadata.decode {|{"bad_json":0}|});
 
   let show_int_array = [%show: int array] in
-  assert_equal
-    ~printer:show_int_array shape @@ ArrayMetadata.shape meta;
+  assert_equal ~printer:show_int_array shape @@ ArrayMetadata.shape meta;
+  assert_equal ~printer:show_int_array chunks @@ ArrayMetadata.chunk_shape meta;
+  let show_int_array_tuple = [%show: int array * int array] in
 
-
-  assert_equal
-    ~printer:show_int_array
-    chunks @@
-    ArrayMetadata.chunk_shape meta;
-
-  let show_int_array_tuple =
-    [%show: int array * int array]
-  in
   assert_equal
     ~printer:show_int_array_tuple
     ([|1; 3; 1|], [|3; 1; 0|]) @@
@@ -146,18 +129,13 @@ let test_array_metadata
   assert_equal fv @@ ArrayMetadata.fillvalue_of_kind meta kind;
 
   assert_raises
-    ~msg:"Wrong kind used to extract fill value."
     (Failure "kind is not compatible with node's fill value.")
     (fun () -> ArrayMetadata.fillvalue_of_kind meta bad_kind)
 
+
 (* test decoding an ill-formed array metadata with an expected error message.*)
 let decode_bad_array_metadata ~str ~msg = 
-  match ArrayMetadata.decode str with
-  | Ok _ ->
-    assert_failure
-      "Impossible to decode an ill-formed JSON array metadata document.";
-  | Error (`Store_read s) ->
-    assert_equal ~printer:Fun.id msg s
+  assert_raises (Failure msg) (fun () -> ArrayMetadata.decode str)
 
 let test_encode_decode_fill_value fv =
   let str = Format.sprintf {|{
@@ -173,13 +151,10 @@ let test_encode_decode_fill_value fv =
     "chunk_key_encoding": {"name": "default"},
     "attributes": {"question": 7}}|} fv
   in
-  match ArrayMetadata.decode str with
-  | Ok meta ->
-    assert_equal
-      ~printer:Fun.id (flatten_fstring str) (ArrayMetadata.encode meta)
-  | Error _ ->
-    assert_failure
-      "Decoding a well formed Array metadata doc should not fail."
+  assert_equal
+    ~printer:Fun.id
+    (flatten_fstring str)
+    (ArrayMetadata.encode @@ ArrayMetadata.decode str)
 
 let test_decode_encode_chunk_key name sep (key, exp_encode, exp_null) =
   let str = Format.sprintf {|{
@@ -195,21 +170,10 @@ let test_decode_encode_chunk_key name sep (key, exp_encode, exp_null) =
     "chunk_key_encoding":
       {"name": %s, "configuration": {"separator": %s}}}|} name sep
   in
-  match ArrayMetadata.decode str with
-  | Ok meta ->
-    assert_equal
-      ~printer:Fun.id
-      exp_encode @@
-      ArrayMetadata.chunk_key meta key;
-    assert_equal
-      ~printer:Fun.id
-      exp_null @@
-      ArrayMetadata.chunk_key meta [||];
-    assert_equal
-      ~printer:Fun.id (flatten_fstring str) @@ ArrayMetadata.encode meta
-  | Error _ ->
-    assert_failure
-      "Decoding a well formed Array metadata should not fail."
+  let meta = ArrayMetadata.decode str in
+  assert_equal ~printer:Fun.id exp_encode @@ ArrayMetadata.chunk_key meta key;
+  assert_equal ~printer:Fun.id exp_null @@ ArrayMetadata.chunk_key meta [||];
+  assert_equal ~printer:Fun.id (flatten_fstring str) @@ ArrayMetadata.encode meta
 
 let array = [
 "array metadata" >:: (fun _ ->
@@ -459,20 +423,16 @@ let array = [
     "chunk_grid":
       {"name": "regular", "configuration": {"chunk_shape": [10, 10]}},
     "chunk_key_encoding": {"name": "v2"}}|} in
-  (match ArrayMetadata.decode str with
-  | Ok meta ->
-    (* we except it to use the default "." separator. *)
-    assert_equal
-      ~printer:Fun.id "2.0.1" @@ ArrayMetadata.chunk_key meta [|2; 0; 1|];
-    (* we expect the default (unspecified) config seperator to be
-       dropped when serializing the metadata to JSON format. *)
-    assert_equal
-      ~printer:Fun.id
-      Yojson.Safe.(from_string str |> to_string) @@
-      ArrayMetadata.encode meta;
-  | Error _ ->
-    assert_failure
-      "Decoding a well formed array JSON metadata should not fail.");
+  let meta = ArrayMetadata.decode str in
+  (* we except it to use the default "." separator. *)
+  assert_equal
+    ~printer:Fun.id "2.0.1" @@ ArrayMetadata.chunk_key meta [|2; 0; 1|];
+  (* we expect the default (unspecified) config seperator to be
+     dropped when serializing the metadata to JSON format. *)
+  assert_equal
+    ~printer:Fun.id
+    Yojson.Safe.(from_string str |> to_string) @@
+    ArrayMetadata.encode meta;
 
   (* test if the decoding fails if chunk key encoding contains unknown
    * separator or name. *)

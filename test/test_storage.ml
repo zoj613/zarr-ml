@@ -66,18 +66,15 @@ let test_store
     ;index_codecs = [`Bytes LE; `Crc32c]
     ;codecs = [`Transpose [|2; 0; 1|]; nested_sharding; `Gzip L1]} in
   let anode = ArrayNode.(gnode / "arrnode") in
-  let r =
-    M.create_array
-      ~sep:`Dot
-      ~codecs:[`ShardingIndexed cfg]
-      ~shape:[|100; 100; 50|]
-      ~chunks:[|10; 15; 20|]
-      Bigarray.Complex64
-      Complex.zero
-      anode
-      store
-  in
-  assert_equal (Ok ()) r;
+  M.create_array
+    ~sep:`Dot
+    ~codecs:[`ShardingIndexed cfg]
+    ~shape:[|100; 100; 50|]
+    ~chunks:[|10; 15; 20|]
+    Bigarray.Complex64
+    Complex.zero
+    anode
+    store;
   let slice = Owl_types.[|R [0; 20]; I 10; R []|] in
   let r = M.get_array store anode slice Bigarray.Complex64 in
   assert_bool "" @@ Result.is_ok r;
@@ -92,16 +89,14 @@ let test_store
   let r = M.get_array store anode slice Bigarray.Complex64 in
   assert_bool "" @@ Result.is_ok r;
 
-  let r =
-    M.create_array
-      ~codecs:[`Bytes BE]
-      ~shape:[|100; 100; 50|]
-      ~chunks:[|10; 15; 20|]
-      Bigarray.Complex64
-      Complex.zero
-      anode
-      store in
-  assert_equal (Ok ()) r;
+  M.create_array
+    ~codecs:[`Bytes BE]
+    ~shape:[|100; 100; 50|]
+    ~chunks:[|10; 15; 20|]
+    Bigarray.Complex64
+    Complex.zero
+    anode
+    store;
   let expected = Ndarray.create Bigarray.Complex64 [|21; 1; 50|] Complex.zero in
   let got = Result.get_ok @@ M.get_array store anode slice Bigarray.Complex64 in
   assert_equal ~printer:Owl_pretty.dsnda_to_string expected got;

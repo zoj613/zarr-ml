@@ -13,47 +13,42 @@ module Chain : sig
   type t
 
   (** [create s c] returns a type representing a chain of codecs defined by
-      chain [c] and chunk shape [s]. *)
-  val create : int array -> codec_chain -> (t, [> error ]) result
+      chain [c] and chunk shape [s].
+      @raises Failure if [c] is invalid. *)
+  val create : int array -> codec_chain -> t
 
   (** [is_just_sharding t] is [true] if the codec chain [t] contains only
       the [sharding_indexed] codec. *)
   val is_just_sharding : t -> bool
 
   (** [encode t x] computes the encoded byte string representation of
-      array chunk [x]. Returns an error upon failure. *)
-  val encode :
-    t ->
-    ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
-    (string, [> error ]) result
+      array chunk [x]. *)
+  val encode : t -> ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t -> string
 
   (** [decode t repr x] decodes the byte string [x] using codec chain [t]
-      and decoded representation type [repr]. Returns an error upon failure.*)
+      and decoded representation type [repr]. *)
   val decode :
     t ->
     ('a, 'b) array_repr ->
     string ->
-    (('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
-    ,[> `Store_read of string | error ]) result
+    ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
 
   val partial_encode :
     t ->
-    ((int * int option) list ->
-      (string list, [> `Store_read of string | error ] as 'c) result) ->
+    ((int * int option) list -> string list) ->
     partial_setter ->
     int ->
     ('a, 'b) array_repr ->
     (int array * 'a) list ->
-    (unit, 'c) result
+    unit
 
   val partial_decode :
     t ->
-    ((int * int option) list ->
-      (string list, [> `Store_read of string | error ] as 'c) result) ->
+    ((int * int option) list -> string list) ->
     int ->
     ('a, 'b) array_repr ->
     (int * int array) list ->
-    ((int * 'a) list, 'c) result
+    (int * 'a) list
 
   (** [x = y] returns true if chain [x] is equal to chain [y],
       and false otherwise. *)

@@ -1,0 +1,11 @@
+(library
+ (name zarr_lwt)
+ (public_name zarr-lwt)
+ (libraries
+   zarr
+   lwt
+   lwt.unix)
+ (ocamlopt_flags
+   (:standard -O3))
+ (instrumentation
+   (backend bisect_ppx)))

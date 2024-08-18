@@ -39,15 +39,6 @@ and ('a, 'b) internal_chain =
 
 type arraytobytes = [ fixed_arraytobytes | variable_arraytobytes ]
 
-type error =
-  [ `Extension of string 
-  | `Gzip of Ezgzip.error
-  | `Transpose_order of int array * string
-  | `CodecChain of string
-  | `Sharding of int array * int array * string ]
-
-type partial_setter = ?append:bool -> (int * string) list -> unit
-
 type ('a, 'b) array_repr =
   {kind : ('a, 'b) Bigarray.kind
   ;shape : int array}
@@ -82,10 +73,13 @@ module type Interface = sig
       an encoded byte string. *)
   type loc = Start | End
 
-  (** The type of [array -> bytes] codecs. *)
+  (** The type of [array -> bytes] codecs that produce
+      fixed sized encoded string. *)
   type fixed_arraytobytes =
     [ `Bytes of endianness ]
 
+  (** The type of [array -> bytes] codecs that produce
+      variable sized encoded string. *)
   type variable_array_tobytes =
     [ `ShardingIndexed of shard_config ]
 
@@ -108,17 +102,6 @@ module type Interface = sig
   (** A type used to build a user-defined chain of codecs when creating a Zarr array. *)
   type codec_chain =
     [ arraytoarray | array_tobytes | bytestobytes ] list
-
-  (** The type of errors returned upon failure when an calling a function
-    on a {!Chain} type. *)
-  type error =
-    [ `Extension of string 
-    | `Gzip of Ezgzip.error
-    | `Transpose_order of int array * string
-    | `CodecChain of string
-    | `Sharding of int array * int array * string ]
-
-  type partial_setter = ?append:bool -> (int * string) list -> unit
 
   (** The type summarizing the decoded/encoded representation of a Zarr array
       or chunk. *)

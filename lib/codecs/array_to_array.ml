@@ -1,18 +1,18 @@
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/transpose/v1.0.html *)
 module TransposeCodec = struct
-  let compute_encoded_size input_size = input_size
+  let encoded_size input_size = input_size
 
-  let compute_encoded_representation ~order:o shape =
-    Array.map (fun x -> shape.(x)) o
+  let encoded_repr ~order:o shape = Array.map (fun x -> shape.(x)) o
 
   let parse ~order:o shape =
     let o' = Array.copy o in
     Array.fast_sort Int.compare o';
-    if Array.length o = 0 then failwith "transpose order cannot be empty."
-    else if o' <> Array.init (Array.length o') Fun.id then
-      failwith "transpose must have unique non-negative values."
-    else if Array.(length o <> length shape) then
-      failwith "transpose order and chunk shape mismatch."
+    if Array.length o = 0
+    then failwith "transpose order cannot be empty."
+    else if o' <> Array.init (Array.length o') Fun.id
+    then failwith "transpose must have unique non-negative values."
+    else if Array.(length o <> length shape)
+    then failwith "transpose order and chunk shape mismatch."
     else ()
 
   module A = Owl.Dense.Ndarray.Any
@@ -57,13 +57,12 @@ module ArrayToArray = struct
     match t with
     | `Transpose o -> TransposeCodec.parse ~order:o shp
 
-  let compute_encoded_size input_size = function
-    | `Transpose _ -> TransposeCodec.compute_encoded_size input_size
+  let encoded_size input_size = function
+    | `Transpose _ -> TransposeCodec.encoded_size input_size
 
-  let compute_encoded_representation shape t =
+  let encoded_repr shape t =
     match t with
-    | `Transpose o ->
-      TransposeCodec.compute_encoded_representation ~order:o shape
+    | `Transpose o -> TransposeCodec.encoded_repr ~order:o shape
 
   let encode x = function
     | `Transpose order -> TransposeCodec.encode order x

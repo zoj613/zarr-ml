@@ -2,8 +2,8 @@ open Codecs_intf
 
 module ArrayToArray : sig 
   val parse : arraytoarray -> int array -> unit
-  val compute_encoded_size : int -> arraytoarray -> int
-  val compute_encoded_representation : int array -> arraytoarray -> int array
+  val encoded_size : int -> arraytoarray -> int
+  val encoded_repr : int array -> arraytoarray -> int array
   val encode :
     ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
     arraytoarray ->

@@ -5,6 +5,9 @@ module ExtPoint : sig
   val ( = ) : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
 end
 
+(** A string set .*)
+module StrSet : sig include Set.S with type elt = string end
+
 (** A finite map over integer array keys. *)
 module ArrayMap : sig
   include Map.S with type key = int array
@@ -13,13 +16,10 @@ module ArrayMap : sig
       is [v :: ArrayMap.find k map] if [k] was bound in [map] and [v] otherwise.*)
 end
 
+(** Result monad operator syntax. *)
 module Result_syntax : sig
-  (** Result monad operator syntax. *)
-
-  val ( >>= )
-    : ('a, 'e) result -> ('a -> ('b, 'e) result ) -> ('b, 'e) result
-  val ( >>| )
-    : ('a, 'e) result -> ('a -> 'b) -> ('b, 'e) result
+  val ( >>= ) : ('a, 'e) result -> ('a -> ('b, 'e) result ) -> ('b, 'e) result
+  val ( >>| ) : ('a, 'e) result -> ('a -> 'b) -> ('b, 'e) result
 end
 
 module Indexing : sig
@@ -60,3 +60,6 @@ val prod : int array -> int
 val max : int array -> int
 (** [max x] returns the maximum element of an integer array [x]. *)
 
+val create_parent_dir : string -> Unix.file_perm -> unit
+(** [create_parent_dir f p] creates all the parent directories of file name
+    [f] if they don't exist given file permissions [p]. *)

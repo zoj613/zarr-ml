@@ -30,7 +30,7 @@ type codec_chain =
 module Chain = struct
   type t = (arraytobytes, bytestobytes) internal_chain
 
-  let rec create : type a b. int array -> codec_chain -> t = fun shape cc ->
+  let rec create : int array -> codec_chain -> t = fun shape cc ->
     let a2a, rest =
       List.partition_map
         (function
@@ -83,36 +83,17 @@ module Chain = struct
     | [] -> shape
     | l -> 
       ArrayToArray.parse (List.hd l) shape;
-      List.fold_left ArrayToArray.compute_encoded_representation shape l);
+      List.fold_left ArrayToArray.encoded_repr shape l);
     {a2a; a2b; b2b}
 
-  let encode : t -> ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t -> string
-    = fun t x ->
+  let encode t x =
       List.fold_left
         BytesToBytes.encode
         (ArrayToBytes.encode t.a2b @@
-        List.fold_left ArrayToArray.encode x t.a2a) t.b2b
-
-  let is_just_sharding = function
-    | {a2a = []; a2b = `ShardingIndexed _; b2b = []} -> true
-    | _ -> false
-
-  let partial_encode t f g bsize repr pairs =
-    match t.a2b with
-    | `ShardingIndexed c ->
-      ShardingIndexedCodec.partial_encode c f g bsize repr pairs
-    | `Bytes _ -> failwith "bytes codec does not support partial encoding." 
-
-  let partial_decode t f s repr pairs =
-    match t.a2b with
-    | `ShardingIndexed c ->
-      ShardingIndexedCodec.partial_decode c f s repr pairs
-    | `Bytes _ -> failwith "bytes codec does not support partial decoding."
+          List.fold_left ArrayToArray.encode x t.a2a) t.b2b
 
   let decode t repr x =
-    let shape =
-      List.fold_left
-        ArrayToArray.compute_encoded_representation repr.shape t.a2a in
+    let shape = List.fold_left ArrayToArray.encoded_repr repr.shape t.a2a in
     List.fold_right
       ArrayToArray.decode t.a2a @@
       ArrayToBytes.decode t.a2b {repr with shape} @@
@@ -151,4 +132,24 @@ module Chain = struct
       Result.error @@
       Printf.sprintf
         "%s codec is unsupported or has invalid configuration." @@ Util.get_name x
+end
+
+module Make (Io : Types.IO) = struct
+  module ShardingIndexedCodec = Array_to_bytes.Make(Io)
+
+  let is_just_sharding = function
+    | {a2a = []; a2b = `ShardingIndexed _; b2b = []} -> true
+    | _ -> false
+
+  let partial_encode t f g bsize repr pairs =
+    match t.a2b with
+    | `ShardingIndexed c ->
+      ShardingIndexedCodec.partial_encode c f g bsize repr pairs
+    | `Bytes _ -> failwith "bytes codec does not support partial encoding." 
+
+  let partial_decode t f s repr pairs =
+    match t.a2b with
+    | `ShardingIndexed c ->
+      ShardingIndexedCodec.partial_decode c f s repr pairs
+    | `Bytes _ -> failwith "bytes codec does not support partial decoding."
 end

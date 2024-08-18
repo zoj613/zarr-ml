@@ -1,5 +1,6 @@
 open OUnit2
 open Zarr
+open Zarr.Metadata
 
 let flatten_fstring s =
   String.(split_on_char ' ' s |> concat "" |> split_on_char '\n' |> concat "")

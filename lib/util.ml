@@ -8,6 +8,8 @@ module ExtPoint = struct
     cmp x.configuration y.configuration
 end
 
+module StrSet = Set.Make(String)
+
 module ArrayMap = struct
   include Map.Make (struct
     type t = int array
@@ -22,11 +24,7 @@ end
 
 module Result_syntax = struct
   let ( >>= ) = Result.bind
-
-  let ( >>| ) x f =  (* infix map *)
-    match x with
-    | Ok v -> Ok (f v)
-    | Error _ as e -> e
+  let ( >>| ) x f = Result.map f x
 end
 
 module Indexing = struct
@@ -98,3 +96,11 @@ let max x =
   Array.fold_left
     (fun acc v ->
       if v <= acc then acc else v) Int.min_int x
+
+(* Obtained from: https://discuss.ocaml.org/t/how-to-create-a-new-file-while-automatically-creating-any-intermediate-directories/14837/5?u=zoj613 *)
+let rec create_parent_dir fn perm =
+  let parent_dir = Filename.dirname fn in
+  if not (Sys.file_exists parent_dir) then begin
+    create_parent_dir parent_dir perm;
+    Sys.mkdir parent_dir perm
+  end

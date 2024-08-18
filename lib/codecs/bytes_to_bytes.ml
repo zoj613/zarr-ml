@@ -31,7 +31,7 @@ end
 
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/crc32c/v1.0.html *)
 module Crc32cCodec = struct
-  let compute_encoded_size input_size = input_size + 4
+  let encoded_size input_size = input_size + 4
 
   let encode x =
     let size = String.length x in
@@ -53,10 +53,10 @@ module Crc32cCodec = struct
 end
 
 module BytesToBytes = struct
-  let compute_encoded_size :
+  let encoded_size :
     int -> fixed_bytestobytes -> int
     = fun input_size -> function
-    | `Crc32c -> Crc32cCodec.compute_encoded_size input_size
+    | `Crc32c -> Crc32cCodec.encoded_size input_size
 
   let encode x = function
     | `Gzip l -> GzipCodec.encode l x

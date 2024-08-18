@@ -42,14 +42,15 @@ module ArrayMetadata : sig
   (** [create ~codecs ~shape kind fv cshp] Creates a new array metadata
       document with codec chain [codecs], shape [shape], fill value [fv],
       data type [kind] and chunk shape [cshp].
-      @raises Failure if shape and chunks are incompatible. *)
+
+      @raise Failure if shape and chunks are incompatible. *)
 
   val encode : t -> string
   (** [encode t] returns a byte string representing a JSON Zarr array metadata. *)
 
   val decode : string -> t
   (** [decode s] decodes a bytes string [s] into a {!ArrayMetadata.t} type.
-      @raises Failure if metadata string is invalid. *)
+      @raise Failure if metadata string is invalid. *)
 
   val shape : t -> int array
   (** [shape t] returns the shape of the zarr array represented by metadata type [t]. *)
@@ -118,7 +119,7 @@ module GroupMetadata : sig
 
   val decode : string -> t
   (** [decode s] decodes a bytes string [s] into a {!t} type.
-      @raises Failure if metadata string is invalid. *)
+      @raise Failure if metadata string is invalid. *)
 
   val update_attributes : t -> Yojson.Safe.t -> t
   (** [update_attributes t json] returns a new metadata type with an updated

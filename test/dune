@@ -2,6 +2,8 @@
  (name test_zarr)
  (libraries
    zarr
+   zarr-sync
+   zarr-lwt
    ounit2)
  (preprocess
    (pps ppx_deriving.show)))

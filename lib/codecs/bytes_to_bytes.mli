@@ -1,7 +1,7 @@
 open Codecs_intf
 
 module BytesToBytes : sig
-  val compute_encoded_size : int -> fixed_bytestobytes -> int
+  val encoded_size : int -> fixed_bytestobytes -> int
   val encode : string -> bytestobytes -> string
   val decode : bytestobytes -> string -> string
   val of_yojson : Yojson.Safe.t -> (bytestobytes, string) result

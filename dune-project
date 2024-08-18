@@ -19,8 +19,11 @@
 
 (package
  (name zarr)
- (synopsis "An Ocaml implementation of the  Zarr V3 specification.")
- (description "A longer description")
+ (synopsis "An Ocaml implementation of the Zarr V3 specification.")
+ (description
+   "The Zarr library provides an OCaml implementation of the Zarr version 3
+   storage format specification for chunked & compressed multi-dimensional
+   arrays, designed for use in parallel computing.")
  (depends
    dune
    (ocaml (>= 4.14.2))
@@ -37,4 +40,27 @@
  (tags
   ("zarr" "chunked arrays" "zarr version 3")))
 
-; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project
+(package
+ (name zarr-sync)
+ (synopsis "Synchronous API for Zarr.")
+ (depends
+   dune
+   (ocaml (>= 4.14.2))
+   (zarr (= :version))
+   (odoc :with-doc)
+   (ounit2 :with-test)
+   (bisect_ppx
+     (and :dev (>= 2.5.0) :with-test))))
+
+(package
+ (name zarr-lwt)
+ (synopsis "Lwt-aware API for Zarr.")
+ (depends
+   dune
+   (ocaml (>= 4.14.2))
+   (zarr (= :version))
+   lwt
+   (odoc :with-doc)
+   (ounit2 :with-test)
+   (bisect_ppx
+     (and :dev (>= 2.5.0) :with-test))))

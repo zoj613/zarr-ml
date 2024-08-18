@@ -1,92 +1,83 @@
 include Storage_intf
-
-open Util
-open Util.Result_syntax
+open Metadata
 open Node
 
 module Ndarray = Owl.Dense.Ndarray.Generic
 module ArrayMap = Util.ArrayMap
-module AM = Metadata.ArrayMetadata
-module GM = Metadata.GroupMetadata
+module Indexing = Util.Indexing
 
 module ArraySet = Set.Make (struct
   type t = int array
   let compare = Stdlib.compare
 end)
 
-module Make (M : STORE) : S with type t = M.t = struct
-  include M
+module Make (Io : Types.IO) = struct
+  module PartialChain = Codecs.Make(Io)
+  module Deferred = Io.Deferred
+
+  open Io
+  open Deferred.Infix
+
+  type t = Io.t
 
   (* All nodes are explicit upon creation so just check the node's metadata key.*)
   let group_exists t node =
-    M.is_member t @@ GroupNode.to_metakey node
+    is_member t @@ GroupNode.to_metakey node
 
   let array_exists t node =
-    M.is_member t @@ ArrayNode.to_metakey node
+    is_member t @@ ArrayNode.to_metakey node
 
   let rec create_group ?(attrs=`Null) t node =
-    if group_exists t node then ()
-    else
+    group_exists t node >>= function
+    | true -> Deferred.return ()
+    | false ->
       let k = GroupNode.to_metakey node in
-      set t k GM.(update_attributes default attrs |> encode);
-      make_implicit_groups_explicit t @@ GroupNode.parent node
-
-  and make_implicit_groups_explicit t = function
-    | None -> ()
-    | Some n -> create_group t n
+      set t k GroupMetadata.(update_attributes default attrs |> encode) >>= fun () ->
+      match GroupNode.parent node with
+      | None -> Deferred.return ()
+      | Some n -> create_group t n
 
   let create_array
-    ?(sep=`Slash)
-    ?(dimension_names=[])
-    ?(attributes=`Null)
-    ~codecs
-    ~shape
-    ~chunks
-    kind
-    fill_value
-    node
-    t
-    =
-    let chain = Codecs.Chain.create chunks codecs in
-    set t (ArrayNode.to_metakey node) @@
-    AM.encode @@
-    AM.create
-      ~sep ~codecs:chain ~dimension_names ~attributes ~shape
-      kind fill_value chunks;
-    make_implicit_groups_explicit t @@ Some (ArrayNode.parent node)
+    ?(sep=`Slash) ?(dimension_names=[]) ?(attributes=`Null)
+    ~codecs ~shape ~chunks
+    kind fv node t =
+    let c = Codecs.Chain.create chunks codecs in
+    let m = ArrayMetadata.create
+      ~sep ~codecs:c ~dimension_names ~attributes ~shape kind fv chunks in
+    set t (ArrayNode.to_metakey node) @@ ArrayMetadata.encode m >>= fun () ->
+    create_group t @@ ArrayNode.parent node
 
   let group_metadata t node =
-    get t @@ GroupNode.to_metakey node >>| GM.decode
+    get t @@ GroupNode.to_metakey node >>| GroupMetadata.decode
 
   let array_metadata t node =
-    get t @@ ArrayNode.to_metakey node >>| AM.decode
+    get t @@ ArrayNode.to_metakey node >>| ArrayMetadata.decode
 
-  (* Assumes without checking that [metakey] is a valid node metadata key.*)
-  let unsafe_node_type t metakey =
+  let node_type t metakey =
     let open Yojson.Safe in
-    get t metakey |> Result.get_ok |> from_string
-    |> Util.member "node_type" |> Util.to_string
+    get t metakey >>| fun s ->
+    Util.to_string @@ Util.member "node_type" @@ from_string s
 
   let find_child_nodes t node =
-    List.fold_left
+    list_dir t @@ GroupNode.to_prefix node >>= fun (_, gp) ->
+    Deferred.fold_left
       (fun (l, r) pre ->
+        node_type t @@ pre ^ "zarr.json" >>| fun nt ->
         let p = "/" ^ String.(length pre - 1 |> sub pre 0) in
-        if unsafe_node_type t (pre ^ "zarr.json") = "array" then
-          ArrayNode.of_path p :: l, r
-        else l, GroupNode.of_path p :: r)
-      ([], []) (snd @@ list_dir t @@ GroupNode.to_prefix node)
+        if nt = "array" then ArrayNode.of_path p :: l, r
+        else l, GroupNode.of_path p :: r) ([], []) gp
 
   let find_all_nodes t =
-    match
-      List.fold_left
-        (fun ((l, r) as acc) key ->
-          if String.ends_with ~suffix:"/zarr.json" key then
-            let p = "/" ^ String.(length key - 10 |> sub key 0) in
-            if unsafe_node_type t key = "array" then
-              ArrayNode.of_path p :: l, r
-            else l, GroupNode.of_path p :: r
-          else acc) ([], []) (list_prefix t "")
-    with
+    list t >>= fun keys ->
+    Deferred.fold_left
+      (fun ((l, r) as acc) k ->
+        if String.ends_with ~suffix:"/zarr.json" k then
+          node_type t k >>| fun nt ->
+          let p = "/" ^ String.(length k - 10 |> sub k 0) in
+          if nt = "array" then ArrayNode.of_path p :: l, r
+          else l, GroupNode.of_path p :: r
+        else Deferred.return acc) ([], []) keys >>| fun acc ->
+    match acc with
     | [], [] as xs -> xs
     | l, r -> l, GroupNode.root :: r
 
@@ -94,121 +85,90 @@ module Make (M : STORE) : S with type t = M.t = struct
     erase_prefix t @@ GroupNode.to_prefix node
 
   let erase_array_node t node =
-    erase t @@ ArrayNode.to_metakey node
+    erase_prefix t @@ ArrayNode.to_key node ^ "/"
 
-  let erase_all_nodes t = erase_prefix t ""
+  let erase_all_nodes t =
+    list t >>= Deferred.iter (erase t)
 
-  let set_array :
-    t ->
-    ArrayNode.t ->
-    Owl_types.index array ->
-    ('a, 'b) Ndarray.t ->
-    (unit, [> error ]) result
-  = fun t node slice x ->
-    get t @@ ArrayNode.to_metakey node >>| AM.decode >>= fun meta ->
-    let arr_shape = AM.shape meta in
-    (if Ndarray.shape x = Indexing.slice_shape slice arr_shape then 
-        Ok ()
-      else
-        Error (`Store_write "slice and input array shapes are unequal."))
-    >>= fun () ->
+  let set_array t node slice x =
+    get t @@ ArrayNode.to_metakey node >>| ArrayMetadata.decode >>= fun meta ->
+    let shape = ArrayMetadata.shape meta in
+    let slice_shape =
+      try Indexing.slice_shape slice shape with
+      | Assert_failure _ ->
+        failwith "slice shape is not compatible with node's" in
+    if Ndarray.shape x <> slice_shape
+    then failwith "slice and input array shapes are unequal." else
     let kind = Ndarray.kind x in
-    (if AM.is_valid_kind meta kind then
-        Ok ()
-      else
-       Result.error @@
-       `Store_write (
-         "input array's kind is not compatible with node's data type."))
-    >>= fun () ->
+    if not @@ ArrayMetadata.is_valid_kind meta kind
+    then failwith "array kind is not compatible with node's data type." else
     let m =
       Array.fold_left
         (fun acc (co, y) ->
-          let k, c = AM.index_coord_pair meta co in
+          let k, c = ArrayMetadata.index_coord_pair meta co in
           ArrayMap.add_to_list k (c, y) acc)
         ArrayMap.empty @@ Array.combine
-          (Indexing.coords_of_slice slice arr_shape) (Ndarray.to_array x)
+          (Indexing.coords_of_slice slice shape) (Ndarray.to_array x)
     in
-    let fill_value = AM.fillvalue_of_kind meta kind in
-    let repr = Codecs.{kind; shape = AM.chunk_shape meta} in
+    let fv = ArrayMetadata.fillvalue_of_kind meta kind in
+    let repr = Codecs.{kind; shape = ArrayMetadata.chunk_shape meta} in
     let prefix = ArrayNode.to_key node ^ "/" in
-    let chain = AM.codecs meta in
-    ArrayMap.fold
-      (fun idx pairs acc ->
-        acc >>= fun () ->
-        let ckey = prefix ^ AM.chunk_key meta idx in
-        if Codecs.Chain.is_just_sharding chain && is_member t ckey then
-          Result.ok @@
-          Codecs.Chain.partial_encode
-            chain
-            (get_partial_values t ckey)
-            (set_partial_values t ckey)
-            (size t ckey)
-            repr
-            pairs
-        else
-          (match get t ckey with
-          | Ok b -> Ok (Codecs.Chain.decode chain repr b)
-          | Error `Store_read _ ->
-            Result.ok @@ Ndarray.create repr.kind repr.shape fill_value)
-          >>= fun arr ->
+    let chain = ArrayMetadata.codecs meta in
+    (* NOTE: there is opportunity to compute this step in parallel since
+       each iteration acts on independent chunks. Maybe use Domainslib? *)
+    Deferred.iter
+      (fun (idx, pairs) ->
+        let ckey = prefix ^ ArrayMetadata.chunk_key meta idx in
+        is_member t ckey >>= function
+        | true when PartialChain.is_just_sharding chain ->
+          size t ckey >>= fun csize ->
+          let get_p = get_partial_values t ckey in
+          let set_p = set_partial_values t ckey in
+          PartialChain.partial_encode chain get_p set_p csize repr pairs
+        | true ->
+          get t ckey >>= fun v ->
+          let arr = Codecs.Chain.decode chain repr v in
           List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
-          Ok (set t ckey @@ Codecs.Chain.encode chain arr)) m (Ok ())
+          set t ckey @@ Codecs.Chain.encode chain arr
+        | false ->
+          let arr = Ndarray.create repr.kind repr.shape fv in
+          List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
+          set t ckey @@ Codecs.Chain.encode chain arr) (ArrayMap.bindings m)
 
-  let get_array :
-    t ->
-    ArrayNode.t ->
-    Owl_types.index array ->
-    ('a, 'b) Bigarray.kind ->
-    (('a, 'b) Ndarray.t, [> error]) result
-  = fun t node slice kind ->
-    get t @@ ArrayNode.to_metakey node >>| AM.decode >>= fun meta ->
-    (if AM.is_valid_kind meta kind then
-        Ok ()
-      else
-       Result.error @@
-       `Store_read ("input kind is not compatible with node's data type."))
-    >>= fun () ->
-    let arr_shape = AM.shape meta in
-    (try Result.ok @@ Indexing.slice_shape slice arr_shape with
-    | Assert_failure _ -> 
-      Result.error @@
-      `Store_read "slice shape is not compatible with node's shape.")
-    >>= fun slice_shape ->
-    let icoords =
-      Array.mapi
-        (fun i v -> i, v) @@ Indexing.coords_of_slice slice arr_shape
-    in
+  let get_array t node slice kind =
+    get t @@ ArrayNode.to_metakey node >>| ArrayMetadata.decode >>= fun meta ->
+    if not @@ ArrayMetadata.is_valid_kind meta kind
+    then failwith "input kind is not compatible with node's data type." else
+    let shape = ArrayMetadata.shape meta in
+    let slice_shape =
+      try Indexing.slice_shape slice shape with
+      | Assert_failure _ -> failwith "slice shape is not compatible with node's" in
+    let ic = Array.mapi (fun i v -> i, v) (Indexing.coords_of_slice slice shape) in
     let m =
       Array.fold_left
         (fun acc (i, y) ->
-          let k, c = AM.index_coord_pair meta y in
-          ArrayMap.add_to_list k (i, c) acc) ArrayMap.empty icoords
-    in
-    let chain = AM.codecs meta in
+          let k, c = ArrayMetadata.index_coord_pair meta y in
+          ArrayMap.add_to_list k (i, c) acc) ArrayMap.empty ic in
+    let chain = ArrayMetadata.codecs meta in
     let prefix = ArrayNode.to_key node ^ "/" in
-    let fill_value = AM.fillvalue_of_kind meta kind in
-    let repr = Codecs.{kind; shape = AM.chunk_shape meta} in
-    ArrayMap.fold
-      (fun idx pairs acc ->
-        acc >>= fun xs ->
-        let ckey = prefix ^ AM.chunk_key meta idx in
-        if Codecs.Chain.is_just_sharding chain && is_member t ckey then
-          Result.ok @@
-          List.append xs @@
-          Codecs.Chain.partial_decode
-            chain (get_partial_values t ckey) (size t ckey) repr pairs
-        else
-          match get t ckey with
-          | Ok b ->
-            let arr = Codecs.Chain.decode chain repr b in
-            Result.ok @@
-            List.fold_left
-              (fun a (i, c) -> (i, Ndarray.get arr c) :: a) xs pairs
-         | Error `Store_read _ ->
-            Result.ok @@
-            List.fold_left
-              (fun a (i, _) -> (i, fill_value) :: a) xs pairs) m (Ok [])
-    >>| fun pairs ->
+    let fill_value = ArrayMetadata.fillvalue_of_kind meta kind in
+    let repr = Codecs.{kind; shape = ArrayMetadata.chunk_shape meta} in
+    (* NOTE: there is opportunity to compute this step in parallel since
+       each iteration acts on independent chunks. *)
+    Deferred.concat_map
+      (fun (idx, pairs) ->
+        let ckey = prefix ^ ArrayMetadata.chunk_key meta idx in
+        is_member t ckey >>= function
+        | true when PartialChain.is_just_sharding chain ->
+          let get_p = get_partial_values t ckey in
+          size t ckey >>= fun csize ->
+          PartialChain.partial_decode chain get_p csize repr pairs
+        | true ->
+          get t ckey >>| Codecs.Chain.decode chain repr >>| fun arr ->
+          List.map (fun (i, c) -> i, Ndarray.get arr c) pairs
+        | false ->
+          Deferred.return @@ List.map (fun (i, _) -> i, fill_value) pairs)
+      (ArrayMap.bindings m) >>| fun pairs ->
     (* sorting restores the C-order of the decoded array coordinates. *)
     let v =
       Array.of_list @@ snd @@ List.split @@
@@ -217,29 +177,19 @@ module Make (M : STORE) : S with type t = M.t = struct
 
   let reshape t node newshape =
     let mkey = ArrayNode.to_metakey node in
-    get t mkey >>| AM.decode >>= fun meta ->
-    let oldshape = AM.shape meta in
-    (if Array.length newshape = Array.length oldshape then
-      Ok ()
-    else
-      Error (`Store_write "new shape must have same number of dimensions."))
-    >>| fun () ->
+    get t mkey >>| ArrayMetadata.decode >>= fun meta ->
+    let oldshape = ArrayMetadata.shape meta in
+    if Array.(length newshape <> length oldshape)
+    then failwith "new shape must have same number of dimensions." else
+    let s = ArraySet.of_list @@ ArrayMetadata.chunk_indices meta oldshape in
+    let s' = ArraySet.of_list @@ ArrayMetadata.chunk_indices meta newshape in
     let pre = ArrayNode.to_key node ^ "/" in
-    let s = ArraySet.of_list @@ AM.chunk_indices meta oldshape in
-    let s' = ArraySet.of_list @@ AM.chunk_indices meta newshape in
-    ArraySet.iter
-      (fun v -> erase t @@ pre ^ AM.chunk_key meta v) @@ ArraySet.diff s s';
-    set t mkey @@ AM.encode @@ AM.update_shape meta newshape
-end
-
-module MemoryStore = struct
-  let create = Memory.create
-  include Make (Memory.Impl)
-end
-
-module FilesystemStore = struct
-  let create = Filesystem.create
-  let open_store = Filesystem.open_store
-  let open_or_create = Filesystem.open_or_create
-  include Make (Filesystem.Impl)
+    Deferred.iter
+      (fun v ->
+        let key = pre ^ ArrayMetadata.chunk_key meta v in
+        is_member t key >>= function
+        | true -> erase t key
+        | false -> Deferred.return ()) ArraySet.(diff s s' |> elements)
+    >>= fun () ->
+    set t mkey @@ ArrayMetadata.(encode @@ update_shape meta newshape)
 end

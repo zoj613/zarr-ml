@@ -3,28 +3,43 @@
 [![license][3]](https://github.com/zoj613/zarr-ml/blob/main/LICENSE)
 
 # zarr-ml
-An implementation of the Zarr version 3 specification.
+This library provides an OCaml implementation of the Zarr version 3
+storage format specification for chunked & compressed multi-dimensional
+arrays, designed for use in parallel computing.
 
+## Features
+- Supports creating n-dimensional arrays and chunking them along any dimension.
+- Compresses chunks using a variety of supported codecs.
+- Supports indexing operations to read/write views of a Zarr array.
+- Supports storing arrays in-memory or the local filesystem. It is also
+  extensible, allowing users to create and use their own custom storage backends.
+- Supports both synchronous and concurrent I/O via the the [Lwt][4] concurrency model.
+- Leverages the strong type system of Ocaml to create a type-safe API; making
+  it impossible to create or read malformed arrays.
 
-## Usage Example
-Below is a demonstration of the library's basic API.
+## Documentation
+API documentation can be found [here][5].
+
+## Quick start
+Below is a demonstration of the library's API for synchronous reads/writes.
+A similar example using the Asynchronous API can be found [here][6]
 ### setup
 ```ocaml
-open Zarr
+open Zarr.Metadata
 open Zarr.Node
 open Zarr.Codecs
-open Zarr.Storage
+open Zarr_sync.Storage
 
-let store = Result.get_ok @@ FilesystemStore.open_or_create "testdata.zarr";;
+let store = FilesystemStore.create_store "testdata.zarr";;
 ```
 ### create group
 ```ocaml
-let group_node = Result.get_ok @@ GroupNode.of_path "/some/group";;
+let group_node = GroupNode.of_path "/some/group";;
 FilesystemStore.create_group store group_node;;
 ```
 ### create an array
 ```ocaml
-let array_node = Result.get_ok @@ ArrayNode.(group_node / "name");;
+let array_node = ArrayNode.(group_node / "name");;
 (* creates an array with char data type and fill value '?' *)
 FilesystemStore.create_array
   ~codecs:[`Transpose [|2; 0; 1|]; `Bytes BE; `Gzip L2]
@@ -38,10 +53,7 @@ FilesystemStore.create_array
 ### open and write to an array
 ```ocaml
 let slice = Owl_types.[|R [0; 20]; I 10; R []|];;
-let x =
-  Result.get_ok @@
-  FilesystemStore.get_array store array_node slice Bigarray.Char;;
-
+let x = FilesystemStore.get_array store array_node slice Bigarray.Char;;
 (* Do some computation on the array slice *)
 let x' =
   Owl.Dense.Ndarray.Generic.map
@@ -71,7 +83,7 @@ let config =
   ;index_codecs = [`Bytes BE; `Crc32c]
   ;index_location = Start};;
 
-let shard_node = Result.get_ok @@ ArrayNode.(group_node / "another");;
+let shard_node = ArrayNode.(group_node / "another");;
 
 FilesystemStore.create_array
   ~codecs:[`ShardingIndexed config]
@@ -92,16 +104,13 @@ List.map GroupNode.to_path g;;
 
 FilesystemStore.reshape store array_node [|25; 32; 10|];;
 
-let meta =
-  Result.get_ok @@
-  FilesystemStore.group_metadata store group_node;;
+let meta = FilesystemStore.group_metadata store group_node;;
 GroupMetadata.show meta;; (* pretty prints the contents of the metadata *)
 
 FilesystemStore.array_exists store shard_node;;
 FilesystemStore.group_exists store group_node;;
 
-let a, g =
-  FilesystemStore.find_child_nodes store group_node;;
+let a, g = FilesystemStore.find_child_nodes store group_node;;
 List.map ArrayNode.to_path a;;
 (*- : string list = ["/some/group/name"; "/some/group/another"] *)
 List.map GroupNode.to_path g;;
@@ -113,3 +122,6 @@ FilesystemStore.erase_group_node store group_node;;
 [1]: https://codecov.io/gh/zoj613/zarr-ml/graph/badge.svg?token=KOOG2Y1SH5
 [2]: https://img.shields.io/github/actions/workflow/status/zoj613/zarr-ml/build-and-test.yml?branch=main
 [3]: https://img.shields.io/github/license/zoj613/zarr-ml
+[4]: https://ocsigen.org/lwt/latest/manual/manual
+[5]: https://zoj613.github.io/zarr-ml
+[6]: https://zoj613.github.io/zarr-ml/zarr/Zarr/index.html#examples

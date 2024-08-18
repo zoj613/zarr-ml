@@ -1,0 +1,8 @@
+(library
+ (name zarr_sync)
+ (public_name zarr-sync)
+ (libraries zarr)
+ (ocamlopt_flags
+   (:standard -O3))
+ (instrumentation
+   (backend bisect_ppx)))

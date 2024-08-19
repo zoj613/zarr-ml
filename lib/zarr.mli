@@ -64,9 +64,9 @@ module Util = Util
         ~codecs:[`Bytes BE] ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
         Bigarray.Float32 Float.neg_infinity array_node store; >>= fun () ->
       let slice = Owl_types.[|R [0; 20]; I 10; R []|] in
-      FilesystemStore.get_array store array_node slice Bigarray.Float32 >>= fun arr ->
-      let x' = Owl.Dense.Ndarray.Generic.map (fun _ -> Owl_stats_dist.uniform_rvs 0. 10.) x in
-      FilesystemStore.set_array store array_node slice x'
+      FilesystemStore.read_array store array_node slice Bigarray.Float32 >>= fun arr ->
+      let x' = Owl.Dense.Ndarray.Generic.map (fun _ -> Owl_stats_dist.uniform_rvs 0. 10.) x
+      in FilesystemStore.write_array store array_node slice x'
 
     let _ = Lwt_main.run @@ main ()
     ]} *)

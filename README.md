@@ -8,21 +8,23 @@ storage format specification for chunked & compressed multi-dimensional
 arrays, designed for use in parallel computing.
 
 ## Features
-- Supports creating n-dimensional arrays and chunking them along any dimension.
-- Compresses chunks using a variety of supported codecs.
+- Supports creating n-dimensional Zarr arrays and chunking them along any dimension.
+- Compresses chunks using a variety of supported compression codecs.
 - Supports indexing operations to read/write views of a Zarr array.
 - Supports storing arrays in-memory or the local filesystem. It is also
   extensible, allowing users to create and use their own custom storage backends.
-- Supports both synchronous and concurrent I/O via the the [Lwt][4] concurrency model.
+- Supports both synchronous and concurrent I/O via the the [Lwt][4] library.
 - Leverages the strong type system of Ocaml to create a type-safe API; making
-  it impossible to create or read malformed arrays.
+  it impossible to create, read or write malformed arrays.
+- Supports organasing arrays into heirarchies via groups.
 
 ## Documentation
-API documentation can be found [here][5].
+API documentation can be found [here][5]. The full specification of the storage
+format can be found [there][6].
 
 ## Quick start
 Below is a demonstration of the library's API for synchronous reads/writes.
-A similar example using the Asynchronous API can be found [here][6]
+A similar example using the Asynchronous API can be found [here][7]
 ### setup
 ```ocaml
 open Zarr.Metadata
@@ -53,12 +55,12 @@ FilesystemStore.create_array
 ### open and write to an array
 ```ocaml
 let slice = Owl_types.[|R [0; 20]; I 10; R []|];;
-let x = FilesystemStore.get_array store array_node slice Bigarray.Char;;
+let x = FilesystemStore.read_array store array_node slice Bigarray.Char;;
 (* Do some computation on the array slice *)
 let x' =
   Owl.Dense.Ndarray.Generic.map
     (fun _ -> Owl_stats_dist.uniform_int_rvs ~a:0 ~b:255 |> Char.chr) x;;
-FilesystemStore.set_array store array_node slice x';;
+FilesystemStore.write_array store array_node slice x';;
 
 FilesystemStore.get_array
   store array_node Owl_types.[|R [0; 73]; I 10; R [0; 5]|] Bigarray.Char;;
@@ -124,4 +126,5 @@ FilesystemStore.erase_group_node store group_node;;
 [3]: https://img.shields.io/github/license/zoj613/zarr-ml
 [4]: https://ocsigen.org/lwt/latest/manual/manual
 [5]: https://zoj613.github.io/zarr-ml
-[6]: https://zoj613.github.io/zarr-ml/zarr/Zarr/index.html#examples
+[6]: https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html
+[7]: https://zoj613.github.io/zarr-ml/zarr/Zarr/index.html#examples

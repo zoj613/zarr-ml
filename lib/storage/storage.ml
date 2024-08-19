@@ -90,7 +90,7 @@ module Make (Io : Types.IO) = struct
   let erase_all_nodes t =
     list t >>= Deferred.iter (erase t)
 
-  let set_array t node slice x =
+  let write_array t node slice x =
     get t @@ ArrayNode.to_metakey node >>| ArrayMetadata.decode >>= fun meta ->
     let shape = ArrayMetadata.shape meta in
     let slice_shape =
@@ -132,7 +132,7 @@ module Make (Io : Types.IO) = struct
           List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
           set t ckey @@ Codecs.Chain.encode chain arr) (ArrayMap.bindings m)
 
-  let get_array t node slice kind =
+  let read_array t node slice kind =
     get t @@ ArrayNode.to_metakey node >>| ArrayMetadata.decode >>= fun meta ->
     if not @@ ArrayMetadata.is_valid_kind meta kind
     then raise Invalid_data_type else

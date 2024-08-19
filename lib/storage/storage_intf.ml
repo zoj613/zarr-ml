@@ -91,13 +91,13 @@ module type STORE = sig
   (** [array_exists t n] returns [true] if array node [n] is a member
       of store [t] and [false] otherwise. *)
 
-  val set_array :
+  val write_array :
     t ->
     ArrayNode.t ->
     Owl_types.index array ->
     ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
     unit Deferred.t
-  (** [set_array t n s x] writes n-dimensional array [x] to the slice [s]
+  (** [write_array t n s x] writes n-dimensional array [x] to the slice [s]
       of array node [n] in store [t].
 
       @raise Invalid_array_slice
@@ -106,13 +106,13 @@ module type STORE = sig
         if the kind of [x] is not compatible with node [n]'s data type as
           described in its metadata document. *)
 
-  val get_array :
+  val read_array :
     t ->
     ArrayNode.t ->
     Owl_types.index array ->
     ('a, 'b) Bigarray.kind ->
     ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t Deferred.t
-  (** [get_array t n s k] reads an n-dimensional array of size determined
+  (** [read_array t n s k] reads an n-dimensional array of size determined
       by slice [s] from array node [n].
 
       @raise Invalid_data_type

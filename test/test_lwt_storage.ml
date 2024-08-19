@@ -57,16 +57,16 @@ let test_storage
         ~codecs ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
         Complex32 Complex.one anode store >>= fun () ->
       let exp = Genarray.init Complex32 C_layout [|21; 1; 30|] (Fun.const Complex.one) in
-      set_array store anode slice exp >>= fun () ->
-      get_array store anode slice Complex32 >>= fun got ->
+      write_array store anode slice exp >>= fun () ->
+      read_array store anode slice Complex32 >>= fun got ->
       assert_equal ~printer:Owl_pretty.dsnda_to_string exp got;
       Genarray.fill exp Complex.{re=2.0; im=0.};
-      set_array store anode slice exp >>= fun () ->
-      get_array store anode slice Complex32 >>= fun arr ->
+      write_array store anode slice exp >>= fun () ->
+      read_array store anode slice Complex32 >>= fun arr ->
       assert_equal ~printer:Owl_pretty.dsnda_to_string exp arr;
       Genarray.fill exp Complex.{re=0.; im=3.0};
-      set_array store anode slice exp >>= fun () ->
-      get_array store anode slice Complex32 >>| fun got ->
+      write_array store anode slice exp >>= fun () ->
+      read_array store anode slice Complex32 >>| fun got ->
       assert_equal ~printer:Owl_pretty.dsnda_to_string exp got)
     [[`ShardingIndexed cfg]; [`Bytes BE]] >>= fun () ->
 

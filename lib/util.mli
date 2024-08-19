@@ -29,7 +29,8 @@ module Indexing : sig
   val slice_of_coords
     : int array list -> Owl_types.index array
   (** [slice_of_coords c] takes a list of array coordinates and returns
-      a slice corresponding to the coordinates. *)
+      a slice corresponding to the coordinates. Elements of each slice
+      variant are sorted in increasing order.*)
       
   val coords_of_slice
     : Owl_types.index array -> int array -> int array array

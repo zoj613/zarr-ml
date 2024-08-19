@@ -13,10 +13,10 @@ let tests = [
   in
   let expected =
     Owl_types.[|
-    L [0; 9; 5];
-    L [1; 8; 4];
-    L [2; 7; 3];
-    L [3; 6; 2]
+    L [0; 5; 9];
+    L [1; 4; 8];
+    L [2; 3; 7];
+    L [2; 3; 6]
   |]
   in
   assert_equal expected @@ Indexing.slice_of_coords coords;

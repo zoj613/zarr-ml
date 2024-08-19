@@ -14,8 +14,8 @@ let main () =
     ~codecs:[`Bytes BE] ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
     Bigarray.Float32 Float.neg_infinity array_node store; &gt;&gt;= fun () -&gt;
   let slice = Owl_types.[|R [0; 20]; I 10; R []|] in
-  FilesystemStore.get_array store array_node slice Bigarray.Float32 &gt;&gt;= fun arr -&gt;
-  let x' = Owl.Dense.Ndarray.Generic.map (fun _ -&gt; Owl_stats_dist.uniform_rvs 0. 10.) x in
-  FilesystemStore.set_array store array_node slice x'
+  FilesystemStore.read_array store array_node slice Bigarray.Float32 &gt;&gt;= fun arr -&gt;
+  let x' = Owl.Dense.Ndarray.Generic.map (fun _ -&gt; Owl_stats_dist.uniform_rvs 0. 10.) x
+  in FilesystemStore.write_array store array_node slice x'
 
 let _ = Lwt_main.run @@ main ()</code></pre><h2 id="extensions"><a href="#extensions" class="anchor"></a>Extension Points</h2><p>This library also provides custom extensions not defined in the version 3 specification. These are tabulated below:</p><table class="odoc-table"><tr><th><p>Extension Point</p></th><th><p>Details</p></th></tr><tr><td><p>Data Types</p></td><td><p><code>char</code>, <code>complex32</code>, <code>int</code> (63-bit integer), <code>nativeint</code></p></td></tr></table><h2 id="limitations"><a href="#limitations" class="anchor"></a>Limitations</h2><p>Although this implementation tries to be spec compliant, it does come with a few limitations:</p><ul><li>Ocaml does not have support for unsigned integers as array data types and thus this library cannot support reading values of datatypes <code>uint32</code>, <code>uint64</code> and <code>complex128</code>.</li></ul></div></body></html>

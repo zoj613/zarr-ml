@@ -6,7 +6,9 @@ let flatten_fstring s =
   String.(split_on_char ' ' s |> concat "" |> split_on_char '\n' |> concat "")
 
 let decode_bad_group_metadata ~str ~msg = 
-  assert_raises (Failure msg) (fun () -> GroupMetadata.decode str)
+  assert_raises
+    (Metadata.Parse_error msg)
+    (fun () -> GroupMetadata.decode str)
 
 let group = [
 "group metadata" >:: (fun _ ->
@@ -17,7 +19,7 @@ let group = [
 
   assert_equal ~printer:GroupMetadata.show meta @@ GroupMetadata.decode got;
   assert_raises
-    (Failure "group metadata must contain a zarr_format field.")
+    (Metadata.Parse_error "group metadata must contain a zarr_format field.")
     (fun () -> GroupMetadata.decode {|{"bad_json":0}|});
 
   let meta' =
@@ -65,7 +67,7 @@ let test_array_metadata
     "should not fail"
     ArrayMetadata.(ArrayMetadata.(encode meta |> decode) = meta);
   assert_raises
-    (Failure "array metadata must contain a zarr_format field.")
+    (Metadata.Parse_error "array metadata must contain a zarr_format field.")
     (fun () -> ArrayMetadata.decode {|{"bad_json":0}|});
 
   let show_int_array = [%show: int array] in
@@ -136,7 +138,7 @@ let test_array_metadata
 
 (* test decoding an ill-formed array metadata with an expected error message.*)
 let decode_bad_array_metadata ~str ~msg = 
-  assert_raises (Failure msg) (fun () -> ArrayMetadata.decode str)
+  assert_raises (Metadata.Parse_error msg) (fun () -> ArrayMetadata.decode str)
 
 let test_encode_decode_fill_value fv =
   let str = Format.sprintf {|{

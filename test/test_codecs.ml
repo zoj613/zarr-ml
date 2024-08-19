@@ -35,14 +35,12 @@ let tests = [
     [`Transpose [|2; 1; 0; 3|]; `ShardingIndexed shard_cfg; `Crc32c; `Gzip L9]
   in
   assert_raises
-    (Failure "transpose order and chunk shape mismatch.")
+    (Zarr.Codecs.Invalid_transpose_order)
     (fun () -> Chain.create shape chain); 
 
-  let chain  =
-    [`Transpose [|2; 1; 0|]; `ShardingIndexed shard_cfg; `Bytes BE]
-  in
+  let chain = [`Transpose [|2; 1; 0|]; `ShardingIndexed shard_cfg; `Bytes BE] in
   assert_raises
-    (Failure "Must be exactly one array->bytes codec.")
+    (Zarr.Codecs.Bytes_to_bytes_invariant)
     (fun () -> Chain.create shape chain); 
 
   let chain =
@@ -115,10 +113,10 @@ let tests = [
   let shape = [|2; 2; 2|] in
   let chain = [`Transpose [||]; `Bytes LE] in
   assert_raises
-    (Failure "transpose order cannot be empty.")
+    (Zarr.Codecs.Invalid_transpose_order)
     (fun () -> Chain.create shape chain);
   assert_raises
-    (Failure "transpose must have unique non-negative values.")
+    (Zarr.Codecs.Invalid_transpose_order)
     (fun () -> Chain.create shape [`Transpose [|4; 0; 1|]; `Bytes LE]))
 ;
 
@@ -261,11 +259,11 @@ let tests = [
   let chain = [`ShardingIndexed cfg] in
   (*test failure for chunk shape not evenly dividing shard. *)
   assert_raises
-    (Failure "chunk_shape must evenly divide size of a shard shape.")
+    (Zarr.Codecs.Invalid_sharding_chunk_shape)
     (fun () -> Chain.create shape chain);
   (* test failure for chunk shape length not equal to dimensionality of shard.*)
   assert_raises
-    (Failure "chunk shape must have same size as shard dimensionality.")
+    (Zarr.Codecs.Invalid_sharding_chunk_shape)
     (fun () ->
       Chain.create shape @@ [`ShardingIndexed {cfg with chunk_shape = [|5|]}]);
 

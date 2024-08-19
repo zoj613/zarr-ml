@@ -14,7 +14,7 @@ module Make (Deferred : Types.Deferred) = struct
   let get t key =
     match StrMap.find_opt key @@ Atomic.get t with
     | Some v -> Deferred.return v
-    | None -> failwith @@ Printf.sprintf "%s not found." key
+    | None -> raise @@ Storage.Key_not_found key
 
   let rec set t key value =
     let m = Atomic.get t in

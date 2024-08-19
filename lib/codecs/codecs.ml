@@ -76,7 +76,7 @@ module Chain = struct
     let a2b, b2b =
       match result with
       | [x], r -> x, r
-      | _ -> failwith "Must be exactly one array->bytes codec."
+      | _ -> raise Bytes_to_bytes_invariant
     in
     ArrayToBytes.parse a2b @@
     (match a2a with

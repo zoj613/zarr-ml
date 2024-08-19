@@ -40,7 +40,7 @@ module FilesystemStore = struct
             Lwt_io.read)
         (function
         | Unix.Unix_error (Unix.ENOENT, _, _) ->
-          failwith @@ Printf.sprintf "%s not found." key
+          raise @@ Zarr.Storage.Key_not_found key
         | exn -> Lwt.reraise exn)
 
     let get_partial_values t key ranges =
@@ -132,7 +132,7 @@ module FilesystemStore = struct
 
   let open_store ?(perm=0o700) dirname =
     if Sys.is_directory dirname then FS.{dirname; perm}
-    else failwith (Printf.sprintf "%s is not a Filesystem store." dirname)
+    else raise @@ Zarr.Storage.Not_a_filesystem_store dirname
 
   include Zarr.Storage.Make(FS)
 end

@@ -91,22 +91,21 @@ let test_storage
   assert_equal ~printer:Owl_pretty.dsnda_to_string exp got;
 
   assert_raises
-    (Failure "input kind is not compatible with node's data type.")
+    (Zarr.Storage.Invalid_data_type)
     (fun () -> get_array store anode slice Bigarray.Char);
   let badslice = Owl_types.[|R [0; 20]; I 10; R []; R [] |] in
   assert_raises
-    (Failure "slice shape is not compatible with node's")
+    (Zarr.Storage.Invalid_array_slice)
     (fun () -> get_array store anode badslice Bigarray.Int);
   assert_raises
-    (Failure "slice shape is not compatible with node's")
+    (Zarr.Storage.Invalid_array_slice)
     (fun () -> set_array store anode badslice exp);
   assert_raises
-    (Failure "slice and input array shapes are unequal.")
-    (fun () ->
-      set_array store anode Owl_types.[|R [0; 20]; R []; R []|] exp);
+    (Zarr.Storage.Invalid_array_slice)
+    (fun () -> set_array store anode Owl_types.[|R [0; 20]; R []; R []|] exp);
   let badarray = Genarray.init Float64 C_layout [|21; 1; 30|] (Fun.const 0.) in
   assert_raises
-    (Failure "array kind is not compatible with node's data type.")
+    (Zarr.Storage.Invalid_data_type)
     (fun () -> set_array store anode slice badarray);
 
   let child = GroupNode.of_path "/some/child" in
@@ -132,10 +131,10 @@ let test_storage
   let meta = array_metadata store anode in
   assert_equal ~printer:print_int_array nshape @@ ArrayMetadata.shape meta;
   assert_raises
-    (Failure "new shape must have same number of dimensions.") 
+    (Zarr.Storage.Invalid_resize_shape)
     (fun () -> reshape store anode [|25; 10|]);
   assert_raises
-    (Failure "fakegroup/zarr.json not found.")
+    (Zarr.Storage.Key_not_found "fakegroup/zarr.json")
     (fun () -> array_metadata store ArrayNode.(gnode / "fakegroup"));
 
   erase_array_node store anode;
@@ -168,7 +167,7 @@ let tests = [
 
     let fn = Filename.temp_file "nonexistantfile" ".zarr" in
     assert_raises
-      (Failure (Printf.sprintf "%s is not a Filesystem store." fn))
+      (Zarr.Storage.Not_a_filesystem_store fn)
       (fun () -> FilesystemStore.open_store fn);
 
     test_storage (module FilesystemStore) s)

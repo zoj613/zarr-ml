@@ -10,6 +10,9 @@
     - must not be a string composed only of period characters, e.g. "." or "..".
     - must not start with the reserved prefix "__".*)
 
+exception Node_invariant
+(** raised when a node's invariants are violated. *)
+
 module GroupNode : sig
   type t
   (** The type of a Group node. *)

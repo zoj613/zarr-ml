@@ -95,13 +95,10 @@ module Make (Io : Types.IO) = struct
     let shape = ArrayMetadata.shape meta in
     let slice_shape =
       try Indexing.slice_shape slice shape with
-      | Assert_failure _ ->
-        failwith "slice shape is not compatible with node's" in
-    if Ndarray.shape x <> slice_shape
-    then failwith "slice and input array shapes are unequal." else
+      | Assert_failure _ -> raise Invalid_array_slice in
+    if Ndarray.shape x <> slice_shape then raise Invalid_array_slice else
     let kind = Ndarray.kind x in
-    if not @@ ArrayMetadata.is_valid_kind meta kind
-    then failwith "array kind is not compatible with node's data type." else
+    if not @@ ArrayMetadata.is_valid_kind meta kind then raise Invalid_data_type else
     let m =
       Array.fold_left
         (fun acc (co, y) ->
@@ -138,11 +135,11 @@ module Make (Io : Types.IO) = struct
   let get_array t node slice kind =
     get t @@ ArrayNode.to_metakey node >>| ArrayMetadata.decode >>= fun meta ->
     if not @@ ArrayMetadata.is_valid_kind meta kind
-    then failwith "input kind is not compatible with node's data type." else
+    then raise Invalid_data_type else
     let shape = ArrayMetadata.shape meta in
     let slice_shape =
       try Indexing.slice_shape slice shape with
-      | Assert_failure _ -> failwith "slice shape is not compatible with node's" in
+      | Assert_failure _ -> raise Invalid_array_slice in
     let ic = Array.mapi (fun i v -> i, v) (Indexing.coords_of_slice slice shape) in
     let m =
       Array.fold_left
@@ -175,14 +172,14 @@ module Make (Io : Types.IO) = struct
       List.fast_sort (fun (x, _) (y, _) -> Int.compare x y) pairs in
     Ndarray.of_array kind v slice_shape
 
-  let reshape t node newshape =
+  let reshape t node nshape =
     let mkey = ArrayNode.to_metakey node in
     get t mkey >>| ArrayMetadata.decode >>= fun meta ->
-    let oldshape = ArrayMetadata.shape meta in
-    if Array.(length newshape <> length oldshape)
-    then failwith "new shape must have same number of dimensions." else
-    let s = ArraySet.of_list @@ ArrayMetadata.chunk_indices meta oldshape in
-    let s' = ArraySet.of_list @@ ArrayMetadata.chunk_indices meta newshape in
+    let oshape = ArrayMetadata.shape meta in
+    if Array.(length nshape <> length oshape)
+    then raise Invalid_resize_shape else
+    let s = ArraySet.of_list @@ ArrayMetadata.chunk_indices meta oshape in
+    let s' = ArraySet.of_list @@ ArrayMetadata.chunk_indices meta nshape in
     let pre = ArrayNode.to_key node ^ "/" in
     Deferred.iter
       (fun v ->
@@ -191,5 +188,5 @@ module Make (Io : Types.IO) = struct
         | true -> erase t key
         | false -> Deferred.return ()) ArraySet.(diff s s' |> elements)
     >>= fun () ->
-    set t mkey @@ ArrayMetadata.(encode @@ update_shape meta newshape)
+    set t mkey @@ ArrayMetadata.(encode @@ update_shape meta nshape)
 end

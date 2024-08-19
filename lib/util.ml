@@ -70,16 +70,18 @@ module Indexing = struct
     |> List.map Array.of_list
     |> Array.of_list
 
+   module IntSet = Set.Make(Int)
+
   let slice_of_coords = function
     | [] -> [||]
-    | xs ->
-      let ndims = Array.length @@ List.hd xs in
-      let indices = Array.make ndims [] in
-      Array.map (fun x -> Owl_types.L x) @@
+    | x :: _ as xs ->
+      let ndims = Array.length x in
+      let indices = Array.make ndims IntSet.empty in
+      Array.map (fun x -> Owl_types.L (IntSet.elements x)) @@
       List.fold_right (fun x acc ->
         Array.iteri (fun i y ->
-          if List.mem y acc.(i) then ()
-          else acc.(i) <- y :: acc.(i)) x; acc) xs indices
+          if IntSet.mem y acc.(i) then ()
+          else acc.(i) <- IntSet.add y acc.(i)) x; acc) xs indices
 
   let slice_shape slice array_shape =
     Owl_slicing.calc_slice_shape @@

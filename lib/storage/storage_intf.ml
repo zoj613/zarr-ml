@@ -1,6 +1,12 @@
 open Metadata
 open Node
 
+exception Invalid_resize_shape
+exception Invalid_data_type
+exception Invalid_array_slice
+exception Key_not_found of string
+exception Not_a_filesystem_store of string
+
 module type STORE = sig
   module Deferred : Types.Deferred
   type t
@@ -32,17 +38,23 @@ module type STORE = sig
       - The array has shape [shape] and chunk shape [chunks].
       - The array has data kind [kind] and fill value [fv].
       
-      @raise Failure if the codec chain is not well defined. *)
+      @raise Codecs.Bytes_to_bytes_invariant
+        if [codecs] contains more than one bytes->bytes codec.
+      @raise Codecs.Invalid_transpose_order
+        if [codecs] contains a transpose codec with invalid order array.
+      @raise Codecs.Invalid_sharding_chunk_shape
+        if [codecs] contains a shardingindexed codec with an
+        incorrect inner chunk shape. *)
 
   val array_metadata : t -> ArrayNode.t -> ArrayMetadata.t Deferred.t
   (** [array_metadata node t] returns the metadata of array node [node].
 
-      @raise Failure if node is not a member of store [t]. *)
+      @raise Key_not_found if node is not a member of store [t]. *)
 
   val group_metadata : t -> GroupNode.t -> GroupMetadata.t Deferred.t
   (** [group_metadata node t] returns the metadata of group node [node].
 
-      @raise Failure if node is not a member of store [t].*)
+      @raise Key_not_found if node is not a member of store [t].*)
 
   val find_child_nodes
     : t -> GroupNode.t -> (ArrayNode.t list * GroupNode.t list) Deferred.t
@@ -88,11 +100,11 @@ module type STORE = sig
   (** [set_array t n s x] writes n-dimensional array [x] to the slice [s]
       of array node [n] in store [t].
 
-      @raise Failure
-        - if the ndarray [x] size does not equal slice [s].
-        - if the kind of [x] is not compatible with node [n]'s data type as
-          described in its metadata document.
-        - if there is a problem decoding/encoding node [n] chunks.*)
+      @raise Invalid_array_slice
+        if the ndarray [x] size does not equal slice [s].
+      @raise Invalid_data_type
+        if the kind of [x] is not compatible with node [n]'s data type as
+          described in its metadata document. *)
 
   val get_array :
     t ->
@@ -103,19 +115,20 @@ module type STORE = sig
   (** [get_array t n s k] reads an n-dimensional array of size determined
       by slice [s] from array node [n].
 
-      @raise Failure
-        - if there is a problem decoding/encoding node [n] chunks.
-        - if kind [k] is not compatible with node [n]'s data type as described
+      @raise Invalid_data_type
+        if kind [k] is not compatible with node [n]'s data type as described
           in its metadata document.
-        - if the slice [s] is not a valid slice of array node [n].*)
+      @raise Invalid_array_slice
+        if the slice [s] is not a valid slice of array node [n].*)
 
   val reshape : t -> ArrayNode.t -> int array -> unit Deferred.t
   (** [reshape t n shape] resizes array node [n] of store [t] into new
       size [shape].
 
-      @raise Failure
-        - if [shape] does not have the same dimensions as [n]'s shape.
-        - if node [n] is not a member of store [t] then this is a no-op. *)
+      @raise Invalid_resize_shape
+        if [shape] does not have the same dimensions as [n]'s shape.
+      @raise Key_not_found
+        if node [n] is not a member of store [t]. *)
 end
 
 module type Interface = sig
@@ -124,6 +137,21 @@ module type Interface = sig
       specification, it must support a set of operations defined in the
       Abstract store interface {!STORE}. The store interface can be
       implemented using a variety of underlying storage technologies. *)
+
+  exception Invalid_resize_shape
+  (** raised when resizing a Zarr array with an incorrect shape. *)
+
+  exception Invalid_data_type 
+  (** raised when supplied data type is not the same as Zarr array's. *)
+
+  exception Invalid_array_slice
+  (** raised when requesting a view of a Zarr array with an incorrect slice. *)
+  
+  exception Key_not_found of string
+  (** raised when a node's chunk key or metadata key is found in a store. *)
+
+  exception Not_a_filesystem_store of string
+  (** raised when opening a file that as if it was a Filesystem Zarr store. *)
 
   module type STORE = STORE
   (** The module interface that all supported stores must implement. *)

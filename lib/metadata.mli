@@ -5,6 +5,9 @@
     array and group metadata. Both types are stored under the key
     [zarr.json] within the prefix of a group or array.*)
 
+exception Parse_error of string
+(** raised when parsing a metadata JSON document fails. *)
+
 module FillValue : sig
   type t =
     | Char of char  (** A single character string. *)
@@ -50,7 +53,8 @@ module ArrayMetadata : sig
 
   val decode : string -> t
   (** [decode s] decodes a bytes string [s] into a {!ArrayMetadata.t} type.
-      @raise Failure if metadata string is invalid. *)
+
+      @raise Parse_error if metadata string is invalid. *)
 
   val shape : t -> int array
   (** [shape t] returns the shape of the zarr array represented by metadata type [t]. *)
@@ -119,7 +123,8 @@ module GroupMetadata : sig
 
   val decode : string -> t
   (** [decode s] decodes a bytes string [s] into a {!t} type.
-      @raise Failure if metadata string is invalid. *)
+
+      @raise Parse_error if metadata string is invalid. *)
 
   val update_attributes : t -> Yojson.Safe.t -> t
   (** [update_attributes t json] returns a new metadata type with an updated

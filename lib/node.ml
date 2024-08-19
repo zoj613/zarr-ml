@@ -1,3 +1,5 @@
+exception Node_invariant
+
 (* Check if the path's name satisfies path invariants *)
 let rep_ok name =
   (String.empty <> name) &&
@@ -12,7 +14,7 @@ module GroupNode = struct
 
   let create parent name =
     if rep_ok name then Cons (parent, name)
-    else failwith "node invariant"
+    else raise Node_invariant
 
   let ( / ) = create
 
@@ -22,7 +24,7 @@ module GroupNode = struct
     | "/" -> Root
     | s ->
       if String.(not @@ starts_with ~prefix:"/" s || ends_with ~suffix:"/" s)
-      then failwith "node invariant"
+      then raise Node_invariant
       else List.fold_left create Root (List.tl @@ String.split_on_char '/' s)
 
   let name = function
@@ -83,7 +85,7 @@ module ArrayNode = struct
 
   let create parent name =
     if rep_ok name then {parent; name}
-    else failwith "node invariant"
+    else raise Node_invariant
 
   let ( / ) = create
 
@@ -91,7 +93,7 @@ module ArrayNode = struct
     let g = GroupNode.of_path p in
     match GroupNode.parent g with
     | Some parent -> {parent; name = GroupNode.name g}
-    | None -> failwith "node invariant"
+    | None -> raise Node_invariant
       
   let ( = )
     {parent = p; name = n}

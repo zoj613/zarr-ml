@@ -27,7 +27,7 @@ module FilesystemStore = struct
           (key_to_fspath t key)
           In_channel.input_all
       with
-      | Sys_error _ -> failwith @@ Printf.sprintf "%s not found." key
+      | Sys_error _ -> raise @@ Zarr.Storage.Key_not_found key
 
     let get_partial_values t key ranges =
       In_channel.with_open_gen
@@ -116,7 +116,7 @@ module FilesystemStore = struct
 
   let open_store ?(perm=0o700) dirname =
     if Sys.is_directory dirname then FS.{dirname; perm}
-    else failwith (Printf.sprintf "%s is not a Filesystem store." dirname)
+    else raise @@ Zarr.Storage.Not_a_filesystem_store dirname
 
   include Zarr.Storage.Make(FS)
 end

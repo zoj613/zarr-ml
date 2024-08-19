@@ -1,6 +1,8 @@
 open Extensions
 open Util.Result_syntax
 
+exception Parse_error of string
+
 module FillValue = struct
   type t =
     | Char of char
@@ -215,7 +217,7 @@ module ArrayMetadata = struct
                 Error "chunk_shape must only contain positive ints.") l (Ok [])
         >>| Array.of_list >>= fun cs ->
         try Ok (cs, RegularGrid.create ~array_shape:shape cs) with
-        | Failure s -> Error s)
+        | RegularGrid.Grid_shape_mismatch -> Error "grid shape mismatch.")
       | _ -> Error "Invalid Chunk grid name or configuration."))
     >>= fun (chunk_shape, chunk_grid) ->
 
@@ -306,7 +308,7 @@ module ArrayMetadata = struct
   let decode s = 
     match of_yojson @@ Yojson.Safe.from_string s with
     | Ok m -> m
-    | Error e -> failwith e
+    | Error e -> raise @@ Parse_error e
 
   let update_attributes t attrs =
     {t with attributes = attrs}
@@ -406,7 +408,7 @@ module GroupMetadata = struct
   let decode s = 
     match of_yojson @@ Yojson.Safe.from_string s with
     | Ok m -> m
-    | Error e -> failwith e
+    | Error e -> raise @@ Parse_error e
 
   let encode t =
     Yojson.Safe.to_string @@ to_yojson t

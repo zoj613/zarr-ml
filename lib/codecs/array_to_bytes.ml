@@ -158,9 +158,8 @@ end = struct
 
   let parse t shape =
     if Array.(length shape <> length t.chunk_shape)
-    then failwith "chunk shape must have same size as shard dimensionality."
-    else if not @@ Array.for_all2 (fun x y -> (x mod y) = 0) shape t.chunk_shape
-    then failwith "chunk_shape must evenly divide size of a shard shape."
+    || not @@ Array.for_all2 (fun x y -> (x mod y) = 0) shape t.chunk_shape
+    then raise Invalid_sharding_chunk_shape
     else
       parse_chain shape t.codecs;
       parse_chain

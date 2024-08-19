@@ -8,7 +8,7 @@ let group_node = [
   (* test node invariants *)
   List.iter
     (fun x ->
-      assert_raises (Failure "node invariant") @@ fun () ->
+      assert_raises Zarr.Node.Node_invariant @@ fun () ->
         GroupNode.create n x)
     [""; "na/me"; "...."; "__name"];
 
@@ -17,7 +17,7 @@ let group_node = [
   assert_equal ~printer:GroupNode.show GroupNode.root r;
   List.iter
     (fun x ->
-      assert_raises (Failure "node invariant") @@ fun () ->
+      assert_raises Zarr.Node.Node_invariant @@ fun () ->
         GroupNode.of_path x)
     [""; "na/meas"; "/some/..."; "/root/__name"; "/sd/"];
 
@@ -105,13 +105,14 @@ let array_node = [
   (* test node invariants *)
   List.iter
     (fun x ->
-      assert_raises (Failure "node invariant") @@ fun () ->
+      assert_raises Zarr.Node.Node_invariant @@ fun () ->
         ArrayNode.create GroupNode.root x)
     [""; "na/me"; "...."; "__name"];
 
   (* creation from string path *)
   List.iter
-    (fun x -> assert_raises (Failure "node invariant") @@ fun () ->
+    (fun x ->
+      assert_raises Zarr.Node.Node_invariant @@ fun () ->
       ArrayNode.of_path x)
     ["/"; ""; "na/meas"; "/some/..."; "/root/__name"; "/sd/"];
 

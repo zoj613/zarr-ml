@@ -1,3 +1,7 @@
+exception Bytes_to_bytes_invariant
+exception Invalid_transpose_order
+exception Invalid_sharding_chunk_shape
+
 type arraytoarray =
   [ `Transpose of int array ]
 
@@ -44,6 +48,15 @@ type ('a, 'b) array_repr =
   ;shape : int array}
 
 module type Interface = sig
+  exception Bytes_to_bytes_invariant
+  (** raised when a codec chain contains more than 1 bytes->bytes codec. *)
+
+  exception Invalid_transpose_order
+  (** raised when a codec chain contains a Transpose codec with an incorrect order. *)
+
+  exception Invalid_sharding_chunk_shape
+  (** raise when a codec chain contains a shardingindexed codec with an incorrect inner chunk shape. *)
+
   (** The type of [array -> array] codecs. *)
   type arraytoarray =
     [ `Transpose of int array ]

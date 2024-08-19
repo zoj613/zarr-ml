@@ -1,3 +1,5 @@
+open Codecs_intf
+
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/transpose/v1.0.html *)
 module TransposeCodec = struct
   let encoded_size input_size = input_size
@@ -8,12 +10,9 @@ module TransposeCodec = struct
     let o' = Array.copy o in
     Array.fast_sort Int.compare o';
     if Array.length o = 0
-    then failwith "transpose order cannot be empty."
-    else if o' <> Array.init (Array.length o') Fun.id
-    then failwith "transpose must have unique non-negative values."
-    else if Array.(length o <> length shape)
-    then failwith "transpose order and chunk shape mismatch."
-    else ()
+    || o' <> Array.(init (length o') Fun.id)
+    || Array.(length o <> length shape)
+    then raise Invalid_transpose_order else ()
 
   module A = Owl.Dense.Ndarray.Any
   module N = Owl.Dense.Ndarray.Generic
@@ -48,7 +47,7 @@ module TransposeCodec = struct
         (fun od ->
           let order = Array.of_list od in
           try parse ~order chunk_shape; Ok (`Transpose order) with
-          | Failure s -> Error s)
+          | Invalid_transpose_order -> Error "Invalid_transpose_order")
     | _ -> Error "Invalid transpose configuration."
 end
 

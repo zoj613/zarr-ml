@@ -126,7 +126,7 @@ let tests = [
 
     let fn = Filename.temp_file "nonexistantfile" ".zarr" in
     assert_raises
-      (Failure (Printf.sprintf "%s is not a Filesystem store." fn))
+      (Zarr.Storage.Not_a_filesystem_store fn)
       (fun () -> FilesystemStore.open_store fn);
 
     Lwt_main.run @@ test_storage (module FilesystemStore) s)

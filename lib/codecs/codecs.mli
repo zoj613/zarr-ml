@@ -15,7 +15,13 @@ module Chain : sig
   (** [create s c] returns a type representing a chain of codecs defined by
       chain [c] and chunk shape [s].
 
-      @raise Failure if [c] is invalid. *)
+      @raise Bytes_to_bytes_invariant
+        if [c] contains more than one bytes->bytes codec.
+      @raise Invalid_transpose_order
+        if [c] contains a transpose codec with invalid order array.
+      @raise Invalid_sharding_chunk_shape
+        if [c] contains a shardingindexed codec with an
+        incorrect inner chunk shape. *)
   val create : int array -> codec_chain -> t
 
   (** [encode t x] computes the encoded byte string representation of

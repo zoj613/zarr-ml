@@ -47,7 +47,7 @@ jobs:
         run: opam exec -- dune build lib
 
       - name: test
-        run: opam exec -- dune runtest --instrument-with bisect_ppx --force
+        run: opam exec -- dune exec --instrument-with bisect_ppx --force -- _build/default/test/test_zarr.exe -runner sequential -ci true
 
       - name: Upload code coverage report
         run: opam exec -- bisect-ppx-report send-to Codecov

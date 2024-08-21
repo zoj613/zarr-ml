@@ -81,9 +81,9 @@ module Chain = struct
     ArrayToBytes.parse a2b @@
     (match a2a with
     | [] -> shape
-    | l -> 
-      ArrayToArray.parse (List.hd l) shape;
-      List.fold_left ArrayToArray.encoded_repr shape l);
+    | x :: _ as xs -> 
+      ArrayToArray.parse x shape;
+      List.fold_left ArrayToArray.encoded_repr shape xs);
     {a2a; a2b; b2b}
 
   let encode t x =

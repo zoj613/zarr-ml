@@ -20,7 +20,7 @@ module Make (Deferred : Types.Deferred) = struct
     let m = Atomic.get t in
     let m' = StrMap.add key value m in
     let success = Atomic.compare_and_set t m m' in
-    if not success then set t key value else Deferred.return ()
+    if not success then set t key value else Deferred.return_unit
 
   let list t =
     Deferred.return @@ fst @@ List.split @@ StrMap.bindings @@ Atomic.get t
@@ -32,7 +32,7 @@ module Make (Deferred : Types.Deferred) = struct
     let m = Atomic.get t in
     let m' = StrMap.update key (Fun.const None) m in
     let success = Atomic.compare_and_set t m m' in
-    if not success then erase t key else Deferred.return ()
+    if not success then erase t key else Deferred.return_unit
 
   let size t key =
     Deferred.return @@ String.length @@ StrMap.find key @@ Atomic.get t
@@ -44,7 +44,7 @@ module Make (Deferred : Types.Deferred) = struct
         (fun k v ->
           if String.starts_with ~prefix:pre k then None else Some v) m in
     let success = Atomic.compare_and_set t m m' in
-    if not success then erase_prefix t pre else Deferred.return ()
+    if not success then erase_prefix t pre else Deferred.return_unit
 
   let get_partial_values t key ranges =
     Deferred.map

@@ -97,7 +97,7 @@ let test_storage
   erase_all_nodes store >>= fun () ->
   find_all_nodes store >>= fun got ->
   assert_equal ~printer:print_node_pair ([], []) got;
-  Deferred.return ()
+  Deferred.return_unit
 
 let tests = [
 
@@ -109,8 +109,8 @@ let tests = [
 
 "test filesystem store" >::
   (fun _ ->
-    let rand_num = string_of_int @@ Random.int 100 in
-    let tmp_dir = Filename.(concat (get_temp_dir_name ()) (rand_num ^ "0.zarr")) in
+    let rand_num = string_of_int @@ Random.int 100_000 in
+    let tmp_dir = Filename.(concat (get_temp_dir_name ()) (rand_num ^ ".zarr")) in
     let s = FilesystemStore.create tmp_dir in
 
     assert_raises

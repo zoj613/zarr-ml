@@ -1,5 +1,6 @@
 type 'a t = 'a
 let return x = x
+let return_unit = ()
 let iter = List.iter
 let iter_s = iter
 let fold_left = List.fold_left

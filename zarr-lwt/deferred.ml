@@ -1,5 +1,6 @@
 type 'a t = 'a Lwt.t
 let return = Lwt.return
+let return_unit = Lwt.return_unit
 let iter = Lwt_list.iter_p
 let iter_s = Lwt_list.iter_s
 let fold_left = Lwt_list.fold_left_s

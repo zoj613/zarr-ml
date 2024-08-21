@@ -32,6 +32,9 @@ open Zarr.Node
 open Zarr.Codecs
 open Zarr_sync.Storage
 
+(* opens infix operators >>= and >>| for monadic bind & map *)
+open FilesytemStore.Deferred.Infix
+
 let store = FilesystemStore.create_store "testdata.zarr";;
 ```
 ### create group
@@ -52,7 +55,7 @@ FilesystemStore.create_array
   array_node
   store;;
 ```
-### open and write to an array
+### read/write from/to an array
 ```ocaml
 let slice = Owl_types.[|R [0; 20]; I 10; R []|];;
 let x = FilesystemStore.read_array store array_node slice Bigarray.Char;;
@@ -62,7 +65,7 @@ let x' =
     (fun _ -> Owl_stats_dist.uniform_int_rvs ~a:0 ~b:255 |> Char.chr) x;;
 FilesystemStore.write_array store array_node slice x';;
 
-FilesystemStore.get_array
+FilesystemStore.read_array
   store array_node Owl_types.[|R [0; 73]; I 10; R [0; 5]|] Bigarray.Char;;
 (*       C0  C1  C2  C3  C4  C5 
  R[0,0]   =      Ð   �       

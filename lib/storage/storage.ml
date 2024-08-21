@@ -8,7 +8,7 @@ module Indexing = Util.Indexing
 
 module ArraySet = Set.Make (struct
   type t = int array
-  let compare = Stdlib.compare
+  let compare (x : t) (y : t) = Stdlib.compare x y
 end)
 
 module Make (Io : Types.IO) = struct
@@ -29,12 +29,12 @@ module Make (Io : Types.IO) = struct
 
   let rec create_group ?(attrs=`Null) t node =
     group_exists t node >>= function
-    | true -> Deferred.return ()
+    | true -> Deferred.return_unit
     | false ->
       let k = GroupNode.to_metakey node in
       set t k GroupMetadata.(update_attributes default attrs |> encode) >>= fun () ->
       match GroupNode.parent node with
-      | None -> Deferred.return ()
+      | None -> Deferred.return_unit
       | Some n -> create_group t n
 
   let create_array
@@ -91,7 +91,8 @@ module Make (Io : Types.IO) = struct
     list t >>= Deferred.iter (erase t)
 
   let write_array t node slice x =
-    get t @@ ArrayNode.to_metakey node >>| ArrayMetadata.decode >>= fun meta ->
+    get t @@ ArrayNode.to_metakey node >>= fun b -> 
+    let meta = ArrayMetadata.decode b in
     let shape = ArrayMetadata.shape meta in
     let slice_shape =
       try Indexing.slice_shape slice shape with
@@ -133,7 +134,8 @@ module Make (Io : Types.IO) = struct
           set t ckey @@ Codecs.Chain.encode chain arr) (ArrayMap.bindings m)
 
   let read_array t node slice kind =
-    get t @@ ArrayNode.to_metakey node >>| ArrayMetadata.decode >>= fun meta ->
+    get t @@ ArrayNode.to_metakey node >>= fun b ->
+    let meta = ArrayMetadata.decode b in
     if not @@ ArrayMetadata.is_valid_kind meta kind
     then raise Invalid_data_type else
     let shape = ArrayMetadata.shape meta in
@@ -161,7 +163,8 @@ module Make (Io : Types.IO) = struct
           size t ckey >>= fun csize ->
           PartialChain.partial_decode chain get_p csize repr pairs
         | true ->
-          get t ckey >>| Codecs.Chain.decode chain repr >>| fun arr ->
+          get t ckey >>| fun v ->
+          let arr = Codecs.Chain.decode chain repr v in
           List.map (fun (i, c) -> i, Ndarray.get arr c) pairs
         | false ->
           Deferred.return @@ List.map (fun (i, _) -> i, fill_value) pairs)
@@ -174,19 +177,20 @@ module Make (Io : Types.IO) = struct
 
   let reshape t node nshape =
     let mkey = ArrayNode.to_metakey node in
-    get t mkey >>| ArrayMetadata.decode >>= fun meta ->
+    get t mkey >>= fun b ->
+    let meta = ArrayMetadata.decode b in
     let oshape = ArrayMetadata.shape meta in
     if Array.(length nshape <> length oshape)
     then raise Invalid_resize_shape else
     let s = ArraySet.of_list @@ ArrayMetadata.chunk_indices meta oshape in
     let s' = ArraySet.of_list @@ ArrayMetadata.chunk_indices meta nshape in
     let pre = ArrayNode.to_key node ^ "/" in
-    Deferred.iter
-      (fun v ->
+    ArraySet.(elements @@ diff s s') |>
+    Deferred.iter begin fun v ->
         let key = pre ^ ArrayMetadata.chunk_key meta v in
         is_member t key >>= function
         | true -> erase t key
-        | false -> Deferred.return ()) ArraySet.(diff s s' |> elements)
-    >>= fun () ->
+        | false -> Deferred.return_unit
+    end >>= fun () ->
     set t mkey @@ ArrayMetadata.(encode @@ update_shape meta nshape)
 end

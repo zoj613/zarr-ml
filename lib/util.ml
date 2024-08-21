@@ -13,7 +13,7 @@ module StrSet = Set.Make(String)
 module ArrayMap = struct
   include Map.Make (struct
     type t = int array
-    let compare = Stdlib.compare
+    let compare (x : t) (y : t) = Stdlib.compare x y
   end)
 
   let add_to_list k v map =

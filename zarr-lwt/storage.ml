@@ -50,7 +50,8 @@ module FilesystemStore = struct
         ~mode:Input
         (key_to_fspath t key)
         (fun ic ->
-          Lwt_io.length ic >>| Int64.to_int >>= fun size ->
+          Lwt_io.length ic >>= fun v ->
+          let size = Int64.to_int v in
           Lwt_list.map_p
             (fun (rs, len) -> 
               let count =
@@ -100,7 +101,7 @@ module FilesystemStore = struct
       Lwt_unix.file_exists @@ key_to_fspath t key
 
     let erase t key =
-      Lwt_preemptive.detach Sys.remove @@ key_to_fspath t key
+      Lwt_unix.unlink @@ key_to_fspath t key
 
     let size t key =
       Lwt_io.file_length (key_to_fspath t key) >>| Int64.to_int

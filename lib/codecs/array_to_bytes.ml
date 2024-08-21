@@ -151,9 +151,9 @@ end = struct
     let shape' =
       match chain.a2a with
       | [] -> shape
-      | l ->
-        ArrayToArray.parse (List.hd l) shape;
-        List.fold_left ArrayToArray.encoded_repr shape l
+      | x :: _ as xs ->
+        ArrayToArray.parse x shape;
+        List.fold_left ArrayToArray.encoded_repr shape xs
     in ArrayToBytes.parse chain.a2b shape'
 
   let parse t shape =
@@ -414,15 +414,9 @@ module Make (Io : Types.IO) = struct
   open ShardingIndexedCodec
   type t = ShardingIndexedCodec.t
 
-  let partial_encode :
-    t ->
-    ((int * int option) list -> string list Deferred.t) ->
-    (?append:bool -> (int * string) list -> unit Deferred.t) ->
-    int ->
-    ('a, 'b) array_repr ->
-    (int array * 'a) list ->
-    unit Deferred.t
-    = fun t get_partial set_partial csize repr pairs ->
+  type set_fn = ?append:bool -> (int * string) list -> unit Deferred.t
+
+  let partial_encode t get_partial (set_partial : set_fn) csize repr pairs =
     let cps = Array.map2 (/) repr.shape t.chunk_shape in
     let is = index_size t.index_codecs cps in
     let l, pad =

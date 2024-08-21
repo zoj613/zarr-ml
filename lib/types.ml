@@ -1,6 +1,7 @@
 module type Deferred = sig
   type 'a t
   val return : 'a -> 'a t
+  val return_unit : unit t
   val iter : ('a -> unit t) -> 'a list -> unit t
   val iter_s : ('a -> unit t) -> 'a list -> unit t
   val fold_left : ('acc -> 'a -> 'acc t) -> 'acc -> 'a list -> 'acc t

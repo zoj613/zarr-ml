@@ -4,6 +4,8 @@ open Zarr.Node
 open Zarr.Codecs
 open Zarr_lwt.Storage
 
+let task_pool = Domainslib.Task.setup_pool ~num_domains:1 ()
+
 let string_of_list = [%show: string list]
 let print_node_pair = [%show: ArrayNode.t list * GroupNode.t list]
 let print_int_array = [%show : int array]
@@ -50,19 +52,19 @@ let test_storage
   let anode = ArrayNode.(gnode / "arrnode") in
   let slice = Owl_types.[|R [0; 20]; I 10; R [0; 29]|] in
 
-  Deferred.iter_s
+  Lwt_list.iter_s
     (fun codecs ->
       let open Bigarray in
       create_array
         ~codecs ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
         Complex32 Complex.one anode store >>= fun () ->
       let exp = Genarray.init Complex32 C_layout [|21; 1; 30|] (Fun.const Complex.one) in
-      write_array store anode slice exp >>= fun () ->
-      read_array store anode slice Complex32 >>= fun got ->
+      write_array ~task_pool store anode slice exp >>= fun () ->
+      read_array ~task_pool store anode slice Complex32 >>= fun got ->
       assert_equal ~printer:Owl_pretty.dsnda_to_string exp got;
       Genarray.fill exp Complex.{re=2.0; im=0.};
-      write_array store anode slice exp >>= fun () ->
-      read_array store anode slice Complex32 >>= fun arr ->
+      write_array ~task_pool store anode slice exp >>= fun () ->
+      read_array ~task_pool store anode slice Complex32 >>= fun arr ->
       assert_equal ~printer:Owl_pretty.dsnda_to_string exp arr;
       Genarray.fill exp Complex.{re=0.; im=3.0};
       write_array store anode slice exp >>= fun () ->
@@ -129,5 +131,6 @@ let tests = [
       (Zarr.Storage.Not_a_filesystem_store fn)
       (fun () -> FilesystemStore.open_store fn);
 
-    Lwt_main.run @@ test_storage (module FilesystemStore) s)
+    Lwt_main.run @@ test_storage (module FilesystemStore) s;
+    Domainslib.Task.teardown_pool task_pool)
 ]

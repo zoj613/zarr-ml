@@ -111,20 +111,20 @@ module FilesystemStore = struct
       Lwt_unix.unlink @@ key_to_fspath t key
 
     let list_prefix t pre =
-      list t >>= Lwt_list.filter_p
+      list t >>= Lwt_list.filter_s
         (fun x -> Lwt.return @@ String.starts_with ~prefix:pre x)
 
     let erase_prefix t pre =
-      list_prefix t pre >>= Lwt_list.iter_p @@ erase t
+      list_prefix t pre >>= Lwt_list.iter_s @@ erase t
 
     let list_dir t pre =
       let module StrSet = Zarr.Util.StrSet in
       let n = String.length pre in
       list_prefix t pre >>= fun pk ->
-      Lwt_list.partition_p
+      Lwt_list.partition_s
         (fun k -> Lwt.return @@ String.contains_from k n '/') pk
       >>= fun (other, keys) ->
-      Lwt_list.map_p
+      Lwt_list.map_s
         (fun k ->
           Lwt.return @@ String.sub k 0 @@ 1 + String.index_from k n '/') other
       >>| fun prefixes -> keys, StrSet.(of_list prefixes |> elements)

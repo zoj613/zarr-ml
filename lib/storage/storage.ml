@@ -90,7 +90,7 @@ module Make (Io : Types.IO) = struct
   let erase_all_nodes t =
     list t >>= Deferred.iter (erase t)
 
-  let write_array t node slice x =
+  let write_array ?task_pool t node slice x =
     get t @@ ArrayNode.to_metakey node >>= fun b -> 
     let meta = ArrayMetadata.decode b in
     let shape = ArrayMetadata.shape meta in
@@ -112,28 +112,34 @@ module Make (Io : Types.IO) = struct
     let repr = Codecs.{kind; shape = ArrayMetadata.chunk_shape meta} in
     let prefix = ArrayNode.to_key node ^ "/" in
     let chain = ArrayMetadata.codecs meta in
-    (* NOTE: there is opportunity to compute this step in parallel since
-       each iteration acts on independent chunks. Maybe use Domainslib? *)
-    Deferred.iter
-      (fun (idx, pairs) ->
-        let ckey = prefix ^ ArrayMetadata.chunk_key meta idx in
-        is_member t ckey >>= function
-        | true when PartialChain.is_just_sharding chain ->
-          size t ckey >>= fun csize ->
-          let get_p = get_partial_values t ckey in
-          let set_p = set_partial_values t ckey in
-          PartialChain.partial_encode chain get_p set_p csize repr pairs
-        | true ->
-          get t ckey >>= fun v ->
-          let arr = Codecs.Chain.decode chain repr v in
-          List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
-          set t ckey @@ Codecs.Chain.encode chain arr
-        | false ->
-          let arr = Ndarray.create repr.kind repr.shape fv in
-          List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
-          set t ckey @@ Codecs.Chain.encode chain arr) (ArrayMap.bindings m)
+    let perform (idx, pairs) =
+      let ckey = prefix ^ ArrayMetadata.chunk_key meta idx in
+      is_member t ckey >>= function
+      | true when PartialChain.is_just_sharding chain ->
+        size t ckey >>= fun csize ->
+        let get_p = get_partial_values t ckey in
+        let set_p = set_partial_values t ckey in
+        PartialChain.partial_encode chain get_p set_p csize repr pairs
+      | true ->
+        get t ckey >>= fun v ->
+        let arr = Codecs.Chain.decode chain repr v in
+        List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
+        set t ckey @@ Codecs.Chain.encode chain arr
+      | false ->
+        let arr = Ndarray.create repr.kind repr.shape fv in
+        List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
+        set t ckey @@ Codecs.Chain.encode chain arr
+    in
+    match task_pool with
+    | Some p ->
+      let bnd = ArrayMap.bindings m in
+      Deferred.join @@
+      Domainslib.Task.run p @@ fun () ->
+      List.map (Domainslib.Task.await p) @@
+      List.map (fun v -> Domainslib.Task.async p @@ fun () -> perform v) bnd
+    | None -> Deferred.iter perform @@ ArrayMap.bindings m
 
-  let read_array t node slice kind =
+  let read_array ?task_pool t node slice kind =
     get t @@ ArrayNode.to_metakey node >>= fun b ->
     let meta = ArrayMetadata.decode b in
     if not @@ ArrayMetadata.is_valid_kind meta kind
@@ -150,25 +156,30 @@ module Make (Io : Types.IO) = struct
           ArrayMap.add_to_list k (i, c) acc) ArrayMap.empty ic in
     let chain = ArrayMetadata.codecs meta in
     let prefix = ArrayNode.to_key node ^ "/" in
-    let fill_value = ArrayMetadata.fillvalue_of_kind meta kind in
+    let fv = ArrayMetadata.fillvalue_of_kind meta kind in
     let repr = Codecs.{kind; shape = ArrayMetadata.chunk_shape meta} in
-    (* NOTE: there is opportunity to compute this step in parallel since
-       each iteration acts on independent chunks. *)
-    Deferred.concat_map
-      (fun (idx, pairs) ->
-        let ckey = prefix ^ ArrayMetadata.chunk_key meta idx in
-        is_member t ckey >>= function
-        | true when PartialChain.is_just_sharding chain ->
-          let get_p = get_partial_values t ckey in
-          size t ckey >>= fun csize ->
-          PartialChain.partial_decode chain get_p csize repr pairs
-        | true ->
-          get t ckey >>| fun v ->
-          let arr = Codecs.Chain.decode chain repr v in
-          List.map (fun (i, c) -> i, Ndarray.get arr c) pairs
-        | false ->
-          Deferred.return @@ List.map (fun (i, _) -> i, fill_value) pairs)
-      (ArrayMap.bindings m) >>| fun pairs ->
+    let perform (idx, pairs) =
+      let ckey = prefix ^ ArrayMetadata.chunk_key meta idx in
+      is_member t ckey >>= function
+      | true when PartialChain.is_just_sharding chain ->
+        let get_p = get_partial_values t ckey in
+        size t ckey >>= fun csize ->
+        PartialChain.partial_decode chain get_p csize repr pairs
+      | true ->
+        get t ckey >>| fun v ->
+        let arr = Codecs.Chain.decode chain repr v in
+        List.map (fun (i, c) -> i, Ndarray.get arr c) pairs
+      | false -> Deferred.return @@ List.map (fun (i, _) -> i, fv) pairs
+    in
+    begin match task_pool with
+      | Some p ->
+        let bnd = ArrayMap.bindings m in
+        Deferred.concat_all @@
+        Domainslib.Task.run p @@ fun () ->
+        List.map (Domainslib.Task.await p) @@
+        List.map (fun v -> Domainslib.Task.async p @@ fun () -> perform v) bnd
+      | None -> Deferred.concat_map perform @@ ArrayMap.bindings m
+    end >>| fun pairs ->
     (* sorting restores the C-order of the decoded array coordinates. *)
     let v =
       Array.of_list @@ snd @@ List.split @@

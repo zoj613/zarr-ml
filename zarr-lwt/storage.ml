@@ -52,7 +52,7 @@ module FilesystemStore = struct
         (fun ic ->
           Lwt_io.length ic >>= fun v ->
           let size = Int64.to_int v in
-          Lwt_list.map_p
+          Lwt_list.map_s
             (fun (rs, len) -> 
               let count =
                 match len with
@@ -74,7 +74,6 @@ module FilesystemStore = struct
         (Fun.flip Lwt_io.write value)
 
     let set_partial_values t key ?(append=false) rvs =
-      let iter_fn = if append then Lwt_list.iter_s else Lwt_list.iter_p in
       let flags = Unix.[O_NONBLOCK; O_RDWR] in
       Lwt_io.with_file
         ~flags:(if append then Unix.O_APPEND :: flags else flags)
@@ -82,9 +81,10 @@ module FilesystemStore = struct
         ~mode:Output
         (key_to_fspath t key)
         (fun oc ->
-          iter_fn (fun (rs, value) ->
-            Lwt_io.set_position oc @@ Int64.of_int rs >>= fun () ->
-            Lwt_io.write oc value) rvs)
+          Lwt_list.iter_s
+            (fun (rs, value) ->
+              Lwt_io.set_position oc @@ Int64.of_int rs >>= fun () ->
+              Lwt_io.write oc value) rvs)
 
     let list t =
       let rec filter_concat acc dir =

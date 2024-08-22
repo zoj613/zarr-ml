@@ -432,26 +432,41 @@ module Make (Io : Types.IO) = struct
           let id, co = RegularGrid.index_coord_pair grid c in
           ArrayMap.add_to_list id (co, v) acc) ArrayMap.empty pairs
     in
-    let inner = {repr with shape = t.chunk_shape} in
-    Deferred.fold_left
-      (fun acc (idx, z) ->
-        let oc = Array.append idx [|0|] in
-        let nc = Array.append idx [|1|] in
-        let ofs = Stdint.Uint64.to_int @@ Any.get idx_arr oc in
-        let nb = Stdint.Uint64.to_int @@ Any.get idx_arr nc in
-        get_partial [pad + ofs, Some nb] >>= fun l ->
-        let arr = decode_chain t.codecs inner @@ List.hd l in
-        List.iter (fun (c, v) -> Ndarray.set arr c v) z;
-        let s = encode_chain t.codecs arr in
-        let nb' = String.length s in
-        (* if codec chain doesnt contain compression, update chunk in-place *)
-        if nb' = nb then set_partial [pad + ofs, s] >>| fun () -> acc
-        else
-          (Any.set idx_arr oc @@ Stdint.Uint64.of_int acc;
-          Any.set idx_arr nc @@ Stdint.Uint64.of_int nb';
-          set_partial ~append:true [acc, s] >>| fun () ->
-          acc + nb')) (csize - pad) @@ ArrayMap.bindings m
-    >>= fun bsize ->
+    let bindings = ArrayMap.bindings m in
+    let ranges, coords =
+      List.split @@
+      List.map
+       (fun (i, _) ->
+          let oc = Array.append i [|0|] in
+          let nc = Array.append i [|1|] in
+          let ofs = Stdint.Uint64.to_int @@ Any.get idx_arr oc in
+          let nb = Stdint.Uint64.to_int @@ Any.get idx_arr nc in
+          (pad + ofs, Some nb), (oc, nc, ofs, nb)) bindings
+    in
+    get_partial ranges >>= fun xs ->
+    let repr' = {repr with shape = t.chunk_shape} in
+    let bsize, inplace, append = 
+    List.fold_left
+      (fun (a, l, r) ((x, (oc, nc, ofs, nb)), (_, z)) -> 
+          let arr = decode_chain t.codecs repr' x in
+          List.iter (fun (c, v) -> Ndarray.set arr c v) z;
+          let s = encode_chain t.codecs arr in
+          let nb' = String.length s in
+          if nb' = nb then a, (pad + ofs, s) :: l, r
+          else
+            (Any.set idx_arr oc @@ Stdint.Uint64.of_int a;
+            Any.set idx_arr nc @@ Stdint.Uint64.of_int nb';
+            a + nb', l, (a, s) :: r)) 
+      (csize - pad, [], []) List.(combine (combine xs coords) bindings)
+    in
+    begin match inplace with
+      | [] -> Deferred.return_unit
+      | xs -> set_partial xs
+    end >>= fun () ->
+    begin match append with
+      | [] -> Deferred.return_unit
+      | xs -> set_partial ~append:true xs
+    end >>= fun () ->
     let ib = encode_index_chain t.index_codecs idx_arr in
     match t.index_location with
     | Start -> set_partial [0, ib]
@@ -471,15 +486,22 @@ module Make (Io : Types.IO) = struct
       List.fold_left
         (fun acc (i, y) ->
           let id, c = RegularGrid.index_coord_pair grid y in
-          ArrayMap.add_to_list id (i, c) acc) ArrayMap.empty pairs in
-    let inner = {repr with shape = t.chunk_shape} in
-    Deferred.concat_map
-      (fun (idx, z) ->
-        let oc = Array.append idx [|0|] in
-        let nc = Array.append idx [|1|] in
-        let ofs = Stdint.Uint64.to_int @@ Any.get idx_arr oc in
-        let nb = Stdint.Uint64.to_int @@ Any.get idx_arr nc in
-        get_partial [pad + ofs, Some nb] >>| fun l ->
-        let arr = decode_chain t.codecs inner @@ List.hd l in
-        List.map (fun (i, c) -> (i, Ndarray.get arr c)) z) (ArrayMap.bindings m)
+          ArrayMap.add_to_list id (i, c) acc) ArrayMap.empty pairs
+    in
+    let ranges =
+      List.map
+       (fun (i, _) ->
+          let oc = Array.append i [|0|] in
+          let nc = Array.append i [|1|] in
+          let ofs = Stdint.Uint64.to_int @@ Any.get idx_arr oc in
+          let nb = Stdint.Uint64.to_int @@ Any.get idx_arr nc in
+          pad + ofs, Some nb) ArrayMap.(bindings m)
+    in
+    get_partial ranges >>| fun xs ->
+    let repr' = {repr with shape = t.chunk_shape} in
+    List.concat_map
+      (fun (x, (_, z)) ->
+        let arr = decode_chain t.codecs repr' x in
+        List.map (fun (i, c) -> i, Ndarray.get arr c) z)
+      List.(combine xs @@ ArrayMap.bindings m)
 end

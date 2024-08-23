@@ -24,7 +24,7 @@ jobs:
           - ubuntu-latest
         ocaml-compiler:
           - "5.1.1"
-          - "4.14.2"
+          - "5.0.0"
       fail-fast: false
 
     name: Ocaml version - ${{ matrix.ocaml-compiler }} - ${{ matrix.os }}
@@ -35,7 +35,7 @@ jobs:
           fetch-depth: 2
 
       - name: setup-ocaml
-        uses: ocaml/setup-ocaml@v2
+        uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
 

@@ -102,5 +102,6 @@ let rec create_parent_dir fn perm =
   let parent_dir = Filename.dirname fn in
   if not (Sys.file_exists parent_dir) then begin
     create_parent_dir parent_dir perm;
-    Sys.mkdir parent_dir perm
+    try Sys.mkdir parent_dir perm with
+    | Sys_error _ -> ()
   end

@@ -2,10 +2,10 @@ module type Deferred = sig
   type 'a t
   val return : 'a -> 'a t
   val return_unit : unit t
+  val join : unit t list -> unit t
+  val concat_all : 'a list t list -> 'a list t
   val iter : ('a -> unit t) -> 'a list -> unit t
-  val iter_s : ('a -> unit t) -> 'a list -> unit t
   val fold_left : ('acc -> 'a -> 'acc t) -> 'acc -> 'a list -> 'acc t
-  val map : ('a -> 'b t) -> 'a list -> 'b list t
   val concat_map : ('a -> 'b list t) -> 'a list -> 'b list t
   module Infix : sig
     val (>>=) : 'a t -> ('a -> 'b t) -> 'b t

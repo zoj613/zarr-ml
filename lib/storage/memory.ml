@@ -47,12 +47,12 @@ module Make (Deferred : Types.Deferred) = struct
     if not success then erase_prefix t pre else Deferred.return_unit
 
   let get_partial_values t key ranges =
-    Deferred.map
-      (fun (rs, len) ->
+      Deferred.fold_left
+      (fun acc (rs, len) ->
         get t key >>| fun v ->
         (match len with
-        | None -> String.sub v rs @@ String.length v - rs
-        | Some l -> String.sub v rs l)) ranges
+        | None -> String.sub v rs (String.length v - rs) :: acc
+        | Some l -> String.sub v rs l :: acc)) [] @@ List.rev ranges
 
   let set_partial_values t key ?(append=false) rv =
     Deferred.iter

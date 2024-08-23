@@ -92,6 +92,7 @@ module type STORE = sig
       of store [t] and [false] otherwise. *)
 
   val write_array :
+    ?task_pool:Domainslib.Task.pool ->
     t ->
     ArrayNode.t ->
     Owl_types.index array ->
@@ -107,6 +108,7 @@ module type STORE = sig
           described in its metadata document. *)
 
   val read_array :
+    ?task_pool:Domainslib.Task.pool ->
     t ->
     ArrayNode.t ->
     Owl_types.index array ->

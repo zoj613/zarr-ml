@@ -26,12 +26,13 @@
    arrays, designed for use in parallel computing.")
  (depends
    dune
-   (ocaml (>= 4.14.2))
+   (ocaml (>= 5.0.0))
    yojson
    ezgzip
    owl
    stdint
    checkseum
+   domainslib
    (odoc :with-doc)
    (ounit2 :with-test)
    (ppx_deriving :with-test)
@@ -45,7 +46,7 @@
  (synopsis "Synchronous API for Zarr.")
  (depends
    dune
-   (ocaml (>= 4.14.2))
+   (ocaml (>= 5.0.0))
    (zarr (= :version))
    (odoc :with-doc)
    (ounit2 :with-test)
@@ -57,7 +58,7 @@
  (synopsis "Lwt-aware API for Zarr.")
  (depends
    dune
-   (ocaml (>= 4.14.2))
+   (ocaml (>= 5.0.0))
    (zarr (= :version))
    lwt
    (odoc :with-doc)

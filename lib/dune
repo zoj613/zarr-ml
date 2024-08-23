@@ -6,6 +6,7 @@
    ezgzip
    owl
    stdint
+   domainslib
    checkseum)
  (ocamlopt_flags
    (:standard -O3))

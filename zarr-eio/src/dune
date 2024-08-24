@@ -1,0 +1,10 @@
+(library
+ (name zarr_eio)
+ (public_name zarr-eio)
+ (libraries
+   zarr
+   eio_main)
+ (ocamlopt_flags
+   (:standard -O3))
+ (instrumentation
+   (backend bisect_ppx)))

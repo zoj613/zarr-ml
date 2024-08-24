@@ -13,10 +13,10 @@ arrays, designed for use in parallel computing.
 - Supports indexing operations to read/write views of a Zarr array.
 - Supports storing arrays in-memory or the local filesystem. It is also
   extensible, allowing users to create and use their own custom storage backends.
-- Supports both synchronous and concurrent I/O via the the [Lwt][4] library.
+- Supports both synchronous and concurrent I/O via [Lwt][4] and [Eio][8].
 - Leverages the strong type system of Ocaml to create a type-safe API; making
   it impossible to create, read or write malformed arrays.
-- Supports organasing arrays into heirarchies via groups.
+- Supports organizing arrays into heirarchies via groups.
 
 ## Documentation
 API documentation can be found [here][5]. The full specification of the storage
@@ -24,7 +24,7 @@ format can be found [there][6].
 
 ## Quick start
 Below is a demonstration of the library's API for synchronous reads/writes.
-A similar example using the Asynchronous API can be found [here][7]
+A similar example using the `Lwt`-backed Asynchronous API can be found [here][7]
 ### setup
 ```ocaml
 open Zarr.Metadata
@@ -131,3 +131,4 @@ FilesystemStore.erase_group_node store group_node;;
 [5]: https://zoj613.github.io/zarr-ml
 [6]: https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html
 [7]: https://zoj613.github.io/zarr-ml/zarr/Zarr/index.html#examples
+[8]: https://github.com/ocaml-multicore/eio

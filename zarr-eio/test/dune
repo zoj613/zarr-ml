@@ -1,0 +1,7 @@
+(test
+ (name test_eio)
+ (libraries
+   zarr-eio
+   ounit2)
+ (preprocess
+   (pps ppx_deriving.show)))

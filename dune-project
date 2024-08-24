@@ -64,3 +64,16 @@
    (ounit2 :with-test)
    (bisect_ppx
      (and :dev (>= 2.5.0) :with-test))))
+
+(package
+ (name zarr-eio)
+ (synopsis "Eio-aware API for Zarr.")
+ (depends
+   dune
+   (ocaml (>= 5.1.0))
+   (zarr (= :version))
+   eio_main
+   (odoc :with-doc)
+   (ounit2 :with-test)
+   (bisect_ppx
+     (and :dev (>= 2.5.0) :with-test))))

@@ -1,0 +1,7 @@
+(test
+ (name test_all)
+ (libraries
+   zarr
+   ounit2)
+ (preprocess
+   (pps ppx_deriving.show)))

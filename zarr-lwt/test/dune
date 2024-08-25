@@ -1,8 +1,6 @@
 (test
- (name test_zarr)
+ (name test_lwt)
  (libraries
-   zarr
-   zarr-sync
    zarr-lwt
    ounit2)
  (preprocess

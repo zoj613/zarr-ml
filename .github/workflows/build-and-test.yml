@@ -15,17 +15,19 @@ defaults:
 
 
 jobs:
-  build-and-test:
+  build-and-test-core:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
         os:
           - ubuntu-latest
         ocaml-compiler:
           - "5.1.1"
           - "4.14.2"
-      fail-fast: false
+        local-packages:
+          - zarr.opam
 
     name: Ocaml version - ${{ matrix.ocaml-compiler }} - ${{ matrix.os }}
     steps:
@@ -41,13 +43,15 @@ jobs:
 
       - name: setup
         run: |
-          opam install . --deps-only --with-test --with-doc --yes
-
-      - name: build library 
-        run: opam exec -- dune build lib
+          opam install --deps-only --with-test --with-doc --yes zarr
+          opam install lwt --yes
+          opam exec -- dune build zarr zarr-sync zarr-lwt
 
       - name: test
-        run: opam exec -- dune exec --instrument-with bisect_ppx --force -- _build/default/test/test_zarr.exe -runner sequential -ci true
+        run: |
+          opam exec -- dune exec --instrument-with bisect_ppx --force -- _build/default/zarr/test/test_all.exe -runner sequential -ci true
+          opam exec -- dune exec --instrument-with bisect_ppx --force -- _build/default/zarr-sync/test/test_sync.exe -runner sequential -ci true
+          opam exec -- dune exec --instrument-with bisect_ppx --force -- _build/default/zarr-lwt/test/test_lwt.exe -runner sequential -ci true
 
       - name: Upload code coverage report
         run: opam exec -- bisect-ppx-report send-to Codecov

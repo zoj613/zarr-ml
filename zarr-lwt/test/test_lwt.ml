@@ -50,7 +50,7 @@ let test_storage
   let anode = ArrayNode.(gnode / "arrnode") in
   let slice = Owl_types.[|R [0; 20]; I 10; R [0; 29]|] in
 
-  Deferred.iter_s
+  Lwt_list.iter_s
     (fun codecs ->
       let open Bigarray in
       create_array
@@ -99,35 +99,32 @@ let test_storage
   assert_equal ~printer:print_node_pair ([], []) got;
   Deferred.return_unit
 
-let tests = [
+let _ = 
+  run_test_tt_main @@ ("Run Zarr Lwt API tests" >::: [
+    "test lwt-based stores" >::
+    (fun _ ->
+      let rand_num = string_of_int @@ Random.int 100_000 in
+      let tmp_dir = Filename.(concat (get_temp_dir_name ()) (rand_num ^ ".zarr")) in
+      let s = FilesystemStore.create tmp_dir in
 
-"test in-memory store" >::
-  (fun _ ->
-    Lwt_main.run @@
-    test_storage (module MemoryStore) @@ MemoryStore.create ())
-;
+      assert_raises
+        (Sys_error (Format.sprintf "%s: File exists" tmp_dir))
+        (fun () -> FilesystemStore.create tmp_dir);
 
-"test filesystem store" >::
-  (fun _ ->
-    let rand_num = string_of_int @@ Random.int 100_000 in
-    let tmp_dir = Filename.(concat (get_temp_dir_name ()) (rand_num ^ ".zarr")) in
-    let s = FilesystemStore.create tmp_dir in
+      ignore @@ FilesystemStore.open_store tmp_dir;
 
-    assert_raises
-      (Sys_error (Format.sprintf "%s: File exists" tmp_dir))
-      (fun () -> FilesystemStore.create tmp_dir);
+      let fakedir = "non-existant-zarr-store112345.zarr" in
+      assert_raises
+        (Sys_error (Printf.sprintf "%s: No such file or directory" fakedir))
+        (fun () -> FilesystemStore.open_store fakedir);
 
-    ignore @@ FilesystemStore.open_store tmp_dir;
+      let fn = Filename.temp_file "nonexistantfile" ".zarr" in
+      assert_raises
+        (Zarr.Storage.Not_a_filesystem_store fn)
+        (fun () -> FilesystemStore.open_store fn);
 
-    let fakedir = "non-existant-zarr-store112345.zarr" in
-    assert_raises
-      (Sys_error (Printf.sprintf "%s: No such file or directory" fakedir))
-      (fun () -> FilesystemStore.open_store fakedir);
-
-    let fn = Filename.temp_file "nonexistantfile" ".zarr" in
-    assert_raises
-      (Zarr.Storage.Not_a_filesystem_store fn)
-      (fun () -> FilesystemStore.open_store fn);
-
-    Lwt_main.run @@ test_storage (module FilesystemStore) s)
-]
+      Lwt_main.run @@
+      Lwt.join 
+        [test_storage (module MemoryStore) @@ MemoryStore.create ()
+        ;test_storage (module FilesystemStore) s])
+])

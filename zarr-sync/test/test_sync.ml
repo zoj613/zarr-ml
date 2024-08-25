@@ -16,31 +16,30 @@ end
 let test_storage
   (type a) (module M : SYNC_STORE with type t = a) (store : a) =
   let open M in
-  let open M.Deferred.Infix in
   let gnode = GroupNode.root in
 
-  find_all_nodes store >>= fun nodes ->
+  let nodes = find_all_nodes store in
   assert_equal ~printer:print_node_pair ([], []) nodes;
 
-  create_group store gnode >>= fun () ->
-  group_exists store gnode >>= fun exists ->
+  create_group store gnode;
+  let exists = group_exists store gnode in
   assert_equal ~printer:string_of_bool true exists;
 
-  group_metadata store gnode >>= fun meta ->
+  let meta = group_metadata store gnode in
   assert_equal ~printer:GroupMetadata.show GroupMetadata.default meta;
 
-  erase_group_node store gnode >>= fun () ->
-  group_exists store gnode >>= fun exists ->
+  erase_group_node store gnode;
+  let exists = group_exists store gnode in
   assert_equal ~printer:string_of_bool false exists;
-  find_all_nodes store >>= fun nodes ->
+  let nodes = find_all_nodes store in
   assert_equal ~printer:print_node_pair ([], []) nodes;
 
   let attrs = `Assoc [("questions", `String "answer")] in
-  create_group ~attrs store gnode >>= fun () ->
-  group_metadata store gnode >>= fun meta ->
+  create_group ~attrs store gnode;
+  let meta = group_metadata store gnode in
   assert_equal ~printer:Yojson.Safe.show attrs @@ GroupMetadata.attributes meta;
 
-  array_exists store @@ ArrayNode.(gnode / "non-member") >>= fun exists ->
+  let exists = array_exists store @@ ArrayNode.(gnode / "non-member") in
   assert_equal ~printer:string_of_bool false exists;
 
   let cfg =
@@ -56,7 +55,7 @@ let test_storage
   let anode = ArrayNode.(gnode / "arrnode") in
   let slice = Owl_types.[|R [0; 20]; I 10; R [0; 29]|] in
 
-  Deferred.iter
+  List.iter
     (fun codecs ->
       create_array
         ~codecs ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
@@ -142,33 +141,34 @@ let test_storage
   let got = find_all_nodes store in
   assert_equal ~printer:print_node_pair ([], []) got
 
-let tests = [
+let _ =
+  run_test_tt_main @@ ("Run Zarr sync API tests" >::: [
 
-"test in-memory store" >::
-  (fun _ -> test_storage (module MemoryStore) @@ MemoryStore.create ())
-;
+  "test in-memory store" >::
+    (fun _ -> test_storage (module MemoryStore) @@ MemoryStore.create ())
+  ;
 
-"test filesystem store" >::
-  (fun _ ->
-    let rand_num = string_of_int @@ Random.int 1_000_000 in
-    let tmp_dir = Filename.(concat (get_temp_dir_name ()) (rand_num ^ ".zarr")) in
-    let s = FilesystemStore.create tmp_dir in
+  "test filesystem store" >::
+    (fun _ ->
+      let rand_num = string_of_int @@ Random.int 1_000_000 in
+      let tmp_dir = Filename.(concat (get_temp_dir_name ()) (rand_num ^ ".zarr")) in
+      let s = FilesystemStore.create tmp_dir in
 
-    assert_raises
-      (Sys_error (Format.sprintf "%s: File exists" tmp_dir))
-      (fun () -> FilesystemStore.create tmp_dir);
+      assert_raises
+        (Sys_error (Format.sprintf "%s: File exists" tmp_dir))
+        (fun () -> FilesystemStore.create tmp_dir);
 
-    ignore @@ FilesystemStore.open_store tmp_dir;
+      ignore @@ FilesystemStore.open_store tmp_dir;
 
-    let fakedir = "non-existant-zarr-store112345.zarr" in
-    assert_raises
-      (Sys_error (Printf.sprintf "%s: No such file or directory" fakedir))
-      (fun () -> FilesystemStore.open_store fakedir);
+      let fakedir = "non-existant-zarr-store112345.zarr" in
+      assert_raises
+        (Sys_error (Printf.sprintf "%s: No such file or directory" fakedir))
+        (fun () -> FilesystemStore.open_store fakedir);
 
-    let fn = Filename.temp_file "nonexistantfile" ".zarr" in
-    assert_raises
-      (Zarr.Storage.Not_a_filesystem_store fn)
-      (fun () -> FilesystemStore.open_store fn);
+      let fn = Filename.temp_file "nonexistantfile" ".zarr" in
+      assert_raises
+        (Zarr.Storage.Not_a_filesystem_store fn)
+        (fun () -> FilesystemStore.open_store fn);
 
-    test_storage (module FilesystemStore) s)
-]
+      test_storage (module FilesystemStore) s)
+  ])

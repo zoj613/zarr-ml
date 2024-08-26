@@ -87,8 +87,7 @@ module Make (Io : Types.IO) = struct
   let erase_array_node t node =
     erase_prefix t @@ ArrayNode.to_key node ^ "/"
 
-  let erase_all_nodes t =
-    list t >>= Deferred.iter (erase t)
+  let erase_all_nodes t = erase_prefix t ""
 
   let write_array t node slice x =
     get t @@ ArrayNode.to_metakey node >>= fun b -> 

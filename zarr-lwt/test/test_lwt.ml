@@ -111,7 +111,8 @@ let _ =
         (Sys_error (Format.sprintf "%s: File exists" tmp_dir))
         (fun () -> FilesystemStore.create tmp_dir);
 
-      ignore @@ FilesystemStore.open_store tmp_dir;
+      (* ensure it works with an extra "/" appended to directory name. *)
+      ignore @@ FilesystemStore.open_store (tmp_dir ^ "/");
 
       let fakedir = "non-existant-zarr-store112345.zarr" in
       assert_raises

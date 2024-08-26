@@ -11,10 +11,7 @@ module FilesystemStore = struct
     type t = {dirname : string; perm : Lwt_unix.file_perm}
 
     let fspath_to_key t path =
-      let ld = String.length t.dirname in
-      let pos =
-        if Filename.dir_sep = String.sub t.dirname (ld - 1) 1
-        then ld else ld + 1 in
+      let pos = String.length t.dirname + 1 in
       String.sub path pos @@ String.length path - pos
 
     let key_to_fspath t key = Filename.concat t.dirname key
@@ -108,33 +105,56 @@ module FilesystemStore = struct
     let erase t key =
       Lwt_unix.unlink @@ key_to_fspath t key
 
-    let list_prefix t pre =
-      list t >>= Lwt_list.filter_s
-        (fun x -> Lwt.return @@ String.starts_with ~prefix:pre x)
+    let list_prefix t prefix =
+      let rec filter_concat acc dir =
+        Lwt_stream.fold_s
+          (fun x a -> 
+            if x = "." || x  = ".." then Lwt.return a else
+            match Filename.concat dir x with
+            | p when Sys.is_directory p -> filter_concat a p
+            | p ->
+              let key = fspath_to_key t p in 
+              if String.starts_with ~prefix key
+              then Lwt.return @@ key :: a else Lwt.return a)
+          (Lwt_unix.files_of_directory dir) acc
+      in filter_concat [] @@ key_to_fspath t ""
 
     let erase_prefix t pre =
       list_prefix t pre >>= Lwt_list.iter_s @@ erase t
 
-    let list_dir t pre =
+    let list_dir t prefix =
       let module StrSet = Zarr.Util.StrSet in
-      let n = String.length pre in
-      list_prefix t pre >>= fun pk ->
-      Lwt_list.partition_s
-        (fun k -> Lwt.return @@ String.contains_from k n '/') pk
-      >>= fun (other, keys) ->
-      Lwt_list.map_s
-        (fun k ->
-          Lwt.return @@ String.sub k 0 @@ 1 + String.index_from k n '/') other
-      >>| fun prefixes -> keys, StrSet.(of_list prefixes |> elements)
+      let n = String.length prefix in
+      let rec filter_concat acc dir =
+        Lwt_stream.fold_s
+          (fun x ((l, r) as a) -> 
+            if x = "." || x  = ".." then Lwt.return a else
+            match Filename.concat dir x with
+            | p when Sys.is_directory p -> filter_concat a p
+            | p ->
+              let key = fspath_to_key t p in
+              let pred = String.starts_with ~prefix key in
+              match key with
+              | k when pred && String.contains_from k n '/' ->
+                Lwt.return (StrSet.add String.(sub k 0 @@ 1 + index_from k n '/') l, r)
+              | k when pred -> Lwt.return (l, k :: r)
+              | _ -> Lwt.return a)
+          (Lwt_unix.files_of_directory dir) acc
+      in
+      filter_concat (StrSet.empty, []) (key_to_fspath t "") >>| fun (y, x) ->
+      x, StrSet.elements y
   end
 
+  module U = Zarr.Util
+
   let create ?(perm=0o700) dirname =
-    Zarr.Util.create_parent_dir dirname perm;
+    U.create_parent_dir dirname perm;
     Sys.mkdir dirname perm;
-    FS.{dirname; perm}
+    FS.{dirname = U.sanitize_dir dirname; perm}
 
   let open_store ?(perm=0o700) dirname =
-    if Sys.is_directory dirname then FS.{dirname; perm}
+    if Sys.is_directory dirname
+    then FS.{dirname = U.sanitize_dir dirname; perm}
     else raise @@ Zarr.Storage.Not_a_filesystem_store dirname
 
   include Zarr.Storage.Make(FS)

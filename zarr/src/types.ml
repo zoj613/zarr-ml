@@ -4,7 +4,6 @@ module type Deferred = sig
   val return_unit : unit t
   val iter : ('a -> unit t) -> 'a list -> unit t
   val fold_left : ('acc -> 'a -> 'acc t) -> 'acc -> 'a list -> 'acc t
-  val map : ('a -> 'b t) -> 'a list -> 'b list t
   val concat_map : ('a -> 'b list t) -> 'a list -> 'b list t
   module Infix : sig
     val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
@@ -47,7 +46,6 @@ module type IO = sig
   val erase : t -> key -> unit Deferred.t
   val erase_prefix : t -> key -> unit Deferred.t
   val list : t -> key list Deferred.t
-  val list_prefix : t -> key -> key list Deferred.t
   val list_dir : t -> key -> (key list * prefix list) Deferred.t
   val is_member : t -> key -> bool Deferred.t
 end

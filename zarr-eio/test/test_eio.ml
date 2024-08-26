@@ -147,14 +147,15 @@ let _ =
     (fun _ ->
       Eio_main.run @@ fun env ->
       let rand_num = string_of_int @@ Random.int 1_000_000 in
-      let tmp_dir = Filename.(concat (get_temp_dir_name ()) (rand_num ^ ".zarr/")) in
+      let tmp_dir = Filename.(concat (get_temp_dir_name ()) (rand_num ^ ".zarr")) in
       let s = FilesystemStore.create ~env tmp_dir in
 
       assert_raises
         (Sys_error (Format.sprintf "%s: File exists" tmp_dir))
         (fun () -> FilesystemStore.create ~env tmp_dir);
 
-      ignore @@ FilesystemStore.open_store ~env tmp_dir;
+      (* ensure it works with an extra "/" appended to directory name. *)
+      ignore @@ FilesystemStore.open_store ~env (tmp_dir ^ "/");
 
       let fakedir = "non-existant-zarr-store112345.zarr" in
       assert_raises

@@ -104,3 +104,8 @@ let rec create_parent_dir fn perm =
     create_parent_dir parent_dir perm;
     Sys.mkdir parent_dir perm
   end
+
+let sanitize_dir dir =
+  match Filename.chop_suffix_opt ~suffix:"/" dir with
+  | None -> dir
+  | Some d -> d

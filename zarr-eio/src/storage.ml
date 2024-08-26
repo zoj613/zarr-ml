@@ -5,13 +5,9 @@ module FilesystemStore = struct
     type t = {root : Eio.Fs.dir_ty Eio.Path.t; perm : Eio.File.Unix_perm.t}
 
     let fspath_to_key t (path : Eio.Fs.dir_ty Eio.Path.t) =
-      let rootdir = snd t.root in
-      let p = snd path in
-      let ld = String.length rootdir in
-      let pos =
-        if Filename.dir_sep = String.sub rootdir (ld - 1) 1 
-        then ld else ld + 1 in
-      String.sub p pos @@ String.length p - pos
+      let s = snd path in
+      let pos = String.length (snd t.root) + 1 in
+      String.sub s pos @@ String.length s - pos
 
     let key_to_fspath t key = Eio.Path.(t.root / key)
 
@@ -74,38 +70,56 @@ module FilesystemStore = struct
     let erase t key =
       Eio.Path.unlink @@ key_to_fspath t key
 
-    let list_prefix t pre =
-      List.filter (String.starts_with ~prefix:pre) (list t)
+    let list_prefix t prefix =
+      let rec aux acc dir =
+        let xs = Eio.Path.read_dir dir in
+        List.concat_map
+          (fun x ->
+            match Eio.Path.(dir / x) with 
+            | p when Eio.Path.is_directory p -> aux acc p
+            | p ->
+              let key = fspath_to_key t p in
+              if String.starts_with ~prefix key then key :: acc else acc) xs
+      in aux [] t.root
 
     let erase_prefix t pre =
       (* if prefix points to the root of the store, only delete sub-dirs and files.*)
       let prefix = key_to_fspath t pre in
-      if snd prefix = snd t.root
+      if Filename.chop_suffix (snd prefix) "/" = snd t.root
       then List.iter (erase t) @@ list_prefix t pre
       else Eio.Path.rmtree ~missing_ok:true prefix
 
-    let list_dir t pre =
+    let list_dir t prefix =
       let module StrSet = Zarr.Util.StrSet in
-      let n = String.length pre in
-      let pk = list_prefix t pre in
-      let prefixes, keys =
-        List.partition_map
-          (fun k ->
-            if String.contains_from k n '/' then
-              Either.left @@
-              String.sub k 0 @@ 1 + String.index_from k n '/'
-            else Either.right k) pk in
-      keys, StrSet.(of_list prefixes |> elements)
+      let n = String.length prefix in
+      let rec aux acc dir =
+        List.fold_left
+          (fun ((l, r) as a) x ->
+            match Eio.Path.(dir / x) with 
+            | p when Eio.Path.is_directory p -> aux a p
+            | p ->
+              let key = fspath_to_key t p in
+              let pred = String.starts_with ~prefix key in
+              match key with
+              | k when pred && String.contains_from k n '/' ->
+                StrSet.add String.(sub k 0 @@ 1 + index_from k n '/') l, r
+              | k when pred -> l, k :: r
+              | _ -> a) acc @@ Eio.Path.read_dir dir
+      in
+      let prefs, keys = aux (StrSet.empty, []) t.root in
+      keys, StrSet.elements prefs
   end
 
+  module U = Zarr.Util
+
   let create ?(perm=0o700) ~env dirname =
-    Zarr.Util.create_parent_dir dirname perm;
+    U.create_parent_dir dirname perm;
     Sys.mkdir dirname perm;
-    FS.{root = Eio.Path.(Eio.Stdenv.fs env / dirname); perm}
+    FS.{root = Eio.Path.(Eio.Stdenv.fs env / U.sanitize_dir dirname); perm}
 
   let open_store ?(perm=0o700) ~env dirname =
     if Sys.is_directory dirname
-    then FS.{root = Eio.Path.(Eio.Stdenv.fs env / dirname); perm}
+    then FS.{root = Eio.Path.(Eio.Stdenv.fs env / U.sanitize_dir dirname); perm}
     else raise @@ Zarr.Storage.Not_a_filesystem_store dirname
 
   include Zarr.Storage.Make(FS)

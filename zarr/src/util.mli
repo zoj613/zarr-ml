@@ -63,3 +63,6 @@ val max : int array -> int
 val create_parent_dir : string -> Unix.file_perm -> unit
 (** [create_parent_dir f p] creates all the parent directories of file name
     [f] if they don't exist given file permissions [p]. *)
+
+val sanitize_dir : string -> string
+(** [sanitize_dir d] Chops off any trailing '/' in directory path [d]. *)

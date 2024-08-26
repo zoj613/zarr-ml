@@ -11,10 +11,7 @@ module FilesystemStore = struct
     type t = {dirname : string; perm : Unix.file_perm}
 
     let fspath_to_key t path =
-      let ld = String.length t.dirname in
-      let pos =
-        if Filename.dir_sep = String.sub t.dirname (ld - 1) 1
-        then ld else ld + 1 in
+      let pos = String.length t.dirname + 1 in
       String.sub path pos @@ String.length path - pos
 
     let key_to_fspath t key = Filename.concat t.dirname key
@@ -89,33 +86,56 @@ module FilesystemStore = struct
         (key_to_fspath t key)
         (fun ic -> In_channel.length ic |> Int64.to_int)
 
-    let list_prefix t pre =
-      List.filter (String.starts_with ~prefix:pre) (list t)
+    let list_prefix t prefix =
+      let rec aux acc dir =
+        match Sys.readdir dir with
+        | [||] -> acc
+        | xs ->
+          List.concat_map
+            (fun x ->
+              match Filename.concat dir x with
+              | p when Sys.is_directory p -> aux acc p
+              | p ->
+                let k = fspath_to_key t p in
+                if String.starts_with ~prefix k then k :: acc else acc)
+            @@ Array.to_list xs
+      in aux [] @@ key_to_fspath t ""
 
     let erase_prefix t pre =
       list_prefix t pre >>| List.iter @@ erase t
 
-    let list_dir t pre =
+    let list_dir t prefix =
       let module StrSet = Zarr.Util.StrSet in
-      let n = String.length pre in
-      list_prefix t pre >>| fun pk ->
-      let prefixes, keys =
-        List.partition_map
-          (fun k ->
-            if String.contains_from k n '/' then
-              Either.left @@
-              String.sub k 0 @@ 1 + String.index_from k n '/'
-            else Either.right k) pk in
-      keys, StrSet.(of_list prefixes |> elements)
+      let n = String.length prefix in
+      let rec aux acc dir =
+        let xs = Sys.readdir dir in
+        List.fold_left
+          (fun ((l, r) as a) x ->
+            match Filename.concat dir x with
+            | p when Sys.is_directory p -> aux a p
+            | p ->
+              let key = fspath_to_key t p in
+              let pred = String.starts_with ~prefix key in
+              match key with
+              | k when pred && String.contains_from k n '/' ->
+                StrSet.add String.(sub k 0 @@ 1 + index_from k n '/') l, r
+              | k when pred -> l, k :: r
+              | _ -> a) acc (Array.to_list xs)
+        in
+        let prefs, keys = aux (StrSet.empty, []) @@ key_to_fspath t "" in
+        keys, StrSet.elements prefs
   end
 
+  module U = Zarr.Util
+
   let create ?(perm=0o700) dirname =
-    Zarr.Util.create_parent_dir dirname perm;
+    U.create_parent_dir dirname perm;
     Sys.mkdir dirname perm;
-    FS.{dirname; perm}
+    FS.{dirname = U.sanitize_dir dirname; perm}
 
   let open_store ?(perm=0o700) dirname =
-    if Sys.is_directory dirname then FS.{dirname; perm}
+    if Sys.is_directory dirname
+    then FS.{dirname = U.sanitize_dir dirname; perm}
     else raise @@ Zarr.Storage.Not_a_filesystem_store dirname
 
   include Zarr.Storage.Make(FS)

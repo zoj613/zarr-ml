@@ -70,19 +70,18 @@ module Make (Deferred : Types.Deferred) = struct
     if not success then set_partial_values t key ~append rv
     else Deferred.return_unit
 
-  let list_prefix t pre =
-    list t >>| List.filter @@ String.starts_with ~prefix:pre
-
-  let list_dir t pre =
+  let list_dir t prefix =
     let module StrSet = Util.StrSet in
-    let n = String.length pre in
-    list_prefix t pre >>| fun pk ->
-    let prefixes, keys =
-      List.partition_map
-        (fun k ->
-          if String.contains_from k n '/' then
-            Either.left @@
-            String.sub k 0 @@ 1 + String.index_from k n '/'
-          else Either.right k) pk in
-    keys, StrSet.(of_list prefixes |> elements)
+    let n = String.length prefix in
+    list t >>| fun xs ->
+    let prefs, keys =
+      List.fold_left
+        (fun ((l, r) as a) key ->
+          let pred = String.starts_with ~prefix key in
+          match key with
+          | k when pred && String.contains_from k n '/' ->
+            StrSet.add String.(sub k 0 @@ 1 + index_from k n '/') l, r
+          | k when pred -> l, k :: r
+          | _ -> a) (StrSet.empty, []) xs
+    in keys, StrSet.elements prefs
 end

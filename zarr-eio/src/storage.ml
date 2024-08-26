@@ -1,3 +1,8 @@
+module MemoryStore = struct
+  include Zarr.Storage.Make(Zarr.Memory.Make(Deferred))
+  let create = Zarr.Memory.create
+end
+
 module FilesystemStore = struct
   module FS = struct
     module Deferred = Deferred

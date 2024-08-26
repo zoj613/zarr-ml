@@ -47,24 +47,28 @@ module Make (Deferred : Types.Deferred) = struct
     if not success then erase_prefix t pre else Deferred.return_unit
 
   let get_partial_values t key ranges =
-    Deferred.map
+    get t key >>| fun v ->
+    let size = String.length v in
+    List.map
       (fun (rs, len) ->
-        get t key >>| fun v ->
-        (match len with
-        | None -> String.sub v rs @@ String.length v - rs
-        | Some l -> String.sub v rs l)) ranges
+        match len with
+        | None -> String.sub v rs (size - rs)
+        | Some l -> String.sub v rs l) ranges
 
-  let set_partial_values t key ?(append=false) rv =
-    Deferred.iter
-      (fun (rs, v) ->
-        get t key >>= fun ov ->
-        if append then
-          let ov' = ov ^ v in
-          set t key ov'
-        else
-          let ov' = Bytes.of_string ov in
-          String.(length v |> Bytes.blit_string v 0 ov' rs);
-          set t key @@ Bytes.to_string ov') rv
+  let rec set_partial_values t key ?(append=false) rv =
+    let f = 
+      if append then fun acc (_, v) -> acc ^ v
+      else
+        fun acc (rs, v) ->
+          let s = Bytes.of_string acc in
+          String.(length v |> Bytes.blit_string v 0 s rs); Bytes.to_string s
+    in
+    let m = Atomic.get t in
+    let ov = StrMap.find key m in
+    let m' = StrMap.add key (List.fold_left f ov rv) m in
+    let success = Atomic.compare_and_set t m m' in
+    if not success then set_partial_values t key ~append rv
+    else Deferred.return_unit
 
   let list_prefix t pre =
     list t >>| List.filter @@ String.starts_with ~prefix:pre

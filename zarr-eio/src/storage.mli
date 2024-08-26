@@ -1,3 +1,12 @@
+module MemoryStore : sig
+  (** An in-memory storage backend for Zarr V3 hierarchy. *)
+
+  include Zarr.Storage.STORE with type 'a Deferred.t = 'a
+
+  val create : unit -> t
+  (** [create ()] returns a new In-memory Zarr store type. *)
+end
+
 module FilesystemStore : sig
   (** A local filesystem storage backend for a Zarr V3 hierarchy. *)
 

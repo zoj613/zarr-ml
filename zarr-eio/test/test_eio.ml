@@ -167,5 +167,6 @@ let _ =
         (Zarr.Storage.Not_a_filesystem_store fn)
         (fun () -> FilesystemStore.open_store ~env fn);
 
+      test_storage (module MemoryStore) @@ MemoryStore.create ();
       test_storage (module FilesystemStore) s)
   ])

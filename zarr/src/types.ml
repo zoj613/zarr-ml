@@ -3,7 +3,6 @@ module type Deferred = sig
   val return : 'a -> 'a t
   val return_unit : unit t
   val iter : ('a -> unit t) -> 'a list -> unit t
-  val iter_s : ('a -> unit t) -> 'a list -> unit t
   val fold_left : ('acc -> 'a -> 'acc t) -> 'acc -> 'a list -> 'acc t
   val map : ('a -> 'b t) -> 'a list -> 'b list t
   val concat_map : ('a -> 'b list t) -> 'a list -> 'b list t

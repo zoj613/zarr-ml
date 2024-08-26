@@ -12,7 +12,7 @@ test: build
 
 .PHONY: test-cov
 test-cov: build
-	dune runtest --instrument-with bisect_ppx --force
+	OUNIT_CI=true dune runtest --instrument-with bisect_ppx --force
 	bisect-ppx-report summary --per-file
 
 .PHONY: show-cov

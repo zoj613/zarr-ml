@@ -24,9 +24,7 @@ module FilesystemStore = struct
       Lwt_unix.file_exists parent_dir >>= function
       | false ->
         create_parent_dir parent_dir perm >>= fun () ->
-        Lwt.catch
-          (fun () -> Lwt_unix.mkdir parent_dir perm)
-          (fun _ -> Lwt.return_unit) (* If parent_dir exists at the top of the recursion stack *)
+        Lwt_unix.mkdir parent_dir perm
       | true -> Lwt.return_unit
 
     let size t key =
@@ -76,7 +74,7 @@ module FilesystemStore = struct
         ~perm:t.perm
         ~mode:Lwt_io.Output
         filename
-        (fun oc -> Lwt_io.write oc value >>= fun () -> Lwt_io.flush oc)
+        (Fun.flip Lwt_io.write value)
 
     let set_partial_values t key ?(append=false) rvs =
       size t key >>= fun bufsize ->
@@ -91,7 +89,7 @@ module FilesystemStore = struct
           Lwt_list.iter_s
             (fun (rs, value) ->
               Lwt_io.set_position oc @@ Int64.of_int rs >>= fun () ->
-              Lwt_io.write oc value) rvs >>= fun () -> Lwt_io.flush oc)
+              Lwt_io.write oc value) rvs)
 
     let list t =
       let rec filter_concat acc dir =
@@ -111,20 +109,20 @@ module FilesystemStore = struct
       Lwt_unix.unlink @@ key_to_fspath t key
 
     let list_prefix t pre =
-      list t >>= Lwt_list.filter_p
+      list t >>= Lwt_list.filter_s
         (fun x -> Lwt.return @@ String.starts_with ~prefix:pre x)
 
     let erase_prefix t pre =
-      list_prefix t pre >>= Lwt_list.iter_p @@ erase t
+      list_prefix t pre >>= Lwt_list.iter_s @@ erase t
 
     let list_dir t pre =
       let module StrSet = Zarr.Util.StrSet in
       let n = String.length pre in
       list_prefix t pre >>= fun pk ->
-      Lwt_list.partition_p
+      Lwt_list.partition_s
         (fun k -> Lwt.return @@ String.contains_from k n '/') pk
       >>= fun (other, keys) ->
-      Lwt_list.map_p
+      Lwt_list.map_s
         (fun k ->
           Lwt.return @@ String.sub k 0 @@ 1 + String.index_from k n '/') other
       >>| fun prefixes -> keys, StrSet.(of_list prefixes |> elements)

@@ -1,0 +1,13 @@
+(executable
+ (name readonly_zipstore)
+ (modules readonly_zipstore)
+ (ocamlopt_flags (:standard -O3))
+ (libraries zarr-eio camlzip))
+
+(executable
+ (name inmemory_zipstore)
+ (modules inmemory_zipstore)
+ (ocamlopt_flags (:standard -O3))
+ (libraries zarr-lwt zipc)
+ (preprocess
+   (pps ppx_deriving.show)))

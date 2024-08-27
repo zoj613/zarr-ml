@@ -30,7 +30,7 @@ module FilesystemStore = struct
       let fp = key_to_fspath t key in
       Eio.Path.with_open_in fp @@ fun flow ->
       let filesize = Optint.Int63.to_int (Eio.File.size flow) in
-      ranges |> List.map @@ fun (start, len) ->
+      ranges |> Eio.Fiber.List.map @@ fun (start, len) ->
       let bufsize =
         match len with
         | Some l -> l
@@ -50,7 +50,7 @@ module FilesystemStore = struct
     let set_partial_values t key ?(append=false) rvs =
       let fp = key_to_fspath t key in
       Eio.Path.with_open_out ~append ~create:`Never fp @@ fun flow ->
-      List.iter
+      Eio.Fiber.List.iter
         (fun (start, value) ->
           let file_offset = Optint.Int63.of_int start in
           let _ = Eio.File.seek flow file_offset `Set in
@@ -91,7 +91,7 @@ module FilesystemStore = struct
       (* if prefix points to the root of the store, only delete sub-dirs and files.*)
       let prefix = key_to_fspath t pre in
       if Filename.chop_suffix (snd prefix) "/" = snd t.root
-      then List.iter (erase t) @@ list_prefix t pre
+      then Eio.Fiber.List.iter (erase t) @@ list_prefix t pre
       else Eio.Path.rmtree ~missing_ok:true prefix
 
     let list_dir t prefix =

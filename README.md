@@ -12,7 +12,8 @@ arrays, designed for use in parallel computing.
 - Compresses chunks using a variety of supported compression codecs.
 - Supports indexing operations to read/write views of a Zarr array.
 - Supports storing arrays in-memory or the local filesystem. It is also
-  extensible, allowing users to create and use their own custom storage backends.
+  extensible, allowing users to easily create and use their own custom storage
+  backends. See the example implementing a [Zip file store][9] for more details.
 - Supports both synchronous and concurrent I/O via [Lwt][4] and [Eio][8].
 - Leverages the strong type system of Ocaml to create a type-safe API; making
   it impossible to create, read or write malformed arrays.
@@ -132,3 +133,4 @@ FilesystemStore.erase_group_node store group_node;;
 [6]: https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html
 [7]: https://zoj613.github.io/zarr-ml/zarr/Zarr/index.html#examples
 [8]: https://github.com/ocaml-multicore/eio
+[9]: https://github.com/zoj613/zarr-ml/tree/main/examples/inmemory_zipstore.ml

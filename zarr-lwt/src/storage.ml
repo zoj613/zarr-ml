@@ -44,29 +44,30 @@ module FilesystemStore = struct
         | exn -> Lwt.reraise exn)
 
     let get_partial_values t key ranges =
-      size t key >>= fun bufsize ->
+      size t key >>= fun tot ->
+      let l =
+        List.fold_left
+          (fun a (s, l) ->
+            Option.fold
+              ~none:(Int.max a (tot - s)) ~some:(Int.max a) l) 0 ranges in
       Lwt_io.with_file
-        ~buffer:(Lwt_bytes.create bufsize)
+        ~buffer:(Lwt_bytes.create l)
         ~flags:Unix.[O_RDONLY; O_NONBLOCK]
         ~perm:t.perm
         ~mode:Lwt_io.Input
         (key_to_fspath t key)
         (fun ic ->
-          Lwt_io.length ic >>= fun v ->
-          let size = Int64.to_int v in
           Lwt_list.map_s
-            (fun (rs, len) -> 
-              let count =
-                match len with
-                | Some l -> l
-                | None -> size - rs in
-              Lwt_io.set_position ic @@ Int64.of_int rs >>= fun () ->
+            (fun (ofs, len) -> 
+              let count = Option.fold ~none:(tot - ofs) ~some:Fun.id len in
+              Lwt_io.set_position ic @@ Int64.of_int ofs >>= fun () ->
               Lwt_io.read ~count ic) ranges)
 
     let set t key value =
       let filename = key_to_fspath t key in
       create_parent_dir filename t.perm >>= fun () ->
       Lwt_io.with_file
+        ~buffer:(Lwt_bytes.create @@ String.length value)
         ~flags:Unix.[O_WRONLY; O_TRUNC; O_CREAT; O_NONBLOCK]
         ~perm:t.perm
         ~mode:Lwt_io.Output
@@ -74,18 +75,18 @@ module FilesystemStore = struct
         (Fun.flip Lwt_io.write value)
 
     let set_partial_values t key ?(append=false) rvs =
-      size t key >>= fun bufsize ->
+      let l = List.fold_left (fun a (_, s) -> Int.max a (String.length s)) 0 rvs in
       let flags = Unix.[O_NONBLOCK; O_WRONLY] in
       Lwt_io.with_file
-        ~buffer:(Lwt_bytes.create bufsize)
+        ~buffer:(Lwt_bytes.create l)
         ~flags:(if append then Unix.O_APPEND :: flags else flags)
         ~perm:t.perm
         ~mode:Lwt_io.Output
         (key_to_fspath t key)
         (fun oc ->
           Lwt_list.iter_s
-            (fun (rs, value) ->
-              Lwt_io.set_position oc @@ Int64.of_int rs >>= fun () ->
+            (fun (ofs, value) ->
+              Lwt_io.set_position oc @@ Int64.of_int ofs >>= fun () ->
               Lwt_io.write oc value) rvs)
 
     let list t =
@@ -123,7 +124,7 @@ module FilesystemStore = struct
       list_prefix t pre >>= Lwt_list.iter_s @@ erase t
 
     let list_dir t prefix =
-      let module StrSet = Zarr.Util.StrSet in
+      let module S = Zarr.Util.StrSet in
       let n = String.length prefix in
       let rec filter_concat acc dir =
         Lwt_stream.fold_s
@@ -136,13 +137,13 @@ module FilesystemStore = struct
               let pred = String.starts_with ~prefix key in
               match key with
               | k when pred && String.contains_from k n '/' ->
-                Lwt.return (StrSet.add String.(sub k 0 @@ 1 + index_from k n '/') l, r)
+                Lwt.return (S.add String.(sub k 0 @@ 1 + index_from k n '/') l, r)
               | k when pred -> Lwt.return (l, k :: r)
               | _ -> Lwt.return a)
           (Lwt_unix.files_of_directory dir) acc
       in
-      filter_concat (StrSet.empty, []) (key_to_fspath t "") >>| fun (y, x) ->
-      x, StrSet.elements y
+      filter_concat (S.empty, []) (key_to_fspath t "") >>| fun (y, x) ->
+      x, S.elements y
   end
 
   module U = Zarr.Util

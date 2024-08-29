@@ -15,8 +15,7 @@
 module MemoryZipStore : sig
   include Zarr.Storage.STORE with type 'a Deferred.t = 'a Lwt.t
   (*val create : ?level:Zipc_deflate.level -> string -> t *)
-  val open_store : ?level:Zipc_deflate.level -> string -> t
-  val write_to_file : t -> unit Deferred.t
+  val with_open : ?level:Zipc_deflate.level -> string -> (t -> 'a Deferred.t) -> 'a Deferred.t
 end = struct
   module M = Map.Make(String)
 
@@ -146,21 +145,26 @@ end = struct
 
   (*let create ?(level=`Default) path = Z.{ic = Zipc.empty; level; path} *)
 
-  let open_store ?(level=`Default) path =
-    match Zipc.of_binary_string In_channel.(with_open_bin path input_all) with
-    | Ok ic -> Z.{ic; level; path; mutex = Lwt_mutex.create ()}
-    | Error e -> failwith e
-
-  let write_to_file (t : Z.t) =
-    Lwt_io.with_file
-      ~flags:Unix.[O_WRONLY; O_TRUNC; O_CREAT; O_NONBLOCK]
-      ~mode:Lwt_io.Output
-      t.path
-      (fun oc ->
-        let open Lwt.Infix in
-        match Zipc.to_binary_string t.ic with
-        | Error e -> failwith e
-        | Ok s -> Lwt_io.write oc s >>= fun () -> Lwt_io.flush oc)
+  let with_open ?(level=`Default) path f =
+    let s = In_channel.(with_open_bin path input_all) in
+    let t = match Zipc.of_binary_string s with
+      | Ok ic -> Z.{ic; level; path; mutex = Lwt_mutex.create ()}
+      | Error e -> failwith e
+    in
+    Lwt.finalize
+      (fun () -> f t)
+      (fun () ->
+        Lwt_io.with_file
+          ~flags:Unix.[O_WRONLY; O_TRUNC; O_CREAT; O_NONBLOCK]
+          ~mode:Lwt_io.Output
+          t.path
+          (fun oc ->
+            let open Lwt.Infix in
+            match Zipc.to_binary_string t.ic with
+            | Error e -> failwith e
+            | Ok s' ->
+              if String.equal s s' then Lwt.return_unit else
+              Lwt_io.write oc s' >>= fun () -> Lwt_io.flush oc))
 end
 
 let _ =
@@ -169,7 +173,7 @@ let _ =
   let open MemoryZipStore.Deferred.Infix in
 
   let printlist = [%show: string list] in
-  let store = MemoryZipStore.open_store "examples/data/testdata.zip" in
+  MemoryZipStore.with_open "examples/data/testdata.zip" @@ fun store ->
   MemoryZipStore.find_all_nodes store >>= fun (xs, _) ->
   print_endline @@ "All array nodes: " ^ printlist (List.map ArrayNode.to_path xs);
   let anode = List.hd @@ List.filter
@@ -181,8 +185,7 @@ let _ =
     Owl.Dense.Ndarray.Generic.map
       (fun _ -> Owl_stats_dist.uniform_int_rvs ~a:0 ~b:255 |> Char.chr) x in
   MemoryZipStore.write_array store anode slice x' >>= fun () ->
-  MemoryZipStore.read_array store anode slice Bigarray.Char >>= fun y ->
+  MemoryZipStore.read_array store anode slice Bigarray.Char >>| fun y ->
   print_string @@ "AFTER: " ^ Owl_pretty.dsnda_to_string y;
-  MemoryZipStore.write_to_file store >>| fun () ->
   print_endline "Zip store has been update."
   end

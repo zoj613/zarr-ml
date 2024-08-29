@@ -53,10 +53,9 @@ end = struct
     let get_partial_values t key ranges =
       get t key >>= fun data ->
       let size = String.length data in
-      ranges |> Eio.Fiber.List.map @@ fun (offset, len) ->
-      match len with
-      | None -> String.sub data offset (size - offset)
-      | Some l -> String.sub data offset l
+      ranges |> Eio.Fiber.List.map @@ fun (ofs, len) ->
+      let f v = String.sub data ofs v in
+      Option.fold ~none:(f (size - ofs)) ~some:f len
 
     let list t =
       Zip.entries t |> Eio.Fiber.List.filter_map @@ function

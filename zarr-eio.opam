@@ -12,7 +12,7 @@ depends: [
   "dune" {>= "3.15"}
   "ocaml" {>= "5.1.0"}
   "zarr" {= version}
-  "eio_main"
+  "eio_main" {>= "1.0"}
   "odoc" {with-doc}
   "ounit2" {with-test}
   "bisect_ppx" {dev & >= "2.5.0" & with-test}

@@ -54,13 +54,11 @@ end = struct
           | Ok s -> s
 
     let get_partial_values t key ranges =
-      get t key >>= fun data ->
+      get t key >>| fun data ->
       let size = String.length data in
-      ranges |> Lwt_list.map_p @@ fun (offset, len) ->
-      Deferred.return
-      (match len with
-      | None -> String.sub data offset (size - offset)
-      | Some l -> String.sub data offset l)
+      ranges |> List.map @@ fun (ofs, len) ->
+      let f v = String.sub data ofs v in
+      Option.fold ~none:(f (size - ofs)) ~some:f len
 
     let list t =
       Deferred.return @@ Zipc.fold

@@ -34,13 +34,10 @@ module FilesystemStore = struct
         (fun ic ->
           let size = In_channel.length ic |> Int64.to_int in
           List.map
-            (fun (rs, len) ->
-              let len' =
-                match len with
-                | Some l -> l
-                | None -> size - rs in
-              In_channel.seek ic @@ Int64.of_int rs;
-              Option.get @@ In_channel.really_input_string ic len') ranges)
+            (fun (ofs, len) ->
+              In_channel.seek ic @@ Int64.of_int ofs;
+              let l = Option.fold ~none:(size - ofs) ~some:Fun.id len in 
+              Option.get @@ In_channel.really_input_string ic l) ranges)
 
     let set t key value =
       let filename = key_to_fspath t key in

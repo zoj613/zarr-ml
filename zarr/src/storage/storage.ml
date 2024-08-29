@@ -33,9 +33,8 @@ module Make (Io : Types.IO) = struct
     | false ->
       let k = GroupNode.to_metakey node in
       set t k GroupMetadata.(update_attributes default attrs |> encode) >>= fun () ->
-      match GroupNode.parent node with
-      | None -> Deferred.return_unit
-      | Some n -> create_group t n
+      GroupNode.parent node
+      |> Option.fold ~none:Deferred.return_unit ~some:(create_group t)
 
   let create_array
     ?(sep=`Slash) ?(dimension_names=[]) ?(attributes=`Null)

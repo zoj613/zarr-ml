@@ -17,9 +17,7 @@ module ArrayMap = struct
   end)
 
   let add_to_list k v map =
-    update k (function
-      | None -> Some [v]
-      | Some l -> Some (v :: l)) map
+    update k (Option.fold ~none:(Some [v]) ~some:(fun l -> Some (v :: l))) map
 end
 
 module Result_syntax = struct
@@ -106,6 +104,4 @@ let rec create_parent_dir fn perm =
   end
 
 let sanitize_dir dir =
-  match Filename.chop_suffix_opt ~suffix:"/" dir with
-  | None -> dir
-  | Some d -> d
+  Option.fold ~none:dir ~some:Fun.id @@ Filename.chop_suffix_opt ~suffix:"/" dir

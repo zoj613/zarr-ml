@@ -10,9 +10,9 @@ doc: "https://zoj613.github.io/zarr-ml"
 bug-reports: "https://github.com/zoj613/zarr-ml/issues"
 depends: [
   "dune" {>= "3.15"}
-  "ocaml" {>= "4.14.2"}
+  "ocaml" {>= "4.14.0"}
   "zarr" {= version}
-  "lwt"
+  "lwt" {>= "2.5.1"}
   "odoc" {with-doc}
   "ounit2" {with-test}
   "bisect_ppx" {dev & >= "2.5.0" & with-test}

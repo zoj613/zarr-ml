@@ -26,12 +26,12 @@
    arrays, designed for use in parallel computing.")
  (depends
    dune
-   (ocaml (>= 4.14.2))
-   yojson
-   ezgzip
-   owl
-   stdint
-   checkseum
+   (ocaml (>= 4.14.0))
+   (yojson (>= 1.6.0))
+   (ezgzip (>= 0.2.0))
+   (stdint (>= 0.7.2))
+   (checkseum (>= 0.4.0))
+   (owl (>= 1.1))
    (odoc :with-doc)
    (ounit2 :with-test)
    (ppx_deriving :with-test)
@@ -45,7 +45,7 @@
  (synopsis "Synchronous API for Zarr.")
  (depends
    dune
-   (ocaml (>= 4.14.2))
+   (ocaml (>= 4.14.0))
    (zarr (= :version))
    (odoc :with-doc)
    (ounit2 :with-test)
@@ -57,9 +57,9 @@
  (synopsis "Lwt-aware API for Zarr.")
  (depends
    dune
-   (ocaml (>= 4.14.2))
+   (ocaml (>= 4.14.0))
    (zarr (= :version))
-   lwt
+   (lwt (>= 2.5.1))
    (odoc :with-doc)
    (ounit2 :with-test)
    (bisect_ppx
@@ -72,7 +72,7 @@
    dune
    (ocaml (>= 5.1.0))
    (zarr (= :version))
-   eio_main
+   (eio_main (>= 1.0))
    (odoc :with-doc)
    (ounit2 :with-test)
    (bisect_ppx

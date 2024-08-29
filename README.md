@@ -36,7 +36,7 @@ open Zarr_sync.Storage
 (* opens infix operators >>= and >>| for monadic bind & map *)
 open FilesytemStore.Deferred.Infix
 
-let store = FilesystemStore.create_store "testdata.zarr";;
+let store = FilesystemStore.create "testdata.zarr";;
 ```
 ### create group
 ```ocaml

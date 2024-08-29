@@ -12,14 +12,13 @@ module FilesystemStore = struct
     let fspath_to_key t (path : Eio.Fs.dir_ty Eio.Path.t) =
       let s = snd path in
       let pos = String.length (snd t.root) + 1 in
-      String.sub s pos @@ String.length s - pos
+      String.(sub s pos @@ length s - pos)
 
     let key_to_fspath t key = Eio.Path.(t.root / key)
 
     let size t key =
-      let fp = key_to_fspath t key in
-      Eio.Path.with_open_in fp @@ fun flow ->
-      Optint.Int63.to_int (Eio.File.size flow)
+      Eio.Path.with_open_in (key_to_fspath t key) @@ fun flow ->
+      Optint.Int63.to_int @@ Eio.File.size flow
 
     let get t key =
       try Eio.Path.load @@ key_to_fspath t key with
@@ -27,46 +26,43 @@ module FilesystemStore = struct
         raise (Zarr.Storage.Key_not_found key)
 
     let get_partial_values t key ranges =
-      let fp = key_to_fspath t key in
-      Eio.Path.with_open_in fp @@ fun flow ->
-      let filesize = Optint.Int63.to_int (Eio.File.size flow) in
-      ranges |> Eio.Fiber.List.map @@ fun (start, len) ->
-      let bufsize =
-        match len with
-        | Some l -> l
-        | None -> filesize - start in
-      let pos = Optint.Int63.of_int start in
-      let file_offset = Eio.File.seek flow pos `Set in
-      let buf = Cstruct.create bufsize in
+      Eio.Path.with_open_in (key_to_fspath t key) @@ fun flow ->
+      let size = Optint.Int63.to_int @@ Eio.File.size flow in
+      let size', ranges' =
+        List.fold_left_map (fun a (s, l) ->
+          let a' = Option.fold ~none:(a + size - s) ~some:(Int.add a) l in
+          a', (Optint.Int63.of_int s, a, a' - a)) 0 ranges in
+      let buffer = Bigarray.Array1.create Char C_layout size' in
+      ranges' |> Eio.Fiber.List.map @@ fun (fo, off, len) ->
+      let file_offset = Eio.File.seek flow fo `Set in
+      let buf = Cstruct.of_bigarray ~off ~len buffer in
       Eio.File.pread_exact flow ~file_offset [buf];
       Cstruct.to_string buf
 
     let set t key value =
       let fp = key_to_fspath t key in
-      let parent_dir = fst @@ Option.get @@ Eio.Path.split fp in
-      Eio.Path.mkdirs ~exists_ok:true ~perm:t.perm parent_dir;
+      Option.fold
+        ~none:()
+        ~some:(fun (p, _) -> Eio.Path.mkdirs ~exists_ok:true ~perm:t.perm p)
+        (Eio.Path.split fp);
       Eio.Path.save ~create:(`Or_truncate t.perm) fp value
 
     let set_partial_values t key ?(append=false) rvs =
-      let fp = key_to_fspath t key in
-      Eio.Path.with_open_out ~append ~create:`Never fp @@ fun flow ->
-      Eio.Fiber.List.iter
-        (fun (start, value) ->
-          let file_offset = Optint.Int63.of_int start in
-          let _ = Eio.File.seek flow file_offset `Set in
-          let buf = Cstruct.of_string value in
-          Eio.File.pwrite_all flow ~file_offset [buf]) rvs
+      let l = List.fold_left (fun a (_, s) -> Int.max a (String.length s)) 0 rvs in
+      let buffer = Bigarray.Array1.create Char C_layout l in
+      let allocator len = Cstruct.of_bigarray ~off:0 ~len buffer in
+      Eio.Path.with_open_out ~append ~create:`Never (key_to_fspath t key) @@ fun flow ->
+      rvs |> List.iter @@ fun (ofs, str) ->
+      let file_offset = Eio.File.seek flow (Optint.Int63.of_int ofs) `Set in
+      Eio.File.pwrite_all flow ~file_offset [Cstruct.of_string ~allocator str]
 
     let list t =
       let rec aux acc dir =
-        match Eio.Path.read_dir dir with
-        | [] -> acc
-        | xs ->
-          List.concat_map
-            (fun x ->
-              match Eio.Path.(dir / x) with 
-              | p when Eio.Path.is_directory p -> aux acc p
-              | p -> (fspath_to_key t p) :: acc) xs
+        List.fold_left
+          (fun a x ->
+            match Eio.Path.(dir / x) with 
+            | p when Eio.Path.is_directory p -> aux a p
+            | p -> (fspath_to_key t p) :: a) acc (Eio.Path.read_dir dir)
       in aux [] t.root
 
     let is_member t key =
@@ -78,13 +74,13 @@ module FilesystemStore = struct
     let list_prefix t prefix =
       let rec aux acc dir =
         let xs = Eio.Path.read_dir dir in
-        List.concat_map
-          (fun x ->
+        List.fold_left
+          (fun a x ->
             match Eio.Path.(dir / x) with 
-            | p when Eio.Path.is_directory p -> aux acc p
+            | p when Eio.Path.is_directory p -> aux a p
             | p ->
               let key = fspath_to_key t p in
-              if String.starts_with ~prefix key then key :: acc else acc) xs
+              if String.starts_with ~prefix key then key :: a else a) acc xs
       in aux [] t.root
 
     let erase_prefix t pre =
@@ -95,7 +91,7 @@ module FilesystemStore = struct
       else Eio.Path.rmtree ~missing_ok:true prefix
 
     let list_dir t prefix =
-      let module StrSet = Zarr.Util.StrSet in
+      let module S = Zarr.Util.StrSet in
       let n = String.length prefix in
       let rec aux acc dir =
         List.fold_left
@@ -107,12 +103,11 @@ module FilesystemStore = struct
               let pred = String.starts_with ~prefix key in
               match key with
               | k when pred && String.contains_from k n '/' ->
-                StrSet.add String.(sub k 0 @@ 1 + index_from k n '/') l, r
+                S.add String.(sub k 0 @@ 1 + index_from k n '/') l, r
               | k when pred -> l, k :: r
-              | _ -> a) acc @@ Eio.Path.read_dir dir
-      in
-      let prefs, keys = aux (StrSet.empty, []) t.root in
-      keys, StrSet.elements prefs
+              | _ -> a) acc (Eio.Path.read_dir dir) in
+      let prefs, keys = aux (S.empty, []) t.root in
+      keys, S.elements prefs
   end
 
   module U = Zarr.Util

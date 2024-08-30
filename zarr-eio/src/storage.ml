@@ -52,7 +52,7 @@ module FilesystemStore = struct
       let buffer = Bigarray.Array1.create Char C_layout l in
       let allocator len = Cstruct.of_bigarray ~off:0 ~len buffer in
       Eio.Path.with_open_out ~append ~create:`Never (key_to_fspath t key) @@ fun flow ->
-      rvs |> List.iter @@ fun (ofs, str) ->
+      rvs |> Eio.Fiber.List.iter @@ fun (ofs, str) ->
       let file_offset = Eio.File.seek flow (Optint.Int63.of_int ofs) `Set in
       Eio.File.pwrite_all flow ~file_offset [Cstruct.of_string ~allocator str]
 

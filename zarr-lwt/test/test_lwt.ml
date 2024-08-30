@@ -1,3 +1,4 @@
+open Bigarray
 open OUnit2
 open Zarr.Metadata
 open Zarr.Node
@@ -8,12 +9,12 @@ let string_of_list = [%show: string list]
 let print_node_pair = [%show: ArrayNode.t list * GroupNode.t list]
 let print_int_array = [%show : int array]
 
-module type SYNC_STORE = sig
+module type LWT_STORE = sig
   include Zarr.Storage.STORE with type 'a Deferred.t = 'a Lwt.t
 end
 
 let test_storage
-  (type a) (module M : SYNC_STORE with type t = a) (store : a) =
+  (type a) (module M : LWT_STORE with type t = a) (store : a) =
   let open M in
   let open M.Deferred.Infix in
   let gnode = GroupNode.root in
@@ -49,14 +50,13 @@ let test_storage
     ;codecs = [`Bytes LE]} in
   let anode = ArrayNode.(gnode / "arrnode") in
   let slice = Owl_types.[|R [0; 20]; I 10; R [0; 29]|] in
+  let exp = Genarray.init Complex32 C_layout [|21; 1; 30|] (Fun.const Complex.one) in
 
   Lwt_list.iter_s
     (fun codecs ->
-      let open Bigarray in
       create_array
         ~codecs ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
         Complex32 Complex.one anode store >>= fun () ->
-      let exp = Genarray.init Complex32 C_layout [|21; 1; 30|] (Fun.const Complex.one) in
       write_array store anode slice exp >>= fun () ->
       read_array store anode slice Complex32 >>= fun got ->
       assert_equal ~printer:Owl_pretty.dsnda_to_string exp got;

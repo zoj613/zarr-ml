@@ -19,14 +19,15 @@
 
 (package
  (name zarr)
- (synopsis "An Ocaml implementation of the Zarr V3 specification.")
+ (synopsis "An Ocaml implementation of the Zarr V3 specification")
  (description
    "The Zarr library provides an OCaml implementation of the Zarr version 3
    storage format specification for chunked & compressed multi-dimensional
    arrays, designed for use in parallel computing.")
  (depends
    dune
-   (ocaml (>= 4.14.0))
+   (ocaml
+     (and (>= 4.14.0) (< 5.2.0)))
    (yojson (>= 1.6.0))
    (ezgzip (>= 0.2.0))
    (stdint (>= 0.7.2))
@@ -42,38 +43,44 @@
 
 (package
  (name zarr-sync)
- (synopsis "Synchronous API for Zarr.")
+ (synopsis "Synchronous API for Zarr")
  (depends
    dune
-   (ocaml (>= 4.14.0))
+   (ocaml
+     (and (>= 4.14.0) (< 5.2.0)))
    (zarr (= :version))
    (odoc :with-doc)
    (ounit2 :with-test)
+   (ppx_deriving :with-test)
    (bisect_ppx
      (and :dev (>= 2.5.0) :with-test))))
 
 (package
  (name zarr-lwt)
- (synopsis "Lwt-aware API for Zarr.")
+ (synopsis "Lwt-aware API for Zarr")
  (depends
    dune
-   (ocaml (>= 4.14.0))
+   (ocaml
+     (and (>= 4.14.0) (< 5.2.0)))
    (zarr (= :version))
    (lwt (>= 2.5.1))
    (odoc :with-doc)
    (ounit2 :with-test)
+   (ppx_deriving :with-test)
    (bisect_ppx
      (and :dev (>= 2.5.0) :with-test))))
 
 (package
  (name zarr-eio)
- (synopsis "Eio-aware API for Zarr.")
+ (synopsis "Eio-aware API for Zarr")
  (depends
    dune
-   (ocaml (>= 5.1.0))
+   (ocaml
+     (and (>= 5.1.0) (< 5.2.0)))
    (zarr (= :version))
    (eio_main (>= 1.0))
    (odoc :with-doc)
    (ounit2 :with-test)
+   (ppx_deriving :with-test)
    (bisect_ppx
      (and :dev (>= 2.5.0) :with-test))))

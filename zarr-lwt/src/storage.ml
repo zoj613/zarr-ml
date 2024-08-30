@@ -41,7 +41,7 @@ module FilesystemStore = struct
         (function
         | Unix.Unix_error (Unix.ENOENT, _, _) ->
           raise @@ Zarr.Storage.Key_not_found key
-        | exn -> Lwt.reraise exn)
+        | exn -> raise exn)
 
     let get_partial_values t key ranges =
       size t key >>= fun tot ->

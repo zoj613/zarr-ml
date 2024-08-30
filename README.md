@@ -23,6 +23,17 @@ arrays, designed for use in parallel computing.
 API documentation can be found [here][5]. The full specification of the storage
 format can be found [there][6].
 
+## Installation
+To install the development version using the latest git commit, do
+```
+# for zarr-sync
+ opam pin add zarr-sync git+https://github.com/zoj613/zarr-ml 
+# for zarr-lwt
+ opam pin add zarr-lwt git+https://github.com/zoj613/zarr-ml 
+# for zarr-eio
+ opam pin add zarr-eio git+https://github.com/zoj613/zarr-ml 
+ ```
+
 ## Quick start
 Below is a demonstration of the library's API for synchronous reads/writes.
 A similar example using the `Lwt`-backed Asynchronous API can be found [here][7]

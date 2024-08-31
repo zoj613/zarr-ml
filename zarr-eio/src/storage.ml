@@ -56,32 +56,23 @@ module FilesystemStore = struct
       let file_offset = Eio.File.seek flow (Optint.Int63.of_int ofs) `Set in
       Eio.File.pwrite_all flow ~file_offset [Cstruct.of_string ~allocator str]
 
-    let list t =
-      let rec aux acc dir =
-        List.fold_left
-          (fun a x ->
-            match Eio.Path.(dir / x) with 
-            | p when Eio.Path.is_directory p -> aux a p
-            | p -> (fspath_to_key t p) :: a) acc (Eio.Path.read_dir dir)
-      in aux [] t.root
+    let rec walk t acc dir =
+      List.fold_left
+        (fun a x ->
+          match Eio.Path.(dir / x) with 
+          | p when Eio.Path.is_directory p -> walk t a p
+          | p -> (fspath_to_key t p) :: a) acc (Eio.Path.read_dir dir)
+
+    let list t = walk t [] t.root
+
+    let list_prefix t prefix =
+      walk t [] (key_to_fspath t prefix)
 
     let is_member t key =
       Eio.Path.is_file @@ key_to_fspath t key
 
     let erase t key =
       Eio.Path.unlink @@ key_to_fspath t key
-
-    let list_prefix t prefix =
-      let rec aux acc dir =
-        let xs = Eio.Path.read_dir dir in
-        List.fold_left
-          (fun a x ->
-            match Eio.Path.(dir / x) with 
-            | p when Eio.Path.is_directory p -> aux a p
-            | p ->
-              let key = fspath_to_key t p in
-              if String.starts_with ~prefix key then key :: a else a) acc xs
-      in aux [] t.root
 
     let erase_prefix t pre =
       (* if prefix points to the root of the store, only delete sub-dirs and files.*)

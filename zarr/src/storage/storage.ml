@@ -17,6 +17,7 @@ module Make (Io : Types.IO) = struct
 
   open Io
   open Deferred.Infix
+  open Deferred.Syntax
 
   type t = Io.t
 
@@ -32,7 +33,7 @@ module Make (Io : Types.IO) = struct
     | true -> Deferred.return_unit
     | false ->
       let k = GroupNode.to_metakey node in
-      set t k GroupMetadata.(update_attributes default attrs |> encode) >>= fun () ->
+      let* () = set t k GroupMetadata.(update_attributes default attrs |> encode) in
       GroupNode.parent node
       |> Option.fold ~none:Deferred.return_unit ~some:(create_group t)
 
@@ -43,7 +44,7 @@ module Make (Io : Types.IO) = struct
     let c = Codecs.Chain.create chunks codecs in
     let m = ArrayMetadata.create
       ~sep ~codecs:c ~dimension_names ~attributes ~shape kind fv chunks in
-    set t (ArrayNode.to_metakey node) @@ ArrayMetadata.encode m >>= fun () ->
+    let* () = set t (ArrayNode.to_metakey node) @@ ArrayMetadata.encode m in
     create_group t @@ ArrayNode.parent node
 
   let group_metadata t node =
@@ -54,29 +55,29 @@ module Make (Io : Types.IO) = struct
 
   let node_type t metakey =
     let open Yojson.Safe in
-    get t metakey >>| fun s ->
+    let+ s = get t metakey in
     Util.to_string @@ Util.member "node_type" @@ from_string s
 
   let find_child_nodes t node =
-    list_dir t @@ GroupNode.to_prefix node >>= fun (_, gp) ->
+    let* _, gp = list_dir t @@ GroupNode.to_prefix node in
     Deferred.fold_left
       (fun (l, r) pre ->
-        node_type t @@ pre ^ "zarr.json" >>| fun nt ->
+        let+ nt = node_type t @@ pre ^ "zarr.json" in
         let p = "/" ^ String.(length pre - 1 |> sub pre 0) in
         if nt = "array" then ArrayNode.of_path p :: l, r
         else l, GroupNode.of_path p :: r) ([], []) gp
 
   let find_all_nodes t =
-    list t >>= fun keys ->
-    Deferred.fold_left
+    let* keys = list t in
+    let+ acc = Deferred.fold_left
       (fun ((l, r) as acc) k ->
         if String.ends_with ~suffix:"/zarr.json" k then
-          node_type t k >>| fun nt ->
+          let+ nt = node_type t k in
           let p = "/" ^ String.(length k - 10 |> sub k 0) in
           if nt = "array" then ArrayNode.of_path p :: l, r
           else l, GroupNode.of_path p :: r
-        else Deferred.return acc) ([], []) keys >>| fun acc ->
-    match acc with
+        else Deferred.return acc) ([], []) keys
+    in match acc with
     | [], [] as xs -> xs
     | l, r -> l, GroupNode.root :: r
 
@@ -89,7 +90,7 @@ module Make (Io : Types.IO) = struct
   let erase_all_nodes t = erase_prefix t ""
 
   let write_array t node slice x =
-    get t @@ ArrayNode.to_metakey node >>= fun b -> 
+    let* b = get t @@ ArrayNode.to_metakey node in
     let meta = ArrayMetadata.decode b in
     let shape = ArrayMetadata.shape meta in
     let slice_shape =
@@ -117,12 +118,12 @@ module Make (Io : Types.IO) = struct
         let ckey = prefix ^ ArrayMetadata.chunk_key meta idx in
         is_member t ckey >>= function
         | true when PartialChain.is_just_sharding chain ->
-          size t ckey >>= fun csize ->
+          let* csize = size t ckey in
           let get_p = get_partial_values t ckey in
           let set_p = set_partial_values t ckey in
           PartialChain.partial_encode chain get_p set_p csize repr pairs
         | true ->
-          get t ckey >>= fun v ->
+          let* v = get t ckey in
           let arr = Codecs.Chain.decode chain repr v in
           List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
           set t ckey @@ Codecs.Chain.encode chain arr
@@ -132,7 +133,7 @@ module Make (Io : Types.IO) = struct
           set t ckey @@ Codecs.Chain.encode chain arr) (ArrayMap.bindings m)
 
   let read_array t node slice kind =
-    get t @@ ArrayNode.to_metakey node >>= fun b ->
+    let* b = get t @@ ArrayNode.to_metakey node in
     let meta = ArrayMetadata.decode b in
     if not @@ ArrayMetadata.is_valid_kind meta kind
     then raise Invalid_data_type else
@@ -158,10 +159,10 @@ module Make (Io : Types.IO) = struct
         is_member t ckey >>= function
         | true when PartialChain.is_just_sharding chain ->
           let get_p = get_partial_values t ckey in
-          size t ckey >>= fun csize ->
+          let* csize = size t ckey in
           PartialChain.partial_decode chain get_p csize repr pairs
         | true ->
-          get t ckey >>| fun v ->
+          let+ v = get t ckey in
           let arr = Codecs.Chain.decode chain repr v in
           List.map (fun (i, c) -> i, Ndarray.get arr c) pairs
         | false ->
@@ -175,7 +176,7 @@ module Make (Io : Types.IO) = struct
 
   let reshape t node nshape =
     let mkey = ArrayNode.to_metakey node in
-    get t mkey >>= fun b ->
+    let* b = get t mkey in
     let meta = ArrayMetadata.decode b in
     let oshape = ArrayMetadata.shape meta in
     if Array.(length nshape <> length oshape)
@@ -183,12 +184,12 @@ module Make (Io : Types.IO) = struct
     let s = ArraySet.of_list @@ ArrayMetadata.chunk_indices meta oshape in
     let s' = ArraySet.of_list @@ ArrayMetadata.chunk_indices meta nshape in
     let pre = ArrayNode.to_key node ^ "/" in
-    ArraySet.(elements @@ diff s s') |>
-    Deferred.iter begin fun v ->
-        let key = pre ^ ArrayMetadata.chunk_key meta v in
-        is_member t key >>= function
-        | true -> erase t key
-        | false -> Deferred.return_unit
-    end >>= fun () ->
-    set t mkey @@ ArrayMetadata.(encode @@ update_shape meta nshape)
+    let* () =
+      Deferred.iter
+        (fun v ->
+          let key = pre ^ ArrayMetadata.chunk_key meta v in
+          is_member t key >>= function
+          | true -> erase t key
+          | false -> Deferred.return_unit) ArraySet.(elements @@ diff s s')
+    in set t mkey @@ ArrayMetadata.(encode @@ update_shape meta nshape)
 end

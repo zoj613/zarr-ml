@@ -22,6 +22,7 @@ end = struct
   module Z = struct
     module Deferred = Zarr_lwt.Deferred
     open Deferred.Infix
+    open Deferred.Syntax
 
     type t =
       {mutable ic : Zipc.t
@@ -54,7 +55,7 @@ end = struct
           | Ok s -> s
 
     let get_partial_values t key ranges =
-      get t key >>| fun data ->
+      let+ data = get t key in
       let size = String.length data in
       ranges |> List.map @@ fun (ofs, len) ->
       let f v = String.sub data ofs v in
@@ -157,33 +158,33 @@ end = struct
           ~mode:Lwt_io.Output
           t.path
           (fun oc ->
-            let open Lwt.Infix in
+            let open Lwt.Syntax in
             match Zipc.to_binary_string t.ic with
             | Error e -> failwith e
             | Ok s' ->
               if String.equal s s' then Lwt.return_unit else
-              Lwt_io.write oc s' >>= fun () -> Lwt_io.flush oc))
+              let* () = Lwt_io.write oc s' in Lwt_io.flush oc))
 end
 
 let _ =
   Lwt_main.run @@ begin
   let open Zarr.Node in
-  let open MemoryZipStore.Deferred.Infix in
+  let open MemoryZipStore.Deferred.Syntax in
 
   let printlist = [%show: string list] in
   MemoryZipStore.with_open "examples/data/testdata.zip" @@ fun store ->
-  MemoryZipStore.find_all_nodes store >>= fun (xs, _) ->
+  let* xs, _ = MemoryZipStore.find_all_nodes store in
   print_endline @@ "All array nodes: " ^ printlist (List.map ArrayNode.to_path xs);
   let anode = List.hd @@ List.filter
     (fun node -> ArrayNode.to_path node = "/some/group/name") xs in
   let slice = Owl_types.[|R [0; 20]; I 10; R []|] in
-  MemoryZipStore.read_array store anode slice Bigarray.Char >>= fun x ->
+  let* x = MemoryZipStore.read_array store anode slice Bigarray.Char in
   print_string @@ "BEFORE: " ^ Owl_pretty.dsnda_to_string x;
   let x' =
     Owl.Dense.Ndarray.Generic.map
       (fun _ -> Owl_stats_dist.uniform_int_rvs ~a:0 ~b:255 |> Char.chr) x in
-  MemoryZipStore.write_array store anode slice x' >>= fun () ->
-  MemoryZipStore.read_array store anode slice Bigarray.Char >>| fun y ->
+  let* () = MemoryZipStore.write_array store anode slice x' in
+  let+ y = MemoryZipStore.read_array store anode slice Bigarray.Char in
   print_string @@ "AFTER: " ^ Owl_pretty.dsnda_to_string y;
   print_endline "Zip store has been update."
   end

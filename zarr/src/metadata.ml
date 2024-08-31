@@ -1,5 +1,4 @@
 open Extensions
-open Util.Result_syntax
 
 exception Parse_error of string
 
@@ -168,104 +167,88 @@ module ArrayMetadata = struct
 
   let of_yojson x =
     let open Yojson.Safe.Util in
-    (match member "zarr_format" x with
-    | `Int (3 as i) -> Ok i
-    | `Null -> Error "array metadata must contain a zarr_format field."
-    | _ -> Error "zarr_format field must be the integer 3.")
-    >>= fun zarr_format ->
-
-    (match member "node_type" x with
-    | `String ("array" as a) -> Ok a
-    | `Null -> Error "array metadata must contain a node_type field."
-    | _ -> Error "node_type field must be 'array'.")
-    >>= fun node_type ->
-
-    (* An array can have zero or more dimensions. *)
-    (match member "shape" x with
-    | `List xs ->
-      List.fold_right
-        (fun a acc ->
-            acc >>= fun k ->
+    let open Util.Result_syntax in
+    let* zarr_format = match member "zarr_format" x with
+      | `Int (3 as i) -> Ok i
+      | `Null -> Error "array metadata must contain a zarr_format field."
+      | _ -> Error "zarr_format field must be the integer 3."
+    in
+    let* node_type = match member "node_type" x with
+      | `String ("array" as a) -> Ok a
+      | `Null -> Error "array metadata must contain a node_type field."
+      | _ -> Error "node_type field must be 'array'."
+    in
+    let* shape = match member "shape" x with
+      | `List xs ->
+        let+ l = List.fold_right
+          (fun a acc ->
+            let* k = acc in
             match a with
             | `Int i when i > 0 -> Ok (i :: k)
             | _ ->
-              Result.error @@
-              "shape field list must only contain positive integers.")
-        xs (Ok [])
-        >>| Array.of_list
-     | `Null -> Error "array metadata must contain a shape field."
-     | _ -> Error "shape field must be a list of integers.")
-    >>= fun shape ->
-
-    (match member "data_type" x with
-    | `String _ as c -> Datatype.of_yojson c
-    | `Null -> Error "array metadata must contain a data_type field."
-    | _ -> Error "data_type field must be a string.")
-    >>= fun data_type ->
-
-    (match member "chunk_grid" x with
-    | `Null -> Error "array metadata must contain a chunk_grid field." 
-    | xs ->
-      (match Util.get_name xs, member "configuration" xs with
-      | "regular", `Assoc [("chunk_shape", `List l)] ->
-        (List.fold_right
-          (fun a acc ->
-              acc >>= fun k ->
-              match a with
+              Result.error "shape field list must only contain positive integers.")
+          xs (Ok []) in Array.of_list l
+       | `Null -> Error "array metadata must contain a shape field."
+       | _ -> Error "shape field must be a list of integers."
+    in
+    let* data_type = match member "data_type" x with
+      | `String _ as c -> Datatype.of_yojson c
+      | `Null -> Error "array metadata must contain a data_type field."
+      | _ -> Error "data_type field must be a string."
+    in
+    let* chunk_shape, chunk_grid = match member "chunk_grid" x with
+      | `Null -> Error "array metadata must contain a chunk_grid field." 
+      | xs ->
+        match Util.get_name xs, member "configuration" xs with
+        | "regular", `Assoc [("chunk_shape", `List l)] ->
+          let* v = List.fold_right
+            (fun a acc ->
+              let* k = acc in
+              match a with 
               | `Int i when i > 0 -> Ok (i :: k)
               | _ ->
-                Error "chunk_shape must only contain positive ints.") l (Ok [])
-        >>| Array.of_list >>= fun cs ->
-        try Ok (cs, RegularGrid.create ~array_shape:shape cs) with
-        | RegularGrid.Grid_shape_mismatch -> Error "grid shape mismatch.")
-      | _ -> Error "Invalid Chunk grid name or configuration."))
-    >>= fun (chunk_shape, chunk_grid) ->
-
-    (match member "codecs" x with
-    | `List _ as c -> Codecs.Chain.of_yojson chunk_shape c
-    | `Null -> Error "array metadata must contain a codecs field."
-    | _ -> Error "codecs field must be a list of objects.")
-    >>= fun codecs ->
-
-    (match member "fill_value" x with
-    | `Null -> Error "array metadata must contain a fill_value field."
-    | xs -> FillValue.of_yojson xs)
-    >>= fun fill_value ->
-
-    (match member "chunk_key_encoding" x with 
-    | `Null ->
-      Error "array metadata must contain a chunk_key_encoding field." 
-    | xs -> ChunkKeyEncoding.of_yojson xs)
-    >>= fun chunk_key_encoding ->
-
+                Error "chunk_shape must only contain positive ints.") l (Ok []) in
+          let cs = Array.of_list v in
+          let+ r = try Ok (RegularGrid.create ~array_shape:shape cs) with
+            | RegularGrid.Grid_shape_mismatch -> Error "grid shape mismatch."
+          in cs, r
+        | _ -> Error "Invalid Chunk grid name or configuration."
+    in
+    let* codecs = match member "codecs" x with
+      | `List _ as c -> Codecs.Chain.of_yojson chunk_shape c
+      | `Null -> Error "array metadata must contain a codecs field."
+      | _ -> Error "codecs field must be a list of objects."
+    in
+    let* fill_value = match member "fill_value" x with
+      | `Null -> Error "array metadata must contain a fill_value field."
+      | xs -> FillValue.of_yojson xs
+    in
+    let* chunk_key_encoding = match member "chunk_key_encoding" x with 
+      | `Null ->
+        Error "array metadata must contain a chunk_key_encoding field." 
+      | xs -> ChunkKeyEncoding.of_yojson xs
+    in
     (* Optional fields *)
     let attributes = member "attributes" x in
-
-    (match member "dimension_names" x with
-    | `Null -> Ok []
-    | `List xs ->
-      if List.length xs <> Array.length shape then
-        Result.error
-        "dimension_names length and array dimensionality must be equal."
-      else
-        List.fold_right
-          (fun a acc ->
-              acc >>= fun k ->
+    let* dimension_names = match member "dimension_names" x with
+      | `Null -> Ok []
+      | `List xs ->
+        if List.length xs <> Array.length shape then
+          Error ("dimension_names length and array dimensionality must be equal.")
+        else
+          List.fold_right
+            (fun a acc ->
+              let* k = acc in
               match a with
               | `String s -> Ok (Some s :: k)
               | `Null -> Ok (None :: k)
-              | _ ->
-                let msg =
-                  "dimension_names must contain strings or null values."
-                in Error msg) xs (Ok [])
-    | _ -> Error "dimension_names field must be a list.")
-    >>= fun dimension_names ->
-
-    (match member "storage_transformers" x with
-    | `Null -> Ok []
-    | _ -> Error "storage_transformers field is not yet supported.")
-    >>| fun storage_transformers ->
-
+              | _ -> Error "dimension_names must contain strings or null values.") xs (Ok [])
+      | _ -> Error "dimension_names field must be a list."
+    in
+    let+ storage_transformers = match member "storage_transformers" x with
+      | `Null -> Ok []
+      | _ -> Error "storage_transformers field is not yet supported."
+    in
     {zarr_format; shape; node_type; data_type; codecs; fill_value; chunk_grid
     ;chunk_key_encoding; attributes; dimension_names; storage_transformers}
 
@@ -388,22 +371,21 @@ module GroupMetadata = struct
 
   let of_yojson x =
     let open Yojson.Safe.Util in
-    (match member "zarr_format" x with
-    | `Int (3 as i) -> Ok i
-    | `Null -> Error "group metadata must contain a zarr_format field."
-    | _ -> Error "zarr_format field must be the integer 3.")
-    >>= fun zarr_format ->
-    (match member "node_type" x with
-    | `String ("group" as g) -> Ok g
-    | `Null -> Error "group metadata must contain a node_type field."
-    | _ -> Error "node_type field must be 'group.")
-    >>= fun node_type ->
-    let attributes =
-      match member "attributes" x with
+    let open Util.Result_syntax in
+    let* zarr_format = match member "zarr_format" x with
+      | `Int (3 as i) -> Ok i
+      | `Null -> Error "group metadata must contain a zarr_format field."
+      | _ -> Error "zarr_format field must be the integer 3."
+    in
+    let+ node_type = match member "node_type" x with
+      | `String ("group" as g) -> Ok g
+      | `Null -> Error "group metadata must contain a node_type field."
+      | _ -> Error "node_type field must be 'group."
+    in
+    let attributes = match member "attributes" x with
       | `Null -> `Null 
       | xs -> xs
-    in
-    Ok {zarr_format; node_type; attributes}
+    in {zarr_format; node_type; attributes}
 
   let decode s = 
     match of_yojson @@ Yojson.Safe.from_string s with

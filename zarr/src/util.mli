@@ -18,8 +18,8 @@ end
 
 (** Result monad operator syntax. *)
 module Result_syntax : sig
-  val ( >>= ) : ('a, 'e) result -> ('a -> ('b, 'e) result ) -> ('b, 'e) result
-  val ( >>| ) : ('a, 'e) result -> ('a -> 'b) -> ('b, 'e) result
+  val (let*) : ('a, 'e) result -> ('a -> ('b, 'e) result ) -> ('b, 'e) result
+  val (let+) : ('a, 'e) result -> ('a -> 'b) -> ('b, 'e) result
 end
 
 module Indexing : sig

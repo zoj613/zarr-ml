@@ -6,7 +6,6 @@ end
 module FilesystemStore = struct
   module FS = struct
     module Deferred = Deferred
-    open Deferred.Infix
 
     type t = {dirname : string; perm : Unix.file_perm}
 
@@ -99,7 +98,7 @@ module FilesystemStore = struct
       in aux [] @@ key_to_fspath t ""
 
     let erase_prefix t pre =
-      list_prefix t pre >>| List.iter @@ erase t
+      List.iter (erase t) @@ list_prefix t pre
 
     let list_dir t prefix =
       let module StrSet = Zarr.Util.StrSet in

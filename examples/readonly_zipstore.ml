@@ -31,7 +31,6 @@ end = struct
 
   module Z = struct
     module Deferred = Zarr_eio.Deferred
-    open Deferred.Infix
 
     type t = Zip.in_file
 
@@ -51,7 +50,7 @@ end = struct
       | exception Not_found -> raise (Zarr.Storage.Key_not_found key)
 
     let get_partial_values t key ranges =
-      get t key >>= fun data ->
+      let data = get t key in
       let size = String.length data in
       ranges |> Eio.Fiber.List.map @@ fun (ofs, len) ->
       let f v = String.sub data ofs v in

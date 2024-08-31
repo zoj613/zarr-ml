@@ -53,22 +53,22 @@ module Util = Util
     open Zarr.Node
     open Zarr.Codecs
     open Zarr_lwt.Storage
-    open FilesystemStore.Deferred.Infix
+    open FilesystemStore.Deferred.Syntax
 
-    let main () =
-      let store = FilesystemStore.create "testdata.zarr" in
-      let group_node = GroupNode.of_path "/some/group" in
-      FilesystemStore.create_group store group_node >>= fun () ->
-      let array_node = ArrayNode.(group_node / "name") in
-      FilesystemStore.create_array
-        ~codecs:[`Bytes BE] ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
-        Bigarray.Float32 Float.neg_infinity array_node store; >>= fun () ->
-      let slice = Owl_types.[|R [0; 20]; I 10; R []|] in
-      FilesystemStore.read_array store array_node slice Bigarray.Float32 >>= fun arr ->
-      let x' = Owl.Dense.Ndarray.Generic.map (fun _ -> Owl_stats_dist.uniform_rvs 0. 10.) x
-      in FilesystemStore.write_array store array_node slice x'
-
-    let _ = Lwt_main.run @@ main ()
+    let _ =
+      Lwt_main.run begin
+        let store = FilesystemStore.create "testdata.zarr" in
+        let group_node = GroupNode.of_path "/some/group" in
+        let* () = FilesystemStore.create_group store group_node in
+        let array_node = ArrayNode.(group_node / "name") in
+        let* () = FilesystemStore.create_array
+          ~codecs:[`Bytes BE] ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
+          Bigarray.Float32 Float.neg_infinity array_node store in
+        let slice = Owl_types.[|R [0; 20]; I 10; R []|] in
+        let* x = FilesystemStore.read_array store array_node slice Bigarray.Float32 in
+        let x' = Owl.Dense.Ndarray.Generic.map (fun _ -> Owl_stats_dist.uniform_rvs 0. 10.) x
+        in FilesystemStore.write_array store array_node slice x'
+      end
     ]} *)
 
 (** {1:extensions Extension Points}

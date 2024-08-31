@@ -7,6 +7,7 @@ module FilesystemStore = struct
   module FS = struct
     module Deferred = Deferred
     open Deferred.Infix
+    open Deferred.Syntax
 
     type t = {dirname : string; perm : Lwt_unix.file_perm}
 
@@ -20,7 +21,7 @@ module FilesystemStore = struct
       let parent_dir = Filename.dirname fn in
       Lwt_unix.file_exists parent_dir >>= function
       | false ->
-        create_parent_dir parent_dir perm >>= fun () ->
+        let* () = create_parent_dir parent_dir perm in
         Lwt_unix.mkdir parent_dir perm
       | true -> Lwt.return_unit
 
@@ -28,11 +29,11 @@ module FilesystemStore = struct
       Lwt_io.file_length (key_to_fspath t key) >>| Int64.to_int
 
     let get t key =
-      size t key >>= fun bufsize ->
+      let* bsize = size t key in
       Lwt.catch
         (fun () ->
           Lwt_io.with_file
-            ~buffer:(Lwt_bytes.create bufsize)
+            ~buffer:(Lwt_bytes.create bsize)
             ~flags:Unix.[O_RDONLY; O_NONBLOCK]
             ~perm:t.perm
             ~mode:Lwt_io.Input
@@ -44,28 +45,27 @@ module FilesystemStore = struct
         | exn -> raise exn)
 
     let get_partial_values t key ranges =
-      size t key >>= fun tot ->
-      let l =
-        List.fold_left
-          (fun a (s, l) ->
-            Option.fold
-              ~none:(Int.max a (tot - s)) ~some:(Int.max a) l) 0 ranges in
+      let* tot = size t key in
+      let l = List.fold_left
+        (fun a (s, l) ->
+          Option.fold ~none:(Int.max a (tot - s)) ~some:(Int.max a) l) 0 ranges
+      in
       Lwt_io.with_file
         ~buffer:(Lwt_bytes.create l)
         ~flags:Unix.[O_RDONLY; O_NONBLOCK]
         ~perm:t.perm
         ~mode:Lwt_io.Input
         (key_to_fspath t key)
-        (fun ic ->
+        @@ fun ic ->
           Lwt_list.map_s
             (fun (ofs, len) -> 
               let count = Option.fold ~none:(tot - ofs) ~some:Fun.id len in
-              Lwt_io.set_position ic @@ Int64.of_int ofs >>= fun () ->
-              Lwt_io.read ~count ic) ranges)
+              let* () = Lwt_io.set_position ic @@ Int64.of_int ofs in
+              Lwt_io.read ~count ic) ranges
 
     let set t key value =
       let filename = key_to_fspath t key in
-      create_parent_dir filename t.perm >>= fun () ->
+      let* () = create_parent_dir filename t.perm in
       Lwt_io.with_file
         ~buffer:(Lwt_bytes.create @@ String.length value)
         ~flags:Unix.[O_WRONLY; O_TRUNC; O_CREAT; O_NONBLOCK]
@@ -83,11 +83,11 @@ module FilesystemStore = struct
         ~perm:t.perm
         ~mode:Lwt_io.Output
         (key_to_fspath t key)
-        (fun oc ->
+        @@ fun oc ->
           Lwt_list.iter_s
             (fun (ofs, value) ->
-              Lwt_io.set_position oc @@ Int64.of_int ofs >>= fun () ->
-              Lwt_io.write oc value) rvs)
+              let* () = Lwt_io.set_position oc @@ Int64.of_int ofs in
+              Lwt_io.write oc value) rvs
 
     let list t =
       let rec filter_concat acc dir =
@@ -142,7 +142,7 @@ module FilesystemStore = struct
               | _ -> Lwt.return a)
           (Lwt_unix.files_of_directory dir) acc
       in
-      filter_concat (S.empty, []) (key_to_fspath t "") >>| fun (y, x) ->
+      let+ y, x = filter_concat (S.empty, []) @@ key_to_fspath t "" in
       x, S.elements y
   end
 

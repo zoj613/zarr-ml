@@ -116,14 +116,15 @@ module Chain = struct
         | Ok v -> v :: l, r
         | Error _ -> l, c :: r) encoded ([], [])
     in
-    (match Yojson.Safe.Util.to_list x with
-    | [] -> Error "No codec specified."
-    | y -> Ok y)
-    >>= fun codecs ->
-    (match filter_partition (ArrayToBytes.of_yojson chunk_shape) codecs with
-    | [x], rest -> Ok (x, rest)
-    | _ -> Error "Must be exactly one array->bytes codec.")
-    >>= fun (a2b, rest) ->
+    let* codecs = match Yojson.Safe.Util.to_list x with
+      | [] -> Error "No codec specified."
+      | y -> Ok y
+    in
+    let* a2b, rest =
+      match filter_partition (ArrayToBytes.of_yojson chunk_shape) codecs with
+      | [x], rest -> Ok (x, rest)
+      | _ -> Error "Must be exactly one array->bytes codec."
+    in
     let a2a, rest = filter_partition (ArrayToArray.of_yojson chunk_shape) rest in
     let b2b, rest = filter_partition BytesToBytes.of_yojson rest in
     match rest with

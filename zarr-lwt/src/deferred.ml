@@ -9,3 +9,8 @@ module Infix = struct
   let (>>=) = Lwt.Infix.(>>=)
   let (>>|) = Lwt.Infix.(>|=) 
 end
+
+module Syntax = struct
+  let (let*) = Lwt.bind
+  let (let+) x f = Lwt.map f x
+end

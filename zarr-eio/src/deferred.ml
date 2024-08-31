@@ -9,3 +9,8 @@ module Infix = struct
   let (>>=) x f = f x
   let (>>|) = (>>=)
 end
+
+module Syntax = struct
+  let (let*) x f = f x
+  let (let+) = (let*)
+end

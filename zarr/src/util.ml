@@ -21,8 +21,8 @@ module ArrayMap = struct
 end
 
 module Result_syntax = struct
-  let ( >>= ) = Result.bind
-  let ( >>| ) x f = Result.map f x
+  let (let*) = Result.bind
+  let (let+) x f = Result.map f x
 end
 
 module Indexing = struct

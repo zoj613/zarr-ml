@@ -7,7 +7,7 @@ let create () = Atomic.make StrMap.empty
 
 module Make (Deferred : Types.Deferred) = struct
   module Deferred = Deferred
-  open Deferred.Infix
+  open Deferred.Syntax
 
   type t = string StrMap.t Atomic.t
 
@@ -47,7 +47,7 @@ module Make (Deferred : Types.Deferred) = struct
     if not success then erase_prefix t pre else Deferred.return_unit
 
   let get_partial_values t key ranges =
-    get t key >>| fun v ->
+    let+ v = get t key in
     let size = String.length v in
     List.fold_left
       (fun acc (ofs, len) ->
@@ -69,7 +69,7 @@ module Make (Deferred : Types.Deferred) = struct
 
   let list_dir t prefix =
     let module S = Util.StrSet in
-    list t >>| fun xs ->
+    let+ xs = list t in
     let n = String.length prefix in
     let prefs, keys =
       List.fold_left

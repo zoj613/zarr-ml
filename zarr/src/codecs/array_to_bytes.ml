@@ -337,14 +337,15 @@ end = struct
         | Ok v -> v :: l, r
         | Error _ -> l, c :: r) encoded ([], [])
     in
-    (match codecs with
-    | [] -> Error "No codec chain specified for sharding_indexed."
-    | y -> Ok y)
-    >>= fun codecs ->
-    (match filter_partition (ArrayToBytes.of_yojson chunk_shape) codecs with
-    | [x], rest -> Ok (x, rest)
-    | _ -> Error "Must be exactly one array->bytes codec.")
-    >>= fun (a2b, rest) ->
+    let* codecs = match codecs with
+      | [] -> Error "No codec chain specified for sharding_indexed."
+      | y -> Ok y
+    in
+    let* a2b, rest =
+      match filter_partition (ArrayToBytes.of_yojson chunk_shape) codecs with
+      | [x], rest -> Ok (x, rest)
+      | _ -> Error "Must be exactly one array->bytes codec."
+    in
     let a2a, rest = filter_partition (ArrayToArray.of_yojson chunk_shape) rest in
     let b2b, rest = filter_partition BytesToBytes.of_yojson rest in
     match rest with
@@ -360,57 +361,56 @@ end = struct
     let extract name =
       Yojson.Safe.Util.filter_map
         (fun (n, v) -> if n = name then Some v else None) assoc in
-    (match extract "chunk_shape" with
-    | [] -> Error ("sharding_indexed must contain a chunk_shape field")
-    | x :: _ ->
-      List.fold_right (fun a acc ->
-        acc >>= fun k ->
-        match a with
-        | `Int i when i > 0 -> Ok (i :: k)
-        | _ -> Error "chunk_shape must only contain positive integers.")
-        (Yojson.Safe.Util.to_list x) (Ok []))
-    >>= fun l'->
+    let* l' = match extract "chunk_shape" with
+      | [] -> Error ("sharding_indexed must contain a chunk_shape field")
+      | x :: _ ->
+        List.fold_right (fun a acc ->
+          let* k = acc in
+          match a with
+          | `Int i when i > 0 -> Ok (i :: k)
+          | _ -> Error "chunk_shape must only contain positive integers.")
+          (Yojson.Safe.Util.to_list x) (Ok [])
+    in
     let chunk_shape = Array.of_list l' in
-    (match extract "index_location" with
-    | [] -> Error "sharding_indexed must have a index_location field"
-    | x :: _ ->
-      match x with
-      | `String "end" -> Ok End
-      | `String "start" -> Ok Start
-      | _ -> Error "index_location must only be 'end' or 'start'")
-    >>= fun index_location ->
-    (match extract "codecs" with
-    | [] -> Error "sharding_indexed must have a codecs field"
-    | x :: _ ->
-      chain_of_yojson chunk_shape @@ Yojson.Safe.Util.to_list x)
-    >>= fun codecs ->
-    (match extract "index_codecs" with
-    | [] -> Error "sharding_indexed must have a index_codecs field"
-    | x :: _ ->
-      let cps = Array.map2 (/) shard_shape chunk_shape in
-      let idx_shape = Array.append cps [|2|] in
-      chain_of_yojson idx_shape @@ Yojson.Safe.Util.to_list x)
-    >>= fun ic ->
+    let* index_location = match extract "index_location" with
+      | [] -> Error "sharding_indexed must have a index_location field"
+      | x :: _ ->
+        match x with
+        | `String "end" -> Ok End
+        | `String "start" -> Ok Start
+        | _ -> Error "index_location must only be 'end' or 'start'"
+    in
+    let* codecs = match extract "codecs" with
+      | [] -> Error "sharding_indexed must have a codecs field"
+      | x :: _ ->
+        chain_of_yojson chunk_shape @@ Yojson.Safe.Util.to_list x
+    in
+    let* ic = match extract "index_codecs" with
+      | [] -> Error "sharding_indexed must have a index_codecs field"
+      | x :: _ ->
+        let cps = Array.map2 (/) shard_shape chunk_shape in
+        let idx_shape = Array.append cps [|2|] in
+        chain_of_yojson idx_shape @@ Yojson.Safe.Util.to_list x
+    in
     (* Ensure index_codecs only contains fixed size
        array->bytes and bytes->bytes codecs. *)
     let msg = "index_codecs must not contain variable-sized codecs." in
-    List.fold_right
+    let* b2b = List.fold_right
       (fun c acc ->
-        acc >>= fun l ->
+        let* l = acc in
         match c with
         | `Crc32c -> Ok (`Crc32c :: l)
         | `Gzip _ -> Error msg) ic.b2b (Ok [])
-    >>= fun b2b ->
-    (match ic.a2b with
+    in
+    let+ a2b = match ic.a2b with
       | `Bytes e -> Ok (`Bytes e)
-      | `ShardingIndexed _ -> Error msg)
-    >>| fun a2b ->
-    {index_codecs = {ic with a2b; b2b}; index_location; codecs; chunk_shape}
+      | `ShardingIndexed _ -> Error msg
+    in {index_codecs = {ic with a2b; b2b}; index_location; codecs; chunk_shape}
 end
 
 module Make (Io : Types.IO) = struct
   open Io
-  open Deferred.Infix
+  open Deferred.Syntax
   open ShardingIndexedCodec
   type t = ShardingIndexedCodec.t
 
@@ -423,7 +423,7 @@ module Make (Io : Types.IO) = struct
       match t.index_location with
       | Start -> get_partial [0, Some is], is
       | End -> get_partial [csize - is, None], 0 in
-    l >>= fun xs ->
+    let* xs = l in
     let idx_arr = fst @@ decode_index t cps @@ List.hd xs in
     let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
     let m =
@@ -443,7 +443,7 @@ module Make (Io : Types.IO) = struct
           let nb = Stdint.Uint64.to_int @@ Any.get idx_arr nc in
           (pad + ofs, Some nb), (oc, nc, ofs, nb)) bindings
     in
-    get_partial ranges >>= fun xs ->
+    let* xs = get_partial ranges in
     let repr' = {repr with shape = t.chunk_shape} in
     let bsize, inplace, append = 
     List.fold_left
@@ -459,14 +459,14 @@ module Make (Io : Types.IO) = struct
             a + nb', l, (a, s) :: r)) 
       (csize - pad, [], []) List.(combine (combine xs coords) bindings)
     in
-    begin match inplace with
+    let* () = match inplace with
       | [] -> Deferred.return_unit
       | xs -> set_partial xs
-    end >>= fun () ->
-    begin match append with
+    in
+    let* () = match append with
       | [] -> Deferred.return_unit
       | xs -> set_partial ~append:true xs
-    end >>= fun () ->
+    in
     let ib = encode_index_chain t.index_codecs idx_arr in
     match t.index_location with
     | Start -> set_partial [0, ib]
@@ -479,7 +479,7 @@ module Make (Io : Types.IO) = struct
       match t.index_location with
       | Start -> get_partial [0, Some is], is
       | End -> get_partial [csize - is, None], 0 in
-    l >>= fun xs ->
+    let* xs = l in
     let idx_arr = fst @@ decode_index t cps @@ List.hd xs in
     let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
     let m =
@@ -497,7 +497,7 @@ module Make (Io : Types.IO) = struct
           let nb = Stdint.Uint64.to_int @@ Any.get idx_arr nc in
           pad + ofs, Some nb) ArrayMap.(bindings m)
     in
-    get_partial ranges >>| fun xs ->
+    let+ xs = get_partial ranges in
     let repr' = {repr with shape = t.chunk_shape} in
     List.concat_map
       (fun (x, (_, z)) ->

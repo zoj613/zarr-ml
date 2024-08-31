@@ -9,6 +9,10 @@ module type Deferred = sig
     val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
     val (>>|) : 'a t -> ('a -> 'b) -> 'b t
   end
+  module Syntax : sig
+    val (let*) : 'a t -> ('a -> 'b t) -> 'b t
+    val (let+) : 'a t -> ('a -> 'b) -> 'b t
+  end
 end
 
 type key = string

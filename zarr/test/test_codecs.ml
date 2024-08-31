@@ -38,9 +38,14 @@ let tests = [
     (Zarr.Codecs.Invalid_transpose_order)
     (fun () -> Chain.create shape chain); 
 
-  let chain = [`Transpose [|2; 1; 0|]; `ShardingIndexed shard_cfg; `Bytes BE] in
+  let chain = [`ShardingIndexed shard_cfg; `Transpose [|2; 1; 0|]; `Gzip L0] in
   assert_raises
-    (Zarr.Codecs.Bytes_to_bytes_invariant)
+    (Zarr.Codecs.Invalid_codec_ordering)
+    (fun () -> Chain.create shape chain); 
+
+  let chain = [`Transpose [|2; 1; 0|]; `Crc32c] in
+  assert_raises
+    (Zarr.Codecs.Array_to_bytes_invariant)
     (fun () -> Chain.create shape chain); 
 
   let chain =

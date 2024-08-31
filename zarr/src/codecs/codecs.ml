@@ -31,53 +31,45 @@ module Chain = struct
   type t = (arraytobytes, bytestobytes) internal_chain
 
   let rec create : int array -> codec_chain -> t = fun shape cc ->
-    let a2a, rest =
-      List.partition_map
-        (function
-        | #arraytoarray as c -> Either.left c
-        | #array_tobytes as c -> Either.right c
-        | #bytestobytes as c -> Either.right c) cc
+    let rec extract_a2a (l, r) = match r with
+      | #arraytoarray as x :: xs -> extract_a2a (l @ [x], xs)
+      | xs -> (l, xs)
     in
-    let result =
-      List.fold_right
-        (fun c (l, r) ->
-          match c with
-          | #bytestobytes as c -> l, c :: r
-          | #fixed_arraytobytes as c -> c :: l, r
-          | `ShardingIndexed cfg ->
-            let codecs = create shape cfg.codecs in
-            let index_codecs =
-              create
-                (Array.append shape [|2|])
-                (cfg.index_codecs :> codec_chain) in
-            (* coerse to a fixed codec internal_chain list type *)
-            let b2b =
-              fst @@
-              List.partition_map
-                (function
-                | #fixed_bytestobytes as c -> Either.left c
-                | c -> Either.right c) index_codecs.b2b
-            in
-            let a2b =
-              List.hd @@
-              fst @@
-              List.partition_map
-                (function
-                | #fixed_arraytobytes as c -> Either.left c
-                | c -> Either.right c) [index_codecs.a2b]
-            in
-            let cfg' : internal_shard_config =
-              {codecs
-              ;chunk_shape = cfg.chunk_shape
-              ;index_location = cfg.index_location
-              ;index_codecs = {index_codecs with a2b; b2b}}
-            in `ShardingIndexed cfg' :: l, r) rest ([], [])
+    let extract_a2b = function
+      | #fixed_arraytobytes as x :: xs -> (x, xs)
+      | #variable_array_tobytes as x :: xs ->
+        begin match x with
+        | `ShardingIndexed cfg ->
+          let codecs = create shape cfg.codecs in
+          let index_codecs = create
+            (Array.append shape [|2|])
+            (cfg.index_codecs :> codec_chain) in
+          (* coerse to a fixed codec internal_chain list type *)
+          let b2b = List.filter_map (function
+            | #fixed_bytestobytes as c -> Some c
+            | _ -> None) index_codecs.b2b
+          in
+          let a2b = match index_codecs.a2b with
+            | #fixed_arraytobytes as c -> c
+            | _ -> raise Array_to_bytes_invariant 
+          in
+          let cfg' : internal_shard_config =
+            {codecs
+            ;chunk_shape = cfg.chunk_shape
+            ;index_location = cfg.index_location
+            ;index_codecs = {index_codecs with a2b; b2b}}
+          in (`ShardingIndexed cfg', xs)
+        end
+      | _ -> raise Array_to_bytes_invariant
     in
-    let a2b, b2b =
-      match result with
-      | [x], r -> x, r
-      | _ -> raise Bytes_to_bytes_invariant
+    let rec extract_b2b (l, r) = match r with
+      | #bytestobytes as x :: xs -> extract_b2b (l @ [x], xs)
+      | xs -> (l, xs)
     in
+    let a2a, rest = extract_a2a ([], cc) in
+    let a2b, rest = extract_a2b rest in
+    let b2b, other = extract_b2b ([], rest) in
+    if List.compare_length_with other 0 <> 0 then raise Invalid_codec_ordering else
     ArrayToBytes.parse a2b @@
     (match a2a with
     | [] -> shape

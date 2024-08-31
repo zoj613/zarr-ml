@@ -333,10 +333,8 @@ end = struct
     let open Util.Result_syntax in
     let filter_partition f encoded =
       List.fold_right (fun c (l, r) ->
-        match f c with
-        | Ok v -> v :: l, r
-        | Error _ -> l, c :: r) encoded ([], [])
-    in
+        Result.fold ~ok:(fun v -> v :: l, r) ~error:(fun _ -> l, c :: r) @@ f c)
+        encoded ([], []) in
     let* codecs = match codecs with
       | [] -> Error "No codec chain specified for sharding_indexed."
       | y -> Ok y

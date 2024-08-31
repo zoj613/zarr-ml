@@ -59,18 +59,6 @@ module FilesystemStore = struct
               Out_channel.seek oc @@ Int64.of_int rs;
               Out_channel.output_string oc value) rvs; Out_channel.flush oc)
 
-    let list t =
-      let rec aux acc dir =
-        match Sys.readdir dir with
-        | [||] -> acc
-        | xs ->
-          List.concat_map
-            (fun x ->
-              match Filename.concat dir x with
-              | p when Sys.is_directory p -> aux acc p
-              | p -> (fspath_to_key t p) :: acc) @@ Array.to_list xs
-      in aux [] @@ key_to_fspath t ""
-
     let is_member t key = Sys.file_exists @@ key_to_fspath t key
 
     let erase t key = Sys.remove @@ key_to_fspath t key
@@ -82,20 +70,17 @@ module FilesystemStore = struct
         (key_to_fspath t key)
         (fun ic -> In_channel.length ic |> Int64.to_int)
 
+    let rec walk t acc dir =
+      List.fold_left
+        (fun a x ->
+          match Filename.concat dir x with
+          | p when Sys.is_directory p -> walk t a p
+          | p -> (fspath_to_key t p) :: a) acc (Array.to_list @@ Sys.readdir dir)
+    
+    let list t = walk t [] (key_to_fspath t "")
+
     let list_prefix t prefix =
-      let rec aux acc dir =
-        match Sys.readdir dir with
-        | [||] -> acc
-        | xs ->
-          List.concat_map
-            (fun x ->
-              match Filename.concat dir x with
-              | p when Sys.is_directory p -> aux acc p
-              | p ->
-                let k = fspath_to_key t p in
-                if String.starts_with ~prefix k then k :: acc else acc)
-            @@ Array.to_list xs
-      in aux [] @@ key_to_fspath t ""
+      walk t [] (key_to_fspath t prefix)
 
     let erase_prefix t pre =
       List.iter (erase t) @@ list_prefix t pre

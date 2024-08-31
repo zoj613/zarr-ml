@@ -89,36 +89,25 @@ module FilesystemStore = struct
               let* () = Lwt_io.set_position oc @@ Int64.of_int ofs in
               Lwt_io.write oc value) rvs
 
-    let list t =
-      let rec filter_concat acc dir =
-        Lwt_stream.fold_s
-          (fun x a -> 
-            if x = "." || x  = ".." then Lwt.return a else
-            match Filename.concat dir x with
-            | p when Sys.is_directory p -> filter_concat a p
-            | p -> Lwt.return @@ fspath_to_key t p :: a)
-          (Lwt_unix.files_of_directory dir) acc
-      in filter_concat [] @@ key_to_fspath t ""
+    let rec walk t acc dir =
+      Lwt_stream.fold_s
+        (fun x a -> 
+          if x = "." || x  = ".." then Lwt.return a else
+          match Filename.concat dir x with
+          | p when Sys.is_directory p -> walk t a p
+          | p -> Lwt.return @@ fspath_to_key t p :: a)
+        (Lwt_unix.files_of_directory dir) acc
+
+    let list t = walk t [] (key_to_fspath t "")
+
+    let list_prefix t prefix =
+      walk t [] (key_to_fspath t prefix)
 
     let is_member t key =
       Lwt_unix.file_exists @@ key_to_fspath t key
 
     let erase t key =
       Lwt_unix.unlink @@ key_to_fspath t key
-
-    let list_prefix t prefix =
-      let rec filter_concat acc dir =
-        Lwt_stream.fold_s
-          (fun x a -> 
-            if x = "." || x  = ".." then Lwt.return a else
-            match Filename.concat dir x with
-            | p when Sys.is_directory p -> filter_concat a p
-            | p ->
-              let key = fspath_to_key t p in 
-              if String.starts_with ~prefix key
-              then Lwt.return @@ key :: a else Lwt.return a)
-          (Lwt_unix.files_of_directory dir) acc
-      in filter_concat [] @@ key_to_fspath t ""
 
     let erase_prefix t pre =
       list_prefix t pre >>= Lwt_list.iter_s @@ erase t

@@ -59,13 +59,18 @@ module Make (Io : Types.IO) = struct
     Util.to_string @@ Util.member "node_type" @@ from_string s
 
   let find_child_nodes t node =
-    let* _, gp = list_dir t @@ GroupNode.to_prefix node in
-    Deferred.fold_left
-      (fun (l, r) pre ->
-        let+ nt = node_type t @@ pre ^ "zarr.json" in
-        let p = "/" ^ String.(length pre - 1 |> sub pre 0) in
-        if nt = "array" then ArrayNode.of_path p :: l, r
-        else l, GroupNode.of_path p :: r) ([], []) gp
+    let prefix = GroupNode.to_prefix node in
+    let res = [], [] in
+    is_member t @@ prefix ^ "zarr.json" >>= function
+    | false -> Deferred.return res
+    | true ->
+      let* _, ps = list_dir t prefix in
+      Deferred.fold_left
+        (fun (l, r) pre ->
+          let+ nt = node_type t @@ pre ^ "zarr.json" in
+          let p = "/" ^ String.(length pre - 1 |> sub pre 0) in
+          if nt = "array" then ArrayNode.of_path p :: l, r
+          else l, GroupNode.of_path p :: r) res ps
 
   let find_all_nodes t =
     let* keys = list t in

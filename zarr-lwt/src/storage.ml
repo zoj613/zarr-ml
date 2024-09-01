@@ -113,26 +113,17 @@ module FilesystemStore = struct
       list_prefix t pre >>= Lwt_list.iter_s @@ erase t
 
     let list_dir t prefix =
-      let module S = Zarr.Util.StrSet in
-      let n = String.length prefix in
-      let rec filter_concat acc dir =
-        Lwt_stream.fold_s
-          (fun x ((l, r) as a) -> 
-            if x = "." || x  = ".." then Lwt.return a else
-            match Filename.concat dir x with
-            | p when Sys.is_directory p -> filter_concat a p
-            | p ->
-              let key = fspath_to_key t p in
-              let pred = String.starts_with ~prefix key in
-              match key with
-              | k when pred && String.contains_from k n '/' ->
-                Lwt.return (S.add String.(sub k 0 @@ 1 + index_from k n '/') l, r)
-              | k when pred -> Lwt.return (l, k :: r)
-              | _ -> Lwt.return a)
-          (Lwt_unix.files_of_directory dir) acc
-      in
-      let+ y, x = filter_concat (S.empty, []) @@ key_to_fspath t "" in
-      x, S.elements y
+      let dir = key_to_fspath t prefix in
+      let+ files =
+        Lwt_stream.to_list @@ Lwt_stream.filter
+          (fun x -> if x = "." || x = ".." then false else true)
+          (Lwt_unix.files_of_directory dir) in
+      List.partition_map
+        (fun x ->
+          match Filename.concat dir x with
+          | p when Sys.is_directory p ->
+            Either.right @@ (fspath_to_key t p) ^ "/"
+          | p -> Either.left @@ fspath_to_key t p) files
   end
 
   module U = Zarr.Util

@@ -107,7 +107,7 @@ let test_storage
     (Zarr.Storage.Invalid_data_type)
     (fun () -> write_array store anode slice badarray);
 
-  let child = GroupNode.of_path "/some/child" in
+  let child = GroupNode.of_path "/some/child/group" in
   create_group store child;
   let arrays, groups = find_child_nodes store gnode in
   assert_equal
@@ -115,15 +115,16 @@ let test_storage
   assert_equal
     ~printer:string_of_list ["/some"] (List.map GroupNode.to_path groups);
 
-  let c = find_child_nodes store @@ GroupNode.(root / "fakegroup") in
-  assert_equal ([], []) c;
+  assert_equal ([], []) @@ find_child_nodes store child;
+  assert_equal ([], []) @@ find_child_nodes store GroupNode.(root / "fakegroup");
 
   let ac, gc = find_all_nodes store in
   let got =
     List.fast_sort String.compare @@
     List.map ArrayNode.show ac @ List.map GroupNode.show gc in
   assert_equal
-    ~printer:string_of_list ["/"; "/arrnode"; "/some"; "/some/child"] got;
+    ~printer:string_of_list
+    ["/"; "/arrnode"; "/some"; "/some/child"; "/some/child/group"] got;
 
   let nshape = [|25; 32; 10|] in
   reshape store anode nshape;

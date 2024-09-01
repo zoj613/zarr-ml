@@ -68,17 +68,17 @@ module Make (Deferred : Types.Deferred) = struct
     else Deferred.return_unit
 
   let list_dir t prefix =
+    let m = Atomic.get t in
     let module S = Util.StrSet in
-    let+ xs = list t in
     let n = String.length prefix in
     let prefs, keys =
-      List.fold_left
-        (fun ((l, r) as a) key ->
+      StrMap.fold
+        (fun key _ ((l, r) as a) ->
           let pred = String.starts_with ~prefix key in
           match key with
           | k when pred && String.contains_from k n '/' ->
             let l' = S.add String.(sub k 0 @@ 1 + index_from k n '/') l in l', r
           | k when pred -> l, k :: r
-          | _ -> a) (S.empty, []) xs
-    in keys, S.elements prefs
+          | _ -> a) m (S.empty, [])
+    in Deferred.return (keys, S.elements prefs)
 end

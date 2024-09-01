@@ -86,25 +86,13 @@ module FilesystemStore = struct
       List.iter (erase t) @@ list_prefix t pre
 
     let list_dir t prefix =
-      let module StrSet = Zarr.Util.StrSet in
-      let n = String.length prefix in
-      let rec aux acc dir =
-        let xs = Sys.readdir dir in
-        List.fold_left
-          (fun ((l, r) as a) x ->
-            match Filename.concat dir x with
-            | p when Sys.is_directory p -> aux a p
-            | p ->
-              let key = fspath_to_key t p in
-              let pred = String.starts_with ~prefix key in
-              match key with
-              | k when pred && String.contains_from k n '/' ->
-                StrSet.add String.(sub k 0 @@ 1 + index_from k n '/') l, r
-              | k when pred -> l, k :: r
-              | _ -> a) acc (Array.to_list xs)
-        in
-        let prefs, keys = aux (StrSet.empty, []) @@ key_to_fspath t "" in
-        keys, StrSet.elements prefs
+      let dir = key_to_fspath t prefix in
+      List.partition_map 
+        (fun x ->
+          match Filename.concat dir x with
+          | p when Sys.is_directory p ->
+            Either.right @@ (fspath_to_key t p) ^ "/"
+          | p -> Either.left @@ fspath_to_key t p) (Array.to_list @@ Sys.readdir dir)
   end
 
   module U = Zarr.Util

@@ -153,17 +153,11 @@ module ArrayMetadata = struct
       | `Null -> l
       | x -> l @ [("attributes", x)]
     in
-    let l =
-      match t.dimension_names with
-      | [] -> l
-      | xs  ->
-        let xs' =
-          List.map (function
-            | Some s -> `String s
-            | None -> `Null) xs
-        in
-        l @ [("dimension_names", `List xs')]
-    in `Assoc l
+    match t.dimension_names with
+    | [] -> `Assoc l
+    | xs  ->
+      let xs' = List.map (Option.fold ~none:`Null ~some:(fun s -> `String s)) xs in
+      `Assoc (l @ [("dimension_names", `List xs')])
 
   let of_yojson x =
     let open Yojson.Safe.Util in
@@ -361,13 +355,10 @@ module GroupMetadata = struct
   let to_yojson t =
     let l =
       [("zarr_format", `Int t.zarr_format)
-      ;("node_type", `String t.node_type)]
-    in
-    let l =
-      match t.attributes with
-      | `Null -> l
-      | x -> l @ [("attributes", x)]
-    in `Assoc l
+      ;("node_type", `String t.node_type)] in
+    match t.attributes with
+    | `Null -> `Assoc l
+    | x -> `Assoc (l @ [("attributes", x)])
 
   let of_yojson x =
     let open Yojson.Safe.Util in

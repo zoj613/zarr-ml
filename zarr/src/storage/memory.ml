@@ -69,7 +69,7 @@ module Make (Deferred : Types.Deferred) = struct
 
   let list_dir t prefix =
     let m = Atomic.get t in
-    let module S = Util.StrSet in
+    let module S = Set.Make(String) in
     let n = String.length prefix in
     let prefs, keys =
       StrMap.fold

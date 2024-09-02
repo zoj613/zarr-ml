@@ -5,9 +5,6 @@ module ExtPoint : sig
   val ( = ) : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
 end
 
-(** A string set .*)
-module StrSet : sig include Set.S with type elt = string end
-
 (** A finite map over integer array keys. *)
 module ArrayMap : sig
   include Map.S with type key = int array

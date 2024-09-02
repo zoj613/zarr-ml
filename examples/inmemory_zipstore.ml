@@ -69,7 +69,7 @@ end = struct
           | Zipc.Member.File _ -> Zipc.Member.path m :: acc) t.ic []
 
     let list_dir t prefix =
-      let module StrSet = Zarr.Util.StrSet in
+      let module S = Set.Make(String) in
       let n = String.length prefix in
       let m = Zipc.to_string_map t.ic in
       let prefs, keys =
@@ -81,10 +81,10 @@ end = struct
               let pred = String.starts_with ~prefix key in
               match key with
               | k when pred && String.contains_from k n '/' ->
-                StrSet.add String.(sub k 0 @@ 1 + index_from k n '/') l, r
+                S.add String.(sub k 0 @@ 1 + index_from k n '/') l, r
               | k when pred -> l, k :: r
-              | _ -> acc) m (StrSet.empty, [])
-      in Deferred.return (keys, StrSet.elements prefs)
+              | _ -> acc) m (S.empty, [])
+      in Deferred.return (keys, S.elements prefs)
 
     let set t key value =
       match Zipc.File.deflate_of_binary_string ~level:t.level value with

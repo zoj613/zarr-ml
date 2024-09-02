@@ -45,7 +45,8 @@ module Make (Io : Types.IO) = struct
     let m = ArrayMetadata.create
       ~sep ~codecs:c ~dimension_names ~attributes ~shape kind fv chunks in
     let* () = set t (ArrayNode.to_metakey node) @@ ArrayMetadata.encode m in
-    create_group t @@ ArrayNode.parent node
+    ArrayNode.parent node
+    |> Option.fold ~none:Deferred.return_unit ~some:(create_group t)
 
   let group_metadata t node =
     get t @@ GroupNode.to_metakey node >>| GroupMetadata.decode

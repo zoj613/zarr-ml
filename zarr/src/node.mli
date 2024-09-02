@@ -85,6 +85,9 @@ module ArrayNode : sig
   val ( / ) : GroupNode.t -> string -> t
   (** The infix operator alias of {!ArrayNode.create} *)
 
+  val root : t
+  (** creates an array root node *)
+
   val of_path : string -> t
   (** [of_path s] returns an array node from string [s].
       @raise Failure if node invariants are not satisfied. *)
@@ -95,8 +98,9 @@ module ArrayNode : sig
   val name : t -> string
   (** [name n] returns the name of array node [n]. *)
 
-  val parent : t -> GroupNode.t
-  (** [parent n] returns parent group node of [n].*)
+  val parent : t -> GroupNode.t option
+  (** [parent n] returns [Some p] where [p] is the parent group node of [n]
+      or [None] if node [n] is a root node. *)
 
   val ( = ) : t -> t -> bool
   (** [x = y] returns [true] if nodes [x] and [y] are equal,

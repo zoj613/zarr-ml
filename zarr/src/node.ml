@@ -81,18 +81,20 @@ module GroupNode = struct
 end
 
 module ArrayNode = struct
-  type t = {parent : GroupNode.t; name : string}
+  type t = {parent : GroupNode.t option; name : string}
 
-  let create parent name =
-    if rep_ok name then {parent; name}
+  let create g name =
+    if rep_ok name then {parent = Some g; name}
     else raise Node_invariant
 
   let ( / ) = create
 
+  let root = {parent = None; name = ""}
+
   let of_path p =
     let g = GroupNode.of_path p in
     match GroupNode.parent g with
-    | Some parent -> {parent; name = GroupNode.name g}
+    | Some _ as parent -> {parent; name = GroupNode.name g}
     | None -> raise Node_invariant
       
   let ( = )
@@ -103,17 +105,26 @@ module ArrayNode = struct
 
   let parent {parent = p; _} = p
 
-  let to_path {parent = p; name} =
-    if GroupNode.(p = root) then "/" ^ name
-    else GroupNode.to_path p ^ "/" ^ name
+  let to_path {parent = p; name} = match p with
+    | None -> "/"
+    | Some g when GroupNode.(g = root) -> "/" ^ name
+    | Some g -> GroupNode.to_path g ^ "/" ^ name
   
-  let ancestors {parent; _} = parent :: GroupNode.ancestors parent
+  let ancestors {parent; _} = match parent with
+    | None -> []
+    | Some g -> g :: GroupNode.ancestors g
 
-  let is_parent {parent = p; _} y = GroupNode.(p = y)
+  let is_parent {parent; _} y = match parent with
+    | None -> false
+    | Some g -> GroupNode.(g = y)
 
-  let to_key {parent; name} = GroupNode.to_prefix parent ^ name
+  let to_key {parent; name} = match parent with
+    | Some g -> GroupNode.to_prefix g ^ name
+    | None -> "" 
 
-  let to_metakey p = to_key p ^ "/zarr.json"
+  let to_metakey = function
+    | {parent = None; _} -> "zarr.json"
+    | p -> to_key p ^ "/zarr.json"
   
   let show = to_path
 

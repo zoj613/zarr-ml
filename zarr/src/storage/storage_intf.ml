@@ -60,14 +60,18 @@ module type STORE = sig
     : t -> GroupNode.t -> (ArrayNode.t list * GroupNode.t list) Deferred.t
   (** [find_child_nodes t n] returns a tuple of child nodes of group node [n].
       This operation returns a pair of empty lists if node [n] has no
-      children or is not a member of store [t]. *)
+      children or is not a member of store [t].
+      
+      @raise Parse_error if any child node has invalid [node_type] metadata.*)
 
   val find_all_nodes : t -> (ArrayNode.t list * GroupNode.t list) Deferred.t
   (** [find_all_nodes t] returns [Some p] where [p] is a pair of lists
       representing all nodes in store [t]. The first element of the pair
       is a list of all array nodes, and the second element is a list of
       all group nodes. This operation returns a pair of empty lists if
-      store [t] is empty. *)
+      store [t] is empty.
+
+      @raise Parse_error if any node has invalid [node_type] metadata.*)
 
   val erase_group_node : t -> GroupNode.t -> unit Deferred.t
   (** [erase_group_node t n] erases group node [n] from store [t]. This also

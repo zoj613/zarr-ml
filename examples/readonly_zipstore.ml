@@ -62,7 +62,7 @@ end = struct
       | _ -> None
 
     let list_dir t prefix =
-      let module StrSet = Zarr.Util.StrSet in
+      let module S = Set.Make(String) in
       let n = String.length prefix in
       let prefs, keys =
         List.fold_left
@@ -72,9 +72,9 @@ end = struct
         | e when String.contains_from e.filename n '/' ->
           let key = e.filename in
           let pre = String.sub key 0 @@ 1 + String.index_from key n '/' in
-          StrSet.add pre l, r
-        | e -> l, e.filename :: r) (StrSet.empty, []) @@ Zip.entries t
-      in keys, StrSet.elements prefs
+          S.add pre l, r
+        | e -> l, e.filename :: r) (S.empty, []) @@ Zip.entries t
+      in keys, S.elements prefs
 
     let set _ = raise Not_implemented
 

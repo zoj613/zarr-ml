@@ -126,7 +126,8 @@ let array_node = [
   assert_equal
     ~printer:GroupNode.show
     GroupNode.root @@
-    ArrayNode.parent @@ ArrayNode.of_path "/nodename";
+    Option.get @@ ArrayNode.parent @@ ArrayNode.of_path "/nodename";
+  assert_equal None ArrayNode.(parent root);
 
   (* equality tests *)
   let n' = ArrayNode.of_path s in
@@ -137,6 +138,7 @@ let array_node = [
     ArrayNode.(n = ArrayNode.of_path (s ^ "/more"));
 
   (* ancestory tests *)
+  assert_equal [] ArrayNode.(ancestors root);
   assert_equal
     ~printer:[%show: string list]
     ["/"; "/some"; "/some/dir"; "/some/dir/moredirs"
@@ -145,6 +147,7 @@ let array_node = [
       |> List.map GroupNode.show
       |> List.fast_sort String.compare);
   let m = ArrayNode.of_path "/some" in
+  assert_equal false ArrayNode.(is_parent root GroupNode.root);
   assert_equal true @@ ArrayNode.is_parent m GroupNode.root;
 
   (* stringify tests *)
@@ -152,7 +155,10 @@ let array_node = [
     ~printer:Fun.id
     "some/dir/moredirs/path/pname" @@
     ArrayNode.to_key n;
+  assert_equal ~printer:Fun.id "" ArrayNode.(to_key root);
+  assert_equal ~printer:Fun.id "/" ArrayNode.(to_path root);
 
+  assert_equal ~printer:Fun.id "zarr.json" ArrayNode.(to_metakey root);
   assert_equal
     ~printer:Fun.id
     ("some/dir/moredirs/path/pname/zarr.json") @@

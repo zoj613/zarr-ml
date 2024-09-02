@@ -159,6 +159,19 @@ let _ =
         (Sys_error (Format.sprintf "%s: File exists" tmp_dir))
         (fun () -> FilesystemStore.create tmp_dir);
 
+      (* inject a bad metadata document to test correct parsing of bad child
+         nodes when discovering children of a group. *)
+      let dname = tmp_dir ^ "/badnode" in
+      let fname = Filename.concat dname "zarr.json" in
+      Sys.mkdir dname 0o700;
+      Out_channel.with_open_bin
+        fname
+        (Fun.flip Out_channel.output_string {|{"zarr_format":3,"node_type":"unknown"}|});
+      assert_raises
+        (Zarr.Metadata.Parse_error "invalid node_type in badnode/zarr.json")
+        (fun () -> FilesystemStore.find_all_nodes s);
+      Sys.(remove fname; rmdir dname);
+
       (* ensure it works with an extra "/" appended to directory name. *)
       ignore @@ FilesystemStore.open_store (tmp_dir ^ "/");
 

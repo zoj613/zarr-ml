@@ -53,38 +53,37 @@ module Make (Io : Types.IO) = struct
   let array_metadata t node =
     get t @@ ArrayNode.to_metakey node >>| ArrayMetadata.decode
 
-  let node_type t metakey =
-    let open Yojson.Safe in
+  let node_kind t metakey =
     let+ s = get t metakey in
-    Util.to_string @@ Util.member "node_type" @@ from_string s
+    match Yojson.Safe.(Util.member "node_type" @@ from_string s) with
+    | `String "array" -> `Array
+    | `String "group" -> `Group
+    | _ -> raise @@ Parse_error (Printf.sprintf "invalid node_type in %s" metakey)
 
   let find_child_nodes t node =
-    let prefix = GroupNode.to_prefix node in
-    let res = [], [] in
-    is_member t @@ prefix ^ "zarr.json" >>= function
-    | false -> Deferred.return res
+    group_exists t node >>= function
+    | false -> Deferred.return ([], [])
     | true ->
-      let* _, ps = list_dir t prefix in
+      let* _, ps = list_dir t @@ GroupNode.to_prefix node in
       Deferred.fold_left
-        (fun (l, r) pre ->
-          let+ nt = node_type t @@ pre ^ "zarr.json" in
-          let p = "/" ^ String.(length pre - 1 |> sub pre 0) in
-          if nt = "array" then ArrayNode.of_path p :: l, r
-          else l, GroupNode.of_path p :: r) res ps
+        (fun (l, r) prefix ->
+          let p = "/" ^ String.(length prefix - 1 |> sub prefix 0) in
+          node_kind t (prefix ^ "zarr.json") >>| function
+          | `Array  -> ArrayNode.of_path p :: l, r
+          | `Group -> l, GroupNode.of_path p :: r) ([], []) ps
 
   let find_all_nodes t =
     let* keys = list t in
-    let+ acc = Deferred.fold_left
-      (fun ((l, r) as acc) k ->
-        if String.ends_with ~suffix:"/zarr.json" k then
-          let+ nt = node_type t k in
-          let p = "/" ^ String.(length k - 10 |> sub k 0) in
-          if nt = "array" then ArrayNode.of_path p :: l, r
-          else l, GroupNode.of_path p :: r
-        else Deferred.return acc) ([], []) keys
-    in match acc with
-    | [], [] as xs -> xs
-    | l, r -> l, GroupNode.root :: r
+    Deferred.fold_left
+      (fun ((l, r) as a) -> function
+        | k when not @@ String.ends_with ~suffix:"zarr.json" k -> Deferred.return a
+        | k ->
+          let p = match k with
+            | "zarr.json" -> "/"
+            | s -> "/" ^ String.(length s - 10 |> sub s 0) in
+          node_kind t k >>| function
+          | `Array -> ArrayNode.of_path p :: l, r
+          | `Group -> l, GroupNode.of_path p :: r) ([], []) keys
 
   let erase_group_node t node =
     erase_prefix t @@ GroupNode.to_prefix node

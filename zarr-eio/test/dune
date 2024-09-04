@@ -3,5 +3,6 @@
  (libraries
    zarr-eio
    ounit2)
+ (package zarr-eio)
  (preprocess
    (pps ppx_deriving.show)))

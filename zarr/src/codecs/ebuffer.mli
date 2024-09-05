@@ -1,32 +1,33 @@
 module type S = sig
-  val contents : Buffer.t -> string
-  val add_char : Buffer.t -> char -> unit
-  val add_int8 : Buffer.t -> int -> unit
-  val add_uint8 : Buffer.t -> int -> unit
-  val add_int16 : Buffer.t -> int -> unit
-  val add_uint16 : Buffer.t -> int -> unit
-  val add_int32 : Buffer.t -> int32 -> unit
-  val add_int64 : Buffer.t -> int64 -> unit
-  val add_float32 : Buffer.t -> float -> unit
-  val add_float64 : Buffer.t -> float -> unit
-  val add_complex32 : Buffer.t -> Complex.t -> unit
-  val add_complex64 : Buffer.t -> Complex.t -> unit
-  val add_int : Buffer.t -> int -> unit
-  val add_nativeint : Buffer.t -> nativeint -> unit
+  val set_char : bytes -> int -> char -> unit
+  val set_int8 : bytes -> int -> int -> unit
+  val set_uint8 : bytes -> int -> int -> unit
+  val set_int16 : bytes -> int -> int -> unit
+  val set_uint16 : bytes -> int -> int -> unit
+  val set_int32 : bytes -> int -> int32 -> unit
+  val set_int64 : bytes -> int -> int64 -> unit
+  val set_uint64 : bytes -> int -> Stdint.uint64 -> unit
+  val set_float32 : bytes -> int -> float -> unit
+  val set_float64 : bytes -> int -> float -> unit
+  val set_complex32 : bytes -> int -> Complex.t -> unit
+  val set_complex64 : bytes -> int -> Complex.t -> unit
+  val set_int : bytes -> int -> int -> unit
+  val set_nativeint : bytes -> int -> nativeint -> unit
 
-  val get_char : string -> int -> char
-  val get_int8 : string -> int -> int 
-  val get_uint8 : string -> int -> int
-  val get_int16 : string -> int -> int
-  val get_uint16 : string -> int -> int
-  val get_int32 : string -> int -> int32
-  val get_int64 : string -> int -> int64
-  val get_float32 : string -> int -> float
-  val get_float64 : string -> int -> float
-  val get_complex32 : string -> int -> Complex.t
-  val get_complex64 : string -> int -> Complex.t
-  val get_int : string -> int -> int
-  val get_nativeint : string -> int -> nativeint
+  val get_char : bytes -> int -> char
+  val get_int8 : bytes -> int -> int 
+  val get_uint8 : bytes -> int -> int
+  val get_int16 : bytes -> int -> int
+  val get_uint16 : bytes -> int -> int
+  val get_int32 : bytes -> int -> int32
+  val get_int64 : bytes -> int -> int64
+  val get_uint64 : bytes -> int -> Stdint.uint64
+  val get_float32 : bytes -> int -> float
+  val get_float64 : bytes -> int -> float
+  val get_complex32 : bytes -> int -> Complex.t
+  val get_complex64 : bytes -> int -> Complex.t
+  val get_int : bytes -> int -> int
+  val get_nativeint : bytes -> int -> nativeint
 end
 
 module Little : sig include S end

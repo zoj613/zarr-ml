@@ -16,27 +16,29 @@ module BytesCodec = struct
 
   let encode : type a. a Ndarray.t -> endianness -> string = fun x t ->
     let open (val endian_module t) in
-    let buf = Buffer.create @@ Ndarray.byte_size x in
+    let buf = Bytes.create @@ Ndarray.byte_size x in
     match Ndarray.data_type x with
-    | Char-> Ndarray.iter (add_char buf) x; contents buf
-    | Uint8-> Ndarray.iter (add_uint8 buf) x; contents buf
-    | Int8-> Ndarray.iter (add_int8 buf) x; contents buf
-    | Int16-> Ndarray.iter (add_int16 buf) x; contents buf
-    | Uint16-> Ndarray.iter (add_uint16 buf) x; contents buf
-    | Int32 -> Ndarray.iter (add_int32 buf) x; contents buf
-    | Int64 -> Ndarray.iter (add_int64 buf) x; contents buf
-    | Float32 -> Ndarray.iter (add_float32 buf) x; contents buf
-    | Float64 -> Ndarray.iter (add_float64 buf) x; contents buf
-    | Complex32 -> Ndarray.iter (add_complex32 buf) x; contents buf
-    | Complex64 -> Ndarray.iter (add_complex64 buf) x; contents buf
-    | Int -> Ndarray.iter (add_int buf) x; contents buf
-    | Nativeint -> Ndarray.iter (add_nativeint buf) x; contents buf
+    | Char-> Ndarray.iteri (set_char buf) x; Bytes.unsafe_to_string buf
+    | Uint8-> Ndarray.iteri (set_uint8 buf) x; Bytes.unsafe_to_string buf
+    | Int8-> Ndarray.iteri (set_int8 buf) x; Bytes.unsafe_to_string buf
+    | Int16-> Ndarray.iteri (set_int16 buf) x; Bytes.unsafe_to_string buf
+    | Uint16-> Ndarray.iteri (set_uint16 buf) x; Bytes.unsafe_to_string buf
+    | Int32 -> Ndarray.iteri (set_int32 buf) x; Bytes.unsafe_to_string buf
+    | Int64 -> Ndarray.iteri (set_int64 buf) x; Bytes.unsafe_to_string buf
+    | Uint64 -> Ndarray.iteri (set_uint64 buf) x; Bytes.unsafe_to_string buf
+    | Float32 -> Ndarray.iteri (set_float32 buf) x; Bytes.unsafe_to_string buf
+    | Float64 -> Ndarray.iteri (set_float64 buf) x; Bytes.unsafe_to_string buf
+    | Complex32 -> Ndarray.iteri (set_complex32 buf) x; Bytes.unsafe_to_string buf
+    | Complex64 -> Ndarray.iteri (set_complex64 buf) x; Bytes.unsafe_to_string buf
+    | Int -> Ndarray.iteri (set_int buf) x; Bytes.unsafe_to_string buf
+    | Nativeint -> Ndarray.iteri (set_nativeint buf) x; Bytes.unsafe_to_string buf
 
   let decode :
     type a. string -> a array_repr -> endianness -> a Ndarray.t
-    = fun buf decoded t ->
+    = fun str decoded t ->
     let open (val endian_module t) in
     let k, shp = decoded.kind, decoded.shape in
+    let buf = Bytes.unsafe_of_string str in
     match k, Ndarray.dtype_size k with
     | Char, _ -> Ndarray.init k shp @@ get_char buf
     | Uint8, _ -> Ndarray.init k shp @@ get_int8 buf
@@ -45,6 +47,7 @@ module BytesCodec = struct
     | Uint16, s -> Ndarray.init k shp @@ fun i -> get_uint16 buf (i*s)
     | Int32, s -> Ndarray.init k shp @@ fun i -> get_int32 buf (i*s)
     | Int64, s -> Ndarray.init k shp @@ fun i -> get_int64 buf (i*s)
+    | Uint64, s -> Ndarray.init k shp @@ fun i -> get_uint64 buf (i*s)
     | Float32, s -> Ndarray.init k shp @@ fun i -> get_float32 buf (i*s)
     | Float64, s -> Ndarray.init k shp @@ fun i -> get_float64 buf (i*s)
     | Complex32, s -> Ndarray.init k shp @@ fun i -> get_complex32 buf (i*s)
@@ -71,8 +74,6 @@ module BytesCodec = struct
       | s -> Error (Printf.sprintf "Unsupported endianness: %s" s))
     | _ -> Error "Invalid bytes codec configuration."
 end
-
-module Any = Owl.Dense.Ndarray.Any
 
 module rec ArrayToBytes : sig
   val parse : arraytobytes -> int array -> unit
@@ -128,11 +129,11 @@ and ShardingIndexedCodec : sig
   val decode_chain :
     (arraytobytes, bytestobytes) internal_chain -> 'a array_repr -> string -> 'a Ndarray.t
   val decode_index :
-    t -> int array -> string -> Stdint.uint64 Any.arr * string
+    t -> int array -> string -> Stdint.uint64 Ndarray.t * string
   val index_size : 
     (fixed_arraytobytes, fixed_bytestobytes) internal_chain -> int array -> int
   val encode_index_chain :
-    (fixed_arraytobytes, fixed_bytestobytes) internal_chain -> Stdint.uint64 Any.arr -> string
+    (fixed_arraytobytes, fixed_bytestobytes) internal_chain -> Stdint.uint64 Ndarray.t -> string
 end = struct
   type t = internal_shard_config  
 
@@ -172,27 +173,21 @@ end = struct
 
   let encode_index_chain :
     (fixed_arraytobytes, fixed_bytestobytes) internal_chain ->
-    Stdint.uint64 Any.arr ->
+    Stdint.uint64 Ndarray.t ->
     string
     = fun t x ->
-    let y =
-      match t.a2a with
+    let y = match t.a2a with
       | [] -> x
-      | `Transpose o :: _ -> Any.transpose ~axis:o x in
-    let buf = Bytes.create (8 * Any.numel y) in
-    (match t.a2b with
-    | `Bytes LE ->
-      Any.iteri (fun i v -> Stdint.Uint64.to_bytes_little_endian v buf (i*8)) y
-    | `Bytes BE ->
-      Any.iteri (fun i v -> Stdint.Uint64.to_bytes_big_endian v buf (i*8)) y);
-    List.fold_left
-      BytesToBytes.encode (Bytes.to_string buf) (t.b2b :> bytestobytes list)
+      | `Transpose o :: _ -> Ndarray.transpose ~axis:o x in
+    let z = match t.a2b with
+      | `Bytes e -> BytesCodec.encode y e in
+    List.fold_left BytesToBytes.encode z (t.b2b :> bytestobytes list)
 
   let encode : type a. t -> a Ndarray.t -> string = fun t x ->
     let shard_shape = Ndarray.shape x in
     let cps = Array.map2 (/) shard_shape t.chunk_shape in
     let idx_shp = Array.append cps [|2|] in
-    let shard_idx = Any.create idx_shp Stdint.Uint64.max_int in
+    let shard_idx = Ndarray.create Uint64 idx_shp Stdint.Uint64.max_int in
     let grid = RegularGrid.create ~array_shape:shard_shape t.chunk_shape in
     let slice = Array.make (Ndarray.ndims x) @@ Owl_types.R [] in
     let kind = Ndarray.data_type x in
@@ -211,8 +206,8 @@ end = struct
           let x' = Ndarray.of_array kind t.chunk_shape v in
           let b = encode_chain t.codecs x' in
           let nb = Stdint.Uint64.of_int @@ String.length b in
-          Any.set shard_idx (Array.append idx [|0|]) ofs;
-          Any.set shard_idx (Array.append idx [|1|]) nb;
+          Ndarray.set shard_idx (Array.append idx [|0|]) ofs;
+          Ndarray.set shard_idx (Array.append idx [|1|]) nb;
           Stdint.Uint64.(ofs + nb), b :: xs) m @@ (Stdint.Uint64.zero, [])
     in
     let ib = encode_index_chain t.index_codecs shard_idx in
@@ -230,26 +225,18 @@ end = struct
     (fixed_arraytobytes, fixed_bytestobytes) internal_chain ->
     int array ->
     string ->
-    Stdint.uint64 Any.arr
+    Stdint.uint64 Ndarray.t
     = fun t shape x ->
     let shape' = List.fold_left ArrayToArray.encoded_repr shape t.a2a in
     let y = List.fold_right BytesToBytes.decode (t.b2b :> bytestobytes list) x in
-    let buf = Bytes.of_string y in
-    let arr =
-      match t.a2b with
-      | `Bytes LE ->
-        Any.init shape' @@ fun i ->
-          Stdint.Uint64.of_bytes_little_endian buf (i*8)
-      | `Bytes BE ->
-        Any.init shape' @@ fun i ->
-          Stdint.Uint64.of_bytes_big_endian buf (i*8)
-    in
+    let arr = match t.a2b with
+      | `Bytes e -> BytesCodec.decode y {shape=shape'; kind=Uint64} e in
     match t.a2a with
     | [] -> arr
     | `Transpose o :: _ ->
       let inv_order = Array.(make (length o) 0) in
       Array.iteri (fun i x -> inv_order.(x) <- i) o;
-      Any.transpose ~axis:inv_order arr
+      Ndarray.transpose ~axis:inv_order arr
 
   let index_size index_chain cps =
     encoded_size (16 * Util.prod cps) index_chain
@@ -257,8 +244,7 @@ end = struct
   let decode_index t cps b =
     let l = index_size t.index_codecs cps in
     let o = String.length b - l in
-    let ib, rest =
-      match t.index_location with
+    let ib, rest = match t.index_location with
       | End -> String.sub b o l, String.sub b 0 o
       | Start -> String.sub b 0 l, String.sub b l o in
     decode_index_chain t.index_codecs (Array.append cps [|2|]) ib, rest
@@ -284,8 +270,8 @@ end = struct
         (fun (idx, pairs) ->
           let oc = Array.append idx [|0|] in
           let nc = Array.append idx [|1|] in
-          let ofs = Stdint.Uint64.to_int @@ Any.get idx_arr oc in
-          let nb = Stdint.Uint64.to_int @@ Any.get idx_arr nc in
+          let ofs = Stdint.Uint64.to_int @@ Ndarray.get idx_arr oc in
+          let nb = Stdint.Uint64.to_int @@ Ndarray.get idx_arr nc in
           let arr = decode_chain t.codecs inner @@ String.sub b' ofs nb in
           List.map (fun (i, c) -> i, Ndarray.get arr c) pairs)
         (ArrayMap.bindings m)
@@ -428,8 +414,8 @@ module Make (Io : Types.IO) = struct
        (fun (i, _) ->
           let oc = Array.append i [|0|] in
           let nc = Array.append i [|1|] in
-          let ofs = Stdint.Uint64.to_int @@ Any.get idx_arr oc in
-          let nb = Stdint.Uint64.to_int @@ Any.get idx_arr nc in
+          let ofs = Stdint.Uint64.to_int @@ Ndarray.get idx_arr oc in
+          let nb = Stdint.Uint64.to_int @@ Ndarray.get idx_arr nc in
           (pad + ofs, Some nb), (oc, nc, ofs, nb)) bindings
     in
     let* xs = get_partial ranges in
@@ -443,8 +429,8 @@ module Make (Io : Types.IO) = struct
           let nb' = String.length s in
           if nb' = nb then a, (pad + ofs, s) :: l, r
           else
-            (Any.set idx_arr oc @@ Stdint.Uint64.of_int a;
-            Any.set idx_arr nc @@ Stdint.Uint64.of_int nb';
+            (Ndarray.set idx_arr oc @@ Stdint.Uint64.of_int a;
+            Ndarray.set idx_arr nc @@ Stdint.Uint64.of_int nb';
             a + nb', l, (a, s) :: r)) 
       (csize - pad, [], []) List.(combine (combine xs coords) bindings)
     in
@@ -482,8 +468,8 @@ module Make (Io : Types.IO) = struct
        (fun (i, _) ->
           let oc = Array.append i [|0|] in
           let nc = Array.append i [|1|] in
-          let ofs = Stdint.Uint64.to_int @@ Any.get idx_arr oc in
-          let nb = Stdint.Uint64.to_int @@ Any.get idx_arr nc in
+          let ofs = Stdint.Uint64.to_int @@ Ndarray.get idx_arr oc in
+          let nb = Stdint.Uint64.to_int @@ Ndarray.get idx_arr nc in
           pad + ofs, Some nb) ArrayMap.(bindings m)
     in
     let+ xs = get_partial ranges in

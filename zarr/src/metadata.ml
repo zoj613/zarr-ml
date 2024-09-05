@@ -6,7 +6,7 @@ module FillValue = struct
   type t =
     | Char of char
     | Bool of bool
-    | Int of int64
+    | Int of Stdint.uint64
     | Float of float
     | FloatBits of float
     | IntComplex of Complex.t
@@ -23,23 +23,24 @@ module FillValue = struct
   = fun kind a ->
     match kind with
     | Ndarray.Char -> Char a
-    | Ndarray.Int8 -> Int (Int64.of_int a)
-    | Ndarray.Uint8 -> Int (Int64.of_int a)
-    | Ndarray.Int16 -> Int (Int64.of_int a)
-    | Ndarray.Uint16 -> Int (Int64.of_int a)
-    | Ndarray.Int32 -> Int (Int64.of_int32 a)
-    | Ndarray.Int64 -> Int a
+    | Ndarray.Int8 -> Int (Stdint.Uint64.of_int a)
+    | Ndarray.Uint8 -> Int (Stdint.Uint64.of_int a)
+    | Ndarray.Int16 -> Int (Stdint.Uint64.of_int a)
+    | Ndarray.Uint16 -> Int (Stdint.Uint64.of_int a)
+    | Ndarray.Int32 -> Int (Stdint.Uint64.of_int32 a)
+    | Ndarray.Int64 -> Int (Stdint.Uint64.of_int64 a)
+    | Ndarray.Uint64 -> Int a
     | Ndarray.Float32 -> Float a
     | Ndarray.Float64 -> Float a
     | Ndarray.Complex32 -> FloatComplex a
     | Ndarray.Complex64 -> FloatComplex a
-    | Ndarray.Int -> Int (Int64.of_int a)
-    | Ndarray.Nativeint -> Int (Int64.of_nativeint a)
+    | Ndarray.Int -> Int (Stdint.Uint64.of_int a)
+    | Ndarray.Nativeint -> Int (Stdint.Uint64.of_nativeint a)
 
   let rec of_yojson x =
     match x with
     | `Bool b -> Ok (Bool b)
-    | `Int i -> Result.ok @@ Int (Int64.of_int i)
+    | `Int i -> Result.ok @@ Int (Stdint.Uint64.of_int i)
     | `String "Infinity" -> Ok (Float Float.infinity)
     | `String "-Infinity" -> Ok (Float Float.neg_infinity)
     | `String "NaN" -> Ok (Float Float.nan)
@@ -72,7 +73,7 @@ module FillValue = struct
 
   let rec to_yojson = function
     | Bool b -> `Bool b
-    | Int i -> `Int (Int64.to_int i)
+    | Int i -> `Int (Stdint.Uint64.to_int i)
     | Char c ->
       `String (String.of_seq @@ List.to_seq [c])
     | Float f when Float.is_nan f ->
@@ -293,7 +294,7 @@ module ArrayMetadata = struct
   let update_shape t shape = {t with shape}
 
   let is_valid_kind
-    : type a b. t -> a Ndarray.dtype -> bool
+    : type a. t -> a Ndarray.dtype -> bool
     = fun t kind ->
     match kind, t.data_type with
     | Ndarray.Char, Datatype.Char
@@ -303,6 +304,7 @@ module ArrayMetadata = struct
     | Ndarray.Uint16, Datatype.Uint16
     | Ndarray.Int32, Datatype.Int32
     | Ndarray.Int64, Datatype.Int64
+    | Ndarray.Uint64, Datatype.Uint64
     | Ndarray.Float32, Datatype.Float32
     | Ndarray.Float64, Datatype.Float64
     | Ndarray.Complex32, Datatype.Complex32
@@ -312,18 +314,19 @@ module ArrayMetadata = struct
     | _ -> false
 
   let fillvalue_of_kind
-    : type a b. t -> a Ndarray.dtype -> a
+    : type a. t -> a Ndarray.dtype -> a
     = fun t kind ->
     match kind, t.fill_value with
     | Ndarray.Char, FillValue.Char c -> c
-    | Ndarray.Int8, FillValue.Int i -> Int64.to_int i
-    | Ndarray.Uint8, FillValue.Int i -> Int64.to_int i
-    | Ndarray.Int16, FillValue.Int i -> Int64.to_int i
-    | Ndarray.Uint16, FillValue.Int i -> Int64.to_int i
-    | Ndarray.Int32, FillValue.Int i -> Int64.to_int32 i
-    | Ndarray.Int64, FillValue.Int i -> i 
-    | Ndarray.Int, FillValue.Int i -> Int64.to_int i
-    | Ndarray.Nativeint, FillValue.Int i -> Int64.to_nativeint i
+    | Ndarray.Int8, FillValue.Int i -> Stdint.Uint64.to_int i
+    | Ndarray.Uint8, FillValue.Int i -> Stdint.Uint64.to_int i
+    | Ndarray.Int16, FillValue.Int i -> Stdint.Uint64.to_int i
+    | Ndarray.Uint16, FillValue.Int i -> Stdint.Uint64.to_int i
+    | Ndarray.Int32, FillValue.Int i -> Stdint.Uint64.to_int32 i
+    | Ndarray.Int64, FillValue.Int i -> Stdint.Uint64.to_int64 i
+    | Ndarray.Uint64, FillValue.Int i -> i 
+    | Ndarray.Int, FillValue.Int i -> Stdint.Uint64.to_int i
+    | Ndarray.Nativeint, FillValue.Int i -> Stdint.Uint64.to_nativeint i
     | Ndarray.Float32, FillValue.Float f -> f 
     | Ndarray.Float32, FillValue.FloatBits f -> f 
     | Ndarray.Float64, FillValue.Float f -> f 

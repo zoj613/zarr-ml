@@ -105,7 +105,7 @@ let _ =
     "test eio-based stores" >::
     (fun _ ->
       Eio_main.run @@ fun env ->
-      let rand_num = string_of_int @@ Random.int 1_000_000 in
+      let rand_num = string_of_int @@ Random.int 10_000 in
       let tmp_dir = Filename.(concat (get_temp_dir_name ()) (rand_num ^ ".zarr")) in
       let s = FilesystemStore.create ~env tmp_dir in
 

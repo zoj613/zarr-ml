@@ -649,6 +649,15 @@ let array = [
     Ndarray.Float32
     0L;
 
+  (* tests using uint64 data type. *)
+  test_array_metadata
+    ~dimension_names
+    ~shape
+    ~chunks
+    Ndarray.Uint64
+    Ndarray.Float32
+    Stdint.Uint64.max_int;
+
   (* tests using float32 data type. *)
   test_array_metadata
     ~dimension_names

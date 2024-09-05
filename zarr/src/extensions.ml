@@ -111,6 +111,7 @@ module Datatype = struct
     | Uint16
     | Int32
     | Int64
+    | Uint64
     | Float32
     | Float64
     | Complex32
@@ -120,7 +121,7 @@ module Datatype = struct
 
   let ( = ) : t -> t -> bool = fun x y -> x = y
 
-  let of_kind : type a b. a Ndarray.dtype -> t = function
+  let of_kind : type a. a Ndarray.dtype -> t = function
     | Ndarray.Char -> Char
     | Ndarray.Int8 -> Int8
     | Ndarray.Uint8 -> Uint8
@@ -128,6 +129,7 @@ module Datatype = struct
     | Ndarray.Uint16 -> Uint16
     | Ndarray.Int32 -> Int32
     | Ndarray.Int64 -> Int64
+    | Ndarray.Uint64 -> Uint64
     | Ndarray.Float32 -> Float32
     | Ndarray.Float64 -> Float64
     | Ndarray.Complex32 -> Complex32
@@ -143,6 +145,7 @@ module Datatype = struct
     | Uint16 -> `String "uint16"
     | Int32 -> `String "int32"
     | Int64 -> `String "int64"
+    | Uint64 -> `String "uint64"
     | Float32 -> `String "float32"
     | Float64 -> `String "float64"
     | Complex32 -> `String "complex32"
@@ -158,6 +161,7 @@ module Datatype = struct
     | `String "uint16" -> Ok Uint16
     | `String "int32" -> Ok Int32
     | `String "int64" -> Ok Int64
+    | `String "uint64" -> Ok Uint64
     | `String "float32" -> Ok Float32
     | `String "float64" -> Ok Float64
     | `String "complex32" -> Ok Complex32

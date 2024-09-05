@@ -1,7 +1,6 @@
 open OUnit2
+open Zarr
 open Zarr.Codecs
-
-module Ndarray = Owl.Dense.Ndarray.Generic
 
 let decode_chain ~shape ~str ~msg = 
   (match Chain.of_yojson shape @@ Yojson.Safe.from_string str with
@@ -9,7 +8,7 @@ let decode_chain ~shape ~str ~msg =
   | Error s -> assert_equal ~printer:Fun.id msg s)
 
 let bytes_encode_decode
-  : type a b . (a, b) array_repr -> a -> unit
+  : type a. a array_repr -> a -> unit
   = fun decoded_repr fill_value ->
     List.iter
       (fun bytes_codec ->
@@ -17,13 +16,13 @@ let bytes_encode_decode
         let c = Chain.create decoded_repr.shape chain in
         let arr = Ndarray.create decoded_repr.kind decoded_repr.shape fill_value in
         let decoded = Chain.decode c decoded_repr @@ Chain.encode c arr in
-        assert_equal ~printer:Owl_pretty.dsnda_to_string arr decoded)
+        assert_equal arr decoded)
       [`Bytes LE; `Bytes BE]
 
 let tests = [
 "test codec chain" >:: (fun _ ->
   let shape = [|10; 15; 10|] in
-  let kind = Bigarray.Int16_signed in
+  let kind = Ndarray.Int16 in
   let fill_value = 10 in
   let shard_cfg =
     {chunk_shape = [|2; 5; 5|]
@@ -254,7 +253,7 @@ let tests = [
     ~msg:"Must be exactly one array->bytes codec.";
 
   let shape = [|10; 15; 10|] in
-  let kind = Bigarray.Float64 in
+  let kind = Ndarray.Float64 in
   let cfg =
     {chunk_shape = [|3; 5; 5|]
     ;index_location = Start
@@ -276,10 +275,7 @@ let tests = [
   let c = Chain.create shape chain in
   let arr = Ndarray.create kind shape (-10.) in
   let encoded = Chain.encode c arr in
-  assert_equal
-    ~printer:Owl_pretty.dsnda_to_string
-    arr @@
-    Chain.decode c {shape; kind} encoded;
+  assert_equal arr @@ Chain.decode c {shape; kind} encoded;
 
   (* test correctness of decoding nested sharding codecs.*)
   let str =
@@ -358,7 +354,7 @@ let tests = [
     [0; 1; 2; 3; 4; 5; 6; 7; 8; 9];
 
   (* test encoding/decoding for various compression levels *)
-  let kind = Bigarray.Complex64 in
+  let kind = Ndarray.Complex64 in
   let fill_value = Complex.one in
   let arr = Ndarray.create kind shape fill_value in
   let chain = [`Bytes LE] in
@@ -366,10 +362,7 @@ let tests = [
     (fun level ->
       let c = Chain.create shape @@ chain @ [`Gzip level] in
       let encoded = Chain.encode c arr in
-      assert_equal
-        ~printer:Owl_pretty.dsnda_to_string
-        arr @@
-        Chain.decode c {shape; kind} encoded)
+      assert_equal arr @@ Chain.decode c {shape; kind} encoded)
     [L0; L1; L2; L3; L4; L5; L6; L7; L8; L9])
 ;
 "test bytes codec" >:: (fun _ ->
@@ -386,41 +379,41 @@ let tests = [
     ~msg:"Must be exactly one array->bytes codec.";
   
   (* test encoding/decoding of Char *)
-  bytes_encode_decode {shape; kind = Bigarray.Char} '?';
+  bytes_encode_decode {shape; kind = Ndarray.Char} '?';
 
   (* test encoding/decoding of int8 *)
-  bytes_encode_decode {shape; kind = Bigarray.Int8_signed} 0;
+  bytes_encode_decode {shape; kind = Ndarray.Int8} 0;
 
   (* test encoding/decoding of uint8 *)
-  bytes_encode_decode {shape; kind = Bigarray.Int8_unsigned} 0;
+  bytes_encode_decode {shape; kind = Ndarray.Uint8} 0;
 
   (* test encoding/decoding of int16 *)
-  bytes_encode_decode {shape; kind = Bigarray.Int16_signed} 0;
+  bytes_encode_decode {shape; kind = Ndarray.Int16} 0;
 
   (* test encoding/decoding of uint16 *)
-  bytes_encode_decode {shape; kind = Bigarray.Int16_unsigned} 0;
+  bytes_encode_decode {shape; kind = Ndarray.Uint16} 0;
 
   (* test encoding/decoding of int32 *)
-  bytes_encode_decode {shape; kind = Bigarray.Int32} 0l;
+  bytes_encode_decode {shape; kind = Ndarray.Int32} 0l;
 
   (* test encoding/decoding of int64 *)
-  bytes_encode_decode {shape; kind = Bigarray.Int64} 0L;
+  bytes_encode_decode {shape; kind = Ndarray.Int64} 0L;
 
   (* test encoding/decoding of float32 *)
-  bytes_encode_decode {shape; kind = Bigarray.Float32} 0.0;
+  bytes_encode_decode {shape; kind = Ndarray.Float32} 0.0;
 
   (* test encoding/decoding of float64 *)
-  bytes_encode_decode {shape; kind = Bigarray.Float64} 0.0;
+  bytes_encode_decode {shape; kind = Ndarray.Float64} 0.0;
 
   (* test encoding and decoding of Complex32 *)
-  bytes_encode_decode {shape; kind = Bigarray.Complex32} Complex.zero;
+  bytes_encode_decode {shape; kind = Ndarray.Complex32} Complex.zero;
 
   (* test encoding/decoding of complex64 *)
-  bytes_encode_decode {shape; kind = Bigarray.Complex64} Complex.zero;
+  bytes_encode_decode {shape; kind = Ndarray.Complex64} Complex.zero;
 
   (* test encoding/decoding of int *)
-  bytes_encode_decode {shape; kind = Bigarray.Int} Int.max_int;
+  bytes_encode_decode {shape; kind = Ndarray.Int} Int.max_int;
 
   (* test encoding/decoding of int *)
-  bytes_encode_decode {shape; kind = Bigarray.Nativeint} Nativeint.max_int)
+  bytes_encode_decode {shape; kind = Ndarray.Nativeint} Nativeint.max_int)
 ]

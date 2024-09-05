@@ -19,22 +19,22 @@ module FillValue = struct
   let ( = ) x y = x = y
 
   let of_kind
-  : type a b. (a, b) Bigarray.kind -> a -> t
+  : type a. a Ndarray.dtype -> a -> t
   = fun kind a ->
     match kind with
-    | Bigarray.Char -> Char a
-    | Bigarray.Int8_signed -> Int (Int64.of_int a)
-    | Bigarray.Int8_unsigned -> Int (Int64.of_int a)
-    | Bigarray.Int16_signed -> Int (Int64.of_int a)
-    | Bigarray.Int16_unsigned -> Int (Int64.of_int a)
-    | Bigarray.Int32 -> Int (Int64.of_int32 a)
-    | Bigarray.Int64 -> Int a
-    | Bigarray.Float32 -> Float a
-    | Bigarray.Float64 -> Float a
-    | Bigarray.Complex32 -> FloatComplex a
-    | Bigarray.Complex64 -> FloatComplex a
-    | Bigarray.Int -> Int (Int64.of_int a)
-    | Bigarray.Nativeint -> Int (Int64.of_nativeint a)
+    | Ndarray.Char -> Char a
+    | Ndarray.Int8 -> Int (Int64.of_int a)
+    | Ndarray.Uint8 -> Int (Int64.of_int a)
+    | Ndarray.Int16 -> Int (Int64.of_int a)
+    | Ndarray.Uint16 -> Int (Int64.of_int a)
+    | Ndarray.Int32 -> Int (Int64.of_int32 a)
+    | Ndarray.Int64 -> Int a
+    | Ndarray.Float32 -> Float a
+    | Ndarray.Float64 -> Float a
+    | Ndarray.Complex32 -> FloatComplex a
+    | Ndarray.Complex64 -> FloatComplex a
+    | Ndarray.Int -> Int (Int64.of_int a)
+    | Ndarray.Nativeint -> Int (Int64.of_nativeint a)
 
   let rec of_yojson x =
     match x with
@@ -293,53 +293,53 @@ module ArrayMetadata = struct
   let update_shape t shape = {t with shape}
 
   let is_valid_kind
-    : type a b. t -> (a, b) Bigarray.kind -> bool
+    : type a b. t -> a Ndarray.dtype -> bool
     = fun t kind ->
     match kind, t.data_type with
-    | Bigarray.Char, Datatype.Char
-    | Bigarray.Int8_signed, Datatype.Int8
-    | Bigarray.Int8_unsigned, Datatype.Uint8
-    | Bigarray.Int16_signed, Datatype.Int16
-    | Bigarray.Int16_unsigned, Datatype.Uint16
-    | Bigarray.Int32, Datatype.Int32
-    | Bigarray.Int64, Datatype.Int64
-    | Bigarray.Float32, Datatype.Float32
-    | Bigarray.Float64, Datatype.Float64
-    | Bigarray.Complex32, Datatype.Complex32
-    | Bigarray.Complex64, Datatype.Complex64
-    | Bigarray.Int, Datatype.Int
-    | Bigarray.Nativeint, Datatype.Nativeint -> true
+    | Ndarray.Char, Datatype.Char
+    | Ndarray.Int8, Datatype.Int8
+    | Ndarray.Uint8, Datatype.Uint8
+    | Ndarray.Int16, Datatype.Int16
+    | Ndarray.Uint16, Datatype.Uint16
+    | Ndarray.Int32, Datatype.Int32
+    | Ndarray.Int64, Datatype.Int64
+    | Ndarray.Float32, Datatype.Float32
+    | Ndarray.Float64, Datatype.Float64
+    | Ndarray.Complex32, Datatype.Complex32
+    | Ndarray.Complex64, Datatype.Complex64
+    | Ndarray.Int, Datatype.Int
+    | Ndarray.Nativeint, Datatype.Nativeint -> true
     | _ -> false
 
   let fillvalue_of_kind
-    : type a b. t -> (a, b) Bigarray.kind -> a
+    : type a b. t -> a Ndarray.dtype -> a
     = fun t kind ->
     match kind, t.fill_value with
-    | Bigarray.Char, FillValue.Char c -> c
-    | Bigarray.Int8_signed, FillValue.Int i -> Int64.to_int i
-    | Bigarray.Int8_unsigned, FillValue.Int i -> Int64.to_int i
-    | Bigarray.Int16_signed, FillValue.Int i -> Int64.to_int i
-    | Bigarray.Int16_unsigned, FillValue.Int i -> Int64.to_int i
-    | Bigarray.Int32, FillValue.Int i -> Int64.to_int32 i
-    | Bigarray.Int64, FillValue.Int i -> i 
-    | Bigarray.Int, FillValue.Int i -> Int64.to_int i
-    | Bigarray.Nativeint, FillValue.Int i -> Int64.to_nativeint i
-    | Bigarray.Float32, FillValue.Float f -> f 
-    | Bigarray.Float32, FillValue.FloatBits f -> f 
-    | Bigarray.Float64, FillValue.Float f -> f 
-    | Bigarray.Float64, FillValue.FloatBits f -> f 
-    | Bigarray.Complex32, FillValue.IntComplex c -> c
-    | Bigarray.Complex32, FillValue.FloatComplex c -> c
-    | Bigarray.Complex32, FillValue.FFComplex c -> c
-    | Bigarray.Complex32, FillValue.FBComplex c -> c
-    | Bigarray.Complex32, FillValue.BFComplex c -> c
-    | Bigarray.Complex32, FillValue.BBComplex c -> c
-    | Bigarray.Complex64, FillValue.IntComplex c -> c
-    | Bigarray.Complex64, FillValue.FloatComplex c -> c
-    | Bigarray.Complex64, FillValue.FFComplex c -> c
-    | Bigarray.Complex64, FillValue.FBComplex c -> c
-    | Bigarray.Complex64, FillValue.BFComplex c -> c
-    | Bigarray.Complex64, FillValue.BBComplex c -> c
+    | Ndarray.Char, FillValue.Char c -> c
+    | Ndarray.Int8, FillValue.Int i -> Int64.to_int i
+    | Ndarray.Uint8, FillValue.Int i -> Int64.to_int i
+    | Ndarray.Int16, FillValue.Int i -> Int64.to_int i
+    | Ndarray.Uint16, FillValue.Int i -> Int64.to_int i
+    | Ndarray.Int32, FillValue.Int i -> Int64.to_int32 i
+    | Ndarray.Int64, FillValue.Int i -> i 
+    | Ndarray.Int, FillValue.Int i -> Int64.to_int i
+    | Ndarray.Nativeint, FillValue.Int i -> Int64.to_nativeint i
+    | Ndarray.Float32, FillValue.Float f -> f 
+    | Ndarray.Float32, FillValue.FloatBits f -> f 
+    | Ndarray.Float64, FillValue.Float f -> f 
+    | Ndarray.Float64, FillValue.FloatBits f -> f 
+    | Ndarray.Complex32, FillValue.IntComplex c -> c
+    | Ndarray.Complex32, FillValue.FloatComplex c -> c
+    | Ndarray.Complex32, FillValue.FFComplex c -> c
+    | Ndarray.Complex32, FillValue.FBComplex c -> c
+    | Ndarray.Complex32, FillValue.BFComplex c -> c
+    | Ndarray.Complex32, FillValue.BBComplex c -> c
+    | Ndarray.Complex64, FillValue.IntComplex c -> c
+    | Ndarray.Complex64, FillValue.FloatComplex c -> c
+    | Ndarray.Complex64, FillValue.FFComplex c -> c
+    | Ndarray.Complex64, FillValue.FBComplex c -> c
+    | Ndarray.Complex64, FillValue.BFComplex c -> c
+    | Ndarray.Complex64, FillValue.BBComplex c -> c
     | _ -> failwith "kind is not compatible with node's fill value."
 end
 

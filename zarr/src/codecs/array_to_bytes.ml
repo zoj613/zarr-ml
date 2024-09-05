@@ -2,7 +2,6 @@ open Array_to_array
 open Bytes_to_bytes
 open Codecs_intf
 
-module Ndarray = Owl.Dense.Ndarray.Generic
 module Indexing = Util.Indexing
 module ArrayMap = Util.ArrayMap
 module RegularGrid = Extensions.RegularGrid
@@ -15,15 +14,15 @@ module BytesCodec = struct
     | LE -> (module Ebuffer.Little : Ebuffer.S)
     | BE -> (module Ebuffer.Big : Ebuffer.S)
 
-  let encode : type a b. (a, b) Ndarray.t -> endianness -> string = fun x t ->
+  let encode : type a. a Ndarray.t -> endianness -> string = fun x t ->
     let open (val endian_module t) in
-    let buf = Buffer.create @@ Ndarray.size_in_bytes x in
-    match Ndarray.kind x with
-    | Char -> Ndarray.iter (add_char buf) x; contents buf
-    | Int8_signed -> Ndarray.iter (add_int8 buf) x; contents buf
-    | Int8_unsigned -> Ndarray.iter (add_uint8 buf) x; contents buf
-    | Int16_signed -> Ndarray.iter (add_int16 buf) x; contents buf
-    | Int16_unsigned -> Ndarray.iter (add_uint16 buf) x; contents buf
+    let buf = Buffer.create @@ Ndarray.byte_size x in
+    match Ndarray.data_type x with
+    | Char-> Ndarray.iter (add_char buf) x; contents buf
+    | Uint8-> Ndarray.iter (add_uint8 buf) x; contents buf
+    | Int8-> Ndarray.iter (add_int8 buf) x; contents buf
+    | Int16-> Ndarray.iter (add_int16 buf) x; contents buf
+    | Uint16-> Ndarray.iter (add_uint16 buf) x; contents buf
     | Int32 -> Ndarray.iter (add_int32 buf) x; contents buf
     | Int64 -> Ndarray.iter (add_int64 buf) x; contents buf
     | Float32 -> Ndarray.iter (add_float32 buf) x; contents buf
@@ -34,17 +33,16 @@ module BytesCodec = struct
     | Nativeint -> Ndarray.iter (add_nativeint buf) x; contents buf
 
   let decode :
-    type a b. string -> (a, b) array_repr -> endianness -> (a, b) Ndarray.t
+    type a. string -> a array_repr -> endianness -> a Ndarray.t
     = fun buf decoded t ->
-    let open Bigarray in
     let open (val endian_module t) in
     let k, shp = decoded.kind, decoded.shape in
-    match k, kind_size_in_bytes k with
+    match k, Ndarray.dtype_size k with
     | Char, _ -> Ndarray.init k shp @@ get_char buf
-    | Int8_signed, _ -> Ndarray.init k shp @@ get_int8 buf
-    | Int8_unsigned, _ -> Ndarray.init k shp @@ get_uint8 buf
-    | Int16_signed, s -> Ndarray.init k shp @@ fun i -> get_int16 buf (i*s)
-    | Int16_unsigned, s -> Ndarray.init k shp @@ fun i -> get_uint16 buf (i*s)
+    | Uint8, _ -> Ndarray.init k shp @@ get_int8 buf
+    | Int8, _ -> Ndarray.init k shp @@ get_uint8 buf
+    | Int16, s -> Ndarray.init k shp @@ fun i -> get_int16 buf (i*s)
+    | Uint16, s -> Ndarray.init k shp @@ fun i -> get_uint16 buf (i*s)
     | Int32, s -> Ndarray.init k shp @@ fun i -> get_int32 buf (i*s)
     | Int64, s -> Ndarray.init k shp @@ fun i -> get_int64 buf (i*s)
     | Float32, s -> Ndarray.init k shp @@ fun i -> get_float32 buf (i*s)
@@ -79,8 +77,8 @@ module Any = Owl.Dense.Ndarray.Any
 module rec ArrayToBytes : sig
   val parse : arraytobytes -> int array -> unit
   val encoded_size : int -> fixed_arraytobytes -> int
-  val encode : arraytobytes -> ('a, 'b) Ndarray.t -> string
-  val decode : arraytobytes -> ('a, 'b) array_repr -> string -> ('a, 'b) Ndarray.t
+  val encode : arraytobytes -> 'a Ndarray.t -> string
+  val decode : arraytobytes -> 'a array_repr -> string -> 'a Ndarray.t
   val of_yojson : int array -> Yojson.Safe.t -> (arraytobytes, string) result
   val to_yojson : arraytobytes -> Yojson.Safe.t
 end = struct
@@ -121,27 +119,20 @@ end
 and ShardingIndexedCodec : sig
   type t = internal_shard_config
   val parse : t -> int array -> unit
-  val encode : t -> ('a, 'b) Ndarray.t -> string
-  val decode : t -> ('a, 'b) array_repr -> string -> ('a, 'b) Ndarray.t
+  val encode : t -> 'a Ndarray.t -> string
+  val decode : t -> 'a array_repr -> string -> 'a Ndarray.t
   val of_yojson : int array -> Yojson.Safe.t -> (t, string) result
   val to_yojson : t -> Yojson.Safe.t
   val encode_chain :
-    (arraytobytes, bytestobytes) internal_chain ->
-    ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
-    string
+    (arraytobytes, bytestobytes) internal_chain -> 'a Ndarray.t -> string
   val decode_chain :
-    (arraytobytes, bytestobytes) internal_chain ->
-    ('a, 'b) array_repr ->
-    string ->
-    ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
+    (arraytobytes, bytestobytes) internal_chain -> 'a array_repr -> string -> 'a Ndarray.t
   val decode_index :
     t -> int array -> string -> Stdint.uint64 Any.arr * string
   val index_size : 
     (fixed_arraytobytes, fixed_bytestobytes) internal_chain -> int array -> int
   val encode_index_chain :
-    (fixed_arraytobytes, fixed_bytestobytes) internal_chain ->
-    Stdint.uint64 Any.arr ->
-    string
+    (fixed_arraytobytes, fixed_bytestobytes) internal_chain -> Stdint.uint64 Any.arr -> string
 end = struct
   type t = internal_shard_config  
 
@@ -197,14 +188,14 @@ end = struct
     List.fold_left
       BytesToBytes.encode (Bytes.to_string buf) (t.b2b :> bytestobytes list)
 
-  let encode t x =
+  let encode : type a. t -> a Ndarray.t -> string = fun t x ->
     let shard_shape = Ndarray.shape x in
     let cps = Array.map2 (/) shard_shape t.chunk_shape in
     let idx_shp = Array.append cps [|2|] in
     let shard_idx = Any.create idx_shp Stdint.Uint64.max_int in
     let grid = RegularGrid.create ~array_shape:shard_shape t.chunk_shape in
-    let slice = Array.make (Ndarray.num_dims x) @@ Owl_types.R [] in
-    let kind = Ndarray.kind x in
+    let slice = Array.make (Ndarray.ndims x) @@ Owl_types.R [] in
+    let kind = Ndarray.data_type x in
     let m =
       Array.fold_right
         (fun y acc ->
@@ -217,7 +208,7 @@ end = struct
       ArrayMap.fold
         (fun idx pairs (ofs, xs) ->
           let v = Array.of_list @@ snd @@ List.split pairs in
-          let x' = Ndarray.of_array kind v t.chunk_shape in
+          let x' = Ndarray.of_array kind t.chunk_shape v in
           let b = encode_chain t.codecs x' in
           let nb = Stdint.Uint64.of_int @@ String.length b in
           Any.set shard_idx (Array.append idx [|0|]) ofs;
@@ -272,7 +263,7 @@ end = struct
       | Start -> String.sub b 0 l, String.sub b l o in
     decode_index_chain t.index_codecs (Array.append cps [|2|]) ib, rest
 
-  let decode t repr b =
+  let decode : type a. t -> a array_repr -> string -> a Ndarray.t = fun t repr b ->
     let cps = Array.map2 (/) repr.shape t.chunk_shape in
     let idx_arr, b' = decode_index t cps b in
     let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
@@ -298,7 +289,7 @@ end = struct
           let arr = decode_chain t.codecs inner @@ String.sub b' ofs nb in
           List.map (fun (i, c) -> i, Ndarray.get arr c) pairs)
         (ArrayMap.bindings m)
-    in Ndarray.of_array inner.kind v repr.shape
+    in Ndarray.of_array inner.kind repr.shape v
 
   let chain_to_yojson chain =
     `List

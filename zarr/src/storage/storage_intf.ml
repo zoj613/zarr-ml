@@ -24,7 +24,7 @@ module type STORE = sig
     codecs:Codecs.codec_chain ->
     shape:int array ->
     chunks:int array ->
-    ('a, 'b) Bigarray.kind ->
+    'a Ndarray.dtype ->
     'a ->
     ArrayNode.t ->
     t ->
@@ -99,7 +99,7 @@ module type STORE = sig
     t ->
     ArrayNode.t ->
     Owl_types.index array ->
-    ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t ->
+    'a Ndarray.t ->
     unit Deferred.t
   (** [write_array t n s x] writes n-dimensional array [x] to the slice [s]
       of array node [n] in store [t].
@@ -114,8 +114,8 @@ module type STORE = sig
     t ->
     ArrayNode.t ->
     Owl_types.index array ->
-    ('a, 'b) Bigarray.kind ->
-    ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t Deferred.t
+    'a Ndarray.dtype ->
+    'a Ndarray.t Deferred.t
   (** [read_array t n s k] reads an n-dimensional array of size determined
       by slice [s] from array node [n].
 

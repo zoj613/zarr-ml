@@ -5,5 +5,6 @@ let () =
       Test_node.tests @
       Test_indexing.tests @
       Test_metadata.tests @
+      Test_ndarray.tests @
       Test_codecs.tests
   in run_test_tt_main suite

@@ -1,5 +1,5 @@
-open Bigarray
 open OUnit2
+open Zarr
 open Zarr.Metadata
 open Zarr.Node
 open Zarr.Codecs
@@ -50,24 +50,24 @@ let test_storage
     ;codecs = [`Bytes LE]} in
   let anode = ArrayNode.(gnode / "arrnode") in
   let slice = Owl_types.[|R [0; 20]; I 10; R [0; 29]|] in
-  let exp = Genarray.init Complex32 C_layout [|21; 1; 30|] (Fun.const Complex.one) in
+  let exp = Ndarray.init Ndarray.Complex32 [|21; 1; 30|] (Fun.const Complex.one) in
 
   Lwt_list.iter_s
     (fun codecs ->
       create_array
         ~codecs ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
-        Complex32 Complex.one anode store >>= fun () ->
+        Ndarray.Complex32 Complex.one anode store >>= fun () ->
       write_array store anode slice exp >>= fun () ->
       read_array store anode slice Complex32 >>= fun got ->
-      assert_equal ~printer:Owl_pretty.dsnda_to_string exp got;
-      Genarray.fill exp Complex.{re=2.0; im=0.};
+      assert_equal exp got;
+      Ndarray.fill exp Complex.{re=2.0; im=0.};
       write_array store anode slice exp >>= fun () ->
       read_array store anode slice Complex32 >>= fun arr ->
-      assert_equal ~printer:Owl_pretty.dsnda_to_string exp arr;
-      Genarray.fill exp Complex.{re=0.; im=3.0};
+      assert_equal exp arr;
+      Ndarray.fill exp Complex.{re=0.; im=3.0};
       write_array store anode slice exp >>= fun () ->
       read_array store anode slice Complex32 >>| fun got ->
-      assert_equal ~printer:Owl_pretty.dsnda_to_string exp got)
+      assert_equal exp got)
     [[`ShardingIndexed cfg]; [`Bytes BE]] >>= fun () ->
 
   let child = GroupNode.of_path "/some/child" in

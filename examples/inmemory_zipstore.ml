@@ -178,13 +178,10 @@ let _ =
   let anode = List.hd @@ List.filter
     (fun node -> ArrayNode.to_path node = "/some/group/name") xs in
   let slice = Owl_types.[|R [0; 20]; I 10; R []|] in
-  let* x = MemoryZipStore.read_array store anode slice Bigarray.Char in
-  print_string @@ "BEFORE: " ^ Owl_pretty.dsnda_to_string x;
-  let x' =
-    Owl.Dense.Ndarray.Generic.map
-      (fun _ -> Owl_stats_dist.uniform_int_rvs ~a:0 ~b:255 |> Char.chr) x in
+  let* x = MemoryZipStore.read_array store anode slice Zarr.Ndarray.Char in
+  let x' = x |> Zarr.Ndarray.map @@ fun _ -> Random.int 256 |> Char.chr in
   let* () = MemoryZipStore.write_array store anode slice x' in
-  let+ y = MemoryZipStore.read_array store anode slice Bigarray.Char in
-  print_string @@ "AFTER: " ^ Owl_pretty.dsnda_to_string y;
+  let+ y = MemoryZipStore.read_array store anode slice Zarr.Ndarray.Char in
+  assert (Zarr.Ndarray.equal x' y)
+  end;
   print_endline "Zip store has been update."
-  end

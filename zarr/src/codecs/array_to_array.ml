@@ -14,19 +14,14 @@ module TransposeCodec = struct
     || Array.(length o <> length shape)
     then raise Invalid_transpose_order else ()
 
-  module A = Owl.Dense.Ndarray.Any
-  module N = Owl.Dense.Ndarray.Generic
   (* See https://github.com/owlbarn/owl/issues/671#issuecomment-2241761001 *)
-  let transpose ?axis x =
-    let y = A.transpose ?axis @@ A.init_nd (N.shape x) @@ N.get x in
-    N.init_nd (N.kind x) (A.shape y) @@ A.get y
 
-  let encode o x = transpose ~axis:o x
+  let encode o x = Ndarray.transpose ~axis:o x
 
   let decode o x =
     let inv_order = Array.(make (length o) 0) in
     Array.iteri (fun i x -> inv_order.(x) <- i) o;
-    transpose ~axis:inv_order x
+    Ndarray.transpose ~axis:inv_order x
 
   let to_yojson order =
     let o = `List (Array.to_list @@ Array.map (fun x -> `Int x) order) in

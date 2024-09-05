@@ -6,3 +6,4 @@ module Storage = Storage
 module Codecs = Codecs
 module Memory = Memory
 module Types = Types
+module Ndarray = Ndarray

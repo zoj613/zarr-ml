@@ -106,7 +106,7 @@ FilesystemStore.create_array
   ~codecs:[`ShardingIndexed config]
   ~shape:[|100; 100; 50|]
   ~chunks:[|10; 15; 20|]
-  Bigarray.Complex32
+  Ndarray.Complex32
   Complex.zero
   shard_node
   store;;
@@ -134,6 +134,7 @@ List.map GroupNode.to_path g;;
 (*- : string list = [] *)
 
 FilesystemStore.erase_group_node store group_node;;
+FilesystemStore.erase_all_nodes store;; (* clears the store *)
 ```
 
 [1]: https://codecov.io/gh/zoj613/zarr-ml/graph/badge.svg?token=KOOG2Y1SH5

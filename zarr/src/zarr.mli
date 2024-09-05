@@ -44,6 +44,10 @@ module Indexing = Util.Indexing
 
 module Util = Util
 
+(** {1 Ndarray} *)
+
+module Ndarray = Ndarray
+
 (** {1:examples Examples}
     
     {2:create_array Create, read & write array.}

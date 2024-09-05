@@ -44,8 +44,8 @@ and ('a, 'b) internal_chain =
 
 type arraytobytes = [ fixed_arraytobytes | variable_arraytobytes ]
 
-type ('a, 'b) array_repr =
-  {kind : ('a, 'b) Bigarray.kind
+type 'a array_repr =
+  {kind : 'a Ndarray.dtype
   ;shape : int array}
 
 module type Interface = sig
@@ -123,7 +123,7 @@ module type Interface = sig
 
   (** The type summarizing the decoded/encoded representation of a Zarr array
       or chunk. *)
-  type ('a, 'b) array_repr =
-    {kind : ('a, 'b) Bigarray.kind
+  type 'a array_repr =
+    {kind : 'a Ndarray.dtype
     ;shape : int array}
 end

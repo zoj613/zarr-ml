@@ -3,5 +3,6 @@
  (libraries
    zarr-sync
    ounit2)
+ (package zarr-sync)
  (preprocess
    (pps ppx_deriving.show)))

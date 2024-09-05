@@ -3,5 +3,6 @@
  (libraries
    zarr-lwt
    ounit2)
+ (package zarr-lwt)
  (preprocess
    (pps ppx_deriving.show)))

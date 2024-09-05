@@ -38,7 +38,7 @@ module ArrayMetadata : sig
     ?attributes:Yojson.Safe.t ->
     codecs:Codecs.Chain.t ->
     shape:int array ->
-    ('a, 'b) Bigarray.kind ->
+    'a Ndarray.dtype ->
     'a ->
     int array ->
     t
@@ -62,11 +62,11 @@ module ArrayMetadata : sig
   val chunk_shape : t -> int array
   (** [chunk_shape t] returns the shape a chunk in this zarr array. *)
 
-  val is_valid_kind : t -> ('a, 'b) Bigarray.kind -> bool
+  val is_valid_kind : t -> 'a Ndarray.dtype -> bool
   (** [is_valid_kind t kind] checks if [kind] is a valid Bigarray kind that
       matches the data type of the zarr array represented by this metadata type. *)
 
-  val fillvalue_of_kind : t -> ('a, 'b) Bigarray.kind -> 'a
+  val fillvalue_of_kind : t -> 'a Ndarray.dtype -> 'a
   (** [fillvalue_of_kind t kind] returns the fill value of uninitialized
       chunks in this zarr array  given [kind]. Raises Failure if the kind
       is not compatible with this array's fill value. *)

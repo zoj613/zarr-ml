@@ -2,7 +2,6 @@ include Storage_intf
 open Metadata
 open Node
 
-module Ndarray = Owl.Dense.Ndarray.Generic
 module ArrayMap = Util.ArrayMap
 module Indexing = Util.Indexing
 
@@ -102,7 +101,7 @@ module Make (Io : Types.IO) = struct
       try Indexing.slice_shape slice shape with
       | Assert_failure _ -> raise Invalid_array_slice in
     if Ndarray.shape x <> slice_shape then raise Invalid_array_slice else
-    let kind = Ndarray.kind x in
+    let kind = Ndarray.data_type x in
     if not @@ ArrayMetadata.is_valid_kind meta kind then raise Invalid_data_type else
     let m =
       Array.fold_left
@@ -137,7 +136,13 @@ module Make (Io : Types.IO) = struct
           List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
           set t ckey @@ Codecs.Chain.encode chain arr) (ArrayMap.bindings m)
 
-  let read_array t node slice kind =
+  let read_array :
+    type a. t ->
+    ArrayNode.t ->
+    Owl_types.index array ->
+    a Ndarray.dtype ->
+    a Ndarray.t Deferred.t
+    = fun t node slice kind ->
     let* b = get t @@ ArrayNode.to_metakey node in
     let meta = ArrayMetadata.decode b in
     if not @@ ArrayMetadata.is_valid_kind meta kind
@@ -177,7 +182,7 @@ module Make (Io : Types.IO) = struct
     let v =
       Array.of_list @@ snd @@ List.split @@
       List.fast_sort (fun (x, _) (y, _) -> Int.compare x y) pairs in
-    Ndarray.of_array kind v slice_shape
+    Ndarray.of_array kind slice_shape v
 
   let reshape t node nshape =
     let mkey = ArrayNode.to_metakey node in

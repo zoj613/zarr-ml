@@ -1,5 +1,5 @@
-open Bigarray
 open OUnit2
+open Zarr
 open Zarr.Metadata
 open Zarr.Node
 open Zarr.Codecs
@@ -60,17 +60,17 @@ let test_storage
       create_array
         ~codecs ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
         Complex32 Complex.one anode store;
-      let exp = Genarray.init Complex32 C_layout [|21; 1; 30|] (Fun.const Complex.one) in
+      let exp = Ndarray.init Complex32 [|21; 1; 30|] (Fun.const Complex.one) in
       let got = read_array store anode slice Complex32 in
-      assert_equal ~printer:Owl_pretty.dsnda_to_string exp got;
-      Genarray.fill exp Complex.{re=2.0; im=0.};
+      assert_equal exp got;
+      Ndarray.fill exp Complex.{re=2.0; im=0.};
       write_array store anode slice exp;
       let got = read_array store anode slice Complex32 in
-      assert_equal ~printer:Owl_pretty.dsnda_to_string exp got;
-      Genarray.fill exp Complex.{re=0.; im=3.0};
+      assert_equal exp got;
+      Ndarray.fill exp Complex.{re=0.; im=3.0};
       write_array store anode slice exp;
       let got = read_array store anode slice Complex32 in
-      assert_equal ~printer:Owl_pretty.dsnda_to_string exp got;
+      assert_equal exp got;
       erase_array_node store anode)
     [[`ShardingIndexed cfg]; [`ShardingIndexed cfg2]];
 
@@ -78,31 +78,31 @@ let test_storage
   create_array
     ~sep:`Dot ~codecs:[`Bytes BE]
     ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
-    Bigarray.Int Int.max_int anode store;
+    Ndarray.Int Int.max_int anode store;
   (* test path where there is no chunk key present in store *)
-  let exp = Genarray.init Int C_layout [|21; 1; 30|] (Fun.const Int.max_int) in
+  let exp = Ndarray.init Int [|21; 1; 30|] (Fun.const Int.max_int) in
   write_array store anode slice exp;
   let got = read_array store anode slice Int in
-  assert_equal ~printer:Owl_pretty.dsnda_to_string exp got;
+  assert_equal exp got;
   (* test path where there is a chunk key present in store at write time. *)
   write_array store anode slice exp;
   let got = read_array store anode slice Int in
-  assert_equal ~printer:Owl_pretty.dsnda_to_string exp got;
+  assert_equal exp got;
 
   assert_raises
     (Zarr.Storage.Invalid_data_type)
-    (fun () -> read_array store anode slice Bigarray.Char);
+    (fun () -> read_array store anode slice Ndarray.Char);
   let badslice = Owl_types.[|R [0; 20]; I 10; R []; R [] |] in
   assert_raises
     (Zarr.Storage.Invalid_array_slice)
-    (fun () -> read_array store anode badslice Bigarray.Int);
+    (fun () -> read_array store anode badslice Ndarray.Int);
   assert_raises
     (Zarr.Storage.Invalid_array_slice)
     (fun () -> write_array store anode badslice exp);
   assert_raises
     (Zarr.Storage.Invalid_array_slice)
     (fun () -> write_array store anode Owl_types.[|R [0; 20]; R []; R []|] exp);
-  let badarray = Genarray.init Float64 C_layout [|21; 1; 30|] (Fun.const 0.) in
+  let badarray = Ndarray.init Float64 [|21; 1; 30|] (Fun.const 0.) in
   assert_raises
     (Zarr.Storage.Invalid_data_type)
     (fun () -> write_array store anode slice badarray);

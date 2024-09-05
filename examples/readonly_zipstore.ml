@@ -104,8 +104,7 @@ let _ =
       (fun node -> ArrayNode.to_path node = "/some/group/name") xs in
   let meta = ReadOnlyZipStore.array_metadata store anode in
   let slice = Array.map (Fun.const @@ Owl_types.R []) (ArrayMetadata.shape meta) in
-  let arr = ReadOnlyZipStore.read_array store anode slice Bigarray.Char in
-  print_string @@ Owl_pretty.dsnda_to_string arr;
+  let arr = ReadOnlyZipStore.read_array store anode slice Zarr.Ndarray.Char in
   try ReadOnlyZipStore.write_array store anode slice arr with
   | ReadOnlyZipStore.Not_implemented -> print_endline "Store is read-only";
   ReadOnlyZipStore.close store

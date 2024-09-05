@@ -46,12 +46,12 @@ let group = [
 ]
 
 let test_array_metadata
-  : type a b c d .
+  : type a b.
     ?dimension_names:string option list ->
     shape:int array ->
     chunks:int array ->
-    (a, b) Bigarray.kind ->
-    (c, d) Bigarray.kind ->
+    a Ndarray.dtype ->
+    b Ndarray.dtype ->
     a ->
     unit
   = fun ?dimension_names ~shape ~chunks kind bad_kind fv ->
@@ -591,8 +591,8 @@ let array = [
   test_array_metadata
     ~shape
     ~chunks
-    Bigarray.Char
-    Bigarray.Float32
+    Ndarray.Char
+    Ndarray.Float32
     '?';
 
   (* tests using int8 data type. *)
@@ -600,8 +600,8 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    Bigarray.Int8_signed
-    Bigarray.Float32
+    Ndarray.Int8
+    Ndarray.Float32
     0;
 
   (* tests using uint8 data type. *)
@@ -609,8 +609,8 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    Bigarray.Int8_unsigned
-    Bigarray.Float32
+    Ndarray.Uint8
+    Ndarray.Float32
     0;
 
   (* tests using int16 data type. *)
@@ -618,8 +618,8 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    Bigarray.Int16_signed
-    Bigarray.Float32
+    Ndarray.Int16
+    Ndarray.Float32
     0;
 
   (* tests using uint16 data type. *)
@@ -627,8 +627,8 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    Bigarray.Int16_unsigned
-    Bigarray.Float32
+    Ndarray.Uint16
+    Ndarray.Float32
     0;
 
   (* tests using int32 data type. *)
@@ -636,8 +636,8 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    Bigarray.Int32
-    Bigarray.Float32
+    Ndarray.Int32
+    Ndarray.Float32
     Int32.max_int;
 
   (* tests using int64 data type. *)
@@ -645,8 +645,8 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    Bigarray.Int64
-    Bigarray.Float32
+    Ndarray.Int64
+    Ndarray.Float32
     0L;
 
   (* tests using float32 data type. *)
@@ -654,8 +654,8 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    Bigarray.Float32
-    Bigarray.Int
+    Ndarray.Float32
+    Ndarray.Int
     Float.neg_infinity;
 
   (* tests using float64 data type. *)
@@ -663,8 +663,8 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    Bigarray.Float64
-    Bigarray.Int
+    Ndarray.Float64
+    Ndarray.Int
     Float.neg_infinity;
 
   (* tests using complex32 data type. *)
@@ -672,8 +672,8 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    Bigarray.Complex32
-    Bigarray.Float32
+    Ndarray.Complex32
+    Ndarray.Float32
     Complex.zero;
 
   (* tests using complex64 data type. *)
@@ -681,8 +681,8 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    Bigarray.Complex64
-    Bigarray.Float32
+    Ndarray.Complex64
+    Ndarray.Float32
     Complex.zero;
 
   (* tests using int data type. *)
@@ -690,8 +690,8 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    Bigarray.Int
-    Bigarray.Float32
+    Ndarray.Int
+    Ndarray.Float32
     Int.max_int;
 
   (* tests using nativeint data type. *)
@@ -699,8 +699,8 @@ let array = [
     ~dimension_names
     ~shape
     ~chunks
-    Bigarray.Nativeint
-    Bigarray.Float32
+    Ndarray.Nativeint
+    Ndarray.Float32
     0n)
 ]
 

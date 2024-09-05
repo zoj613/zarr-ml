@@ -38,7 +38,7 @@ module Datatype : sig
   (** A type for the supported data types of a Zarr array. *)
 
   val ( = ) : t -> t -> bool
-  val of_kind : ('a, 'b) Bigarray.kind -> t
+  val of_kind : 'a Ndarray.dtype -> t
   val of_yojson : Yojson.Safe.t -> (t, string) result
   val to_yojson : t -> Yojson.Safe.t
 end

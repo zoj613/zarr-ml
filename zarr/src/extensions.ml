@@ -120,20 +120,20 @@ module Datatype = struct
 
   let ( = ) : t -> t -> bool = fun x y -> x = y
 
-  let of_kind : type a b. (a, b) Bigarray.kind -> t = function
-    | Bigarray.Char -> Char
-    | Bigarray.Int8_signed -> Int8
-    | Bigarray.Int8_unsigned -> Uint8
-    | Bigarray.Int16_signed -> Int16
-    | Bigarray.Int16_unsigned -> Uint16
-    | Bigarray.Int32 -> Int32
-    | Bigarray.Int64 -> Int64
-    | Bigarray.Float32 -> Float32
-    | Bigarray.Float64 -> Float64
-    | Bigarray.Complex32 -> Complex32
-    | Bigarray.Complex64 -> Complex64
-    | Bigarray.Int -> Int
-    | Bigarray.Nativeint -> Nativeint
+  let of_kind : type a b. a Ndarray.dtype -> t = function
+    | Ndarray.Char -> Char
+    | Ndarray.Int8 -> Int8
+    | Ndarray.Uint8 -> Uint8
+    | Ndarray.Int16 -> Int16
+    | Ndarray.Uint16 -> Uint16
+    | Ndarray.Int32 -> Int32
+    | Ndarray.Int64 -> Int64
+    | Ndarray.Float32 -> Float32
+    | Ndarray.Float64 -> Float64
+    | Ndarray.Complex32 -> Complex32
+    | Ndarray.Complex64 -> Complex64
+    | Ndarray.Int -> Int
+    | Ndarray.Nativeint -> Nativeint
 
   let to_yojson = function
     | Char -> `String "char"

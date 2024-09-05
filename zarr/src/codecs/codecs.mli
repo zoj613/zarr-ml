@@ -26,15 +26,11 @@ module Chain : sig
 
   (** [encode t x] computes the encoded byte string representation of
       array chunk [x]. *)
-  val encode : t -> ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t -> string
+  val encode : t -> 'a Ndarray.t -> string
 
   (** [decode t repr x] decodes the byte string [x] using codec chain [t]
       and decoded representation type [repr]. *)
-  val decode :
-    t ->
-    ('a, 'b) array_repr ->
-    string ->
-    ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
+  val decode : t -> 'a array_repr -> string -> 'a Ndarray.t
 
   (** [x = y] returns true if chain [x] is equal to chain [y],
       and false otherwise. *)
@@ -59,7 +55,7 @@ module Make (Io : Types.IO) : sig
     ((int * int option) list -> string list Io.Deferred.t) ->
     (?append:bool -> (int * string) list -> unit Io.Deferred.t) ->
     int ->
-    ('a, 'b) array_repr ->
+    'a array_repr ->
     (int array * 'a) list ->
     unit Io.Deferred.t
 
@@ -67,7 +63,7 @@ module Make (Io : Types.IO) : sig
     Chain.t ->
     ((int * int option) list -> string list Io.Deferred.t) ->
     int ->
-    ('a, 'b) array_repr ->
+    'a array_repr ->
     (int * int array) list ->
     (int * 'a) list Io.Deferred.t
 end

@@ -27,7 +27,7 @@
  (depends
    dune
    (ocaml
-     (and (>= 4.14.0) (< 5.2.0)))
+     (and (>= 4.14.0)))
    (yojson (>= 1.6.0))
    (ezgzip (>= 0.2.0))
    (stdint (>= 0.7.2))
@@ -46,7 +46,7 @@
  (depends
    dune
    (ocaml
-     (and (>= 4.14.0) (< 5.2.0)))
+     (and (>= 4.14.0)))
    (zarr (= :version))
    (odoc :with-doc)
    (ounit2 :with-test)
@@ -60,7 +60,7 @@
  (depends
    dune
    (ocaml
-     (and (>= 4.14.0) (< 5.2.0)))
+     (and (>= 4.14.0)))
    (zarr (= :version))
    (lwt (>= 2.5.1))
    (odoc :with-doc)
@@ -75,7 +75,7 @@
  (depends
    dune
    (ocaml
-     (and (>= 5.1.0) (< 5.2.0)))
+     (and (>= 5.1.0)))
    (zarr (= :version))
    (eio_main (>= 1.0))
    (odoc :with-doc)

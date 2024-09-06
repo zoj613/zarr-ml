@@ -81,3 +81,30 @@ val equal : 'a t -> 'a t -> bool
 val transpose : ?axis:int array -> 'a t -> 'a t
 (** [transpose o x] permutes the axes of [x] according to [o].*)
 
+module Indexing : sig
+  (** A module housing functions for creating and manipulating indices and
+      slices for working with Zarr arrays. *)
+
+  type index =
+    | I of int
+    | L of int array
+    | R of int array
+
+  val slice_of_coords : int array list -> index array
+  (** [slice_of_coords c] takes a list of array coordinates and returns
+      a slice corresponding to the coordinates. Elements of each slice
+      variant are sorted in increasing order.*)
+      
+  val coords_of_slice : index array -> int array -> int array array
+  (** [coords_of_slice s shp] returns an array of coordinates given
+      a slice [s] and array shape [shp]. *)
+
+  val cartesian_prod : int list list -> int list list
+  (** [cartesian_prod ll] returns a cartesian product of the elements of
+      list [ll]. It is mainly used to generate a C-order of chunk indices
+      in a regular Zarr array grid. *)
+
+  val slice_shape : index array -> int array -> int array
+  (** [slice_shape s shp] returns the shape of slice [s] within an array
+      of shape [shp]. *)
+end

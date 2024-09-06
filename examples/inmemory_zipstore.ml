@@ -169,6 +169,7 @@ end
 let _ =
   Lwt_main.run @@ begin
   let open Zarr.Node in
+  let open Zarr.Indexing in
   let open MemoryZipStore.Deferred.Syntax in
 
   let printlist = [%show: string list] in
@@ -177,7 +178,7 @@ let _ =
   print_endline @@ "All array nodes: " ^ printlist (List.map ArrayNode.to_path xs);
   let anode = List.hd @@ List.filter
     (fun node -> ArrayNode.to_path node = "/some/group/name") xs in
-  let slice = Owl_types.[|R [0; 20]; I 10; R []|] in
+  let slice = [|R [|0; 20|]; I 10; R [||]|] in
   let* x = MemoryZipStore.read_array store anode slice Zarr.Ndarray.Char in
   let x' = x |> Zarr.Ndarray.map @@ fun _ -> Random.int 256 |> Char.chr in
   let* () = MemoryZipStore.write_array store anode slice x' in

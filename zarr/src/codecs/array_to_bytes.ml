@@ -2,7 +2,7 @@ open Array_to_array
 open Bytes_to_bytes
 open Codecs_intf
 
-module Indexing = Util.Indexing
+module Indexing = Ndarray.Indexing
 module ArrayMap = Util.ArrayMap
 module RegularGrid = Extensions.RegularGrid
 
@@ -189,14 +189,13 @@ end = struct
     let idx_shp = Array.append cps [|2|] in
     let shard_idx = Ndarray.create Uint64 idx_shp Stdint.Uint64.max_int in
     let grid = RegularGrid.create ~array_shape:shard_shape t.chunk_shape in
-    let slice = Array.make (Ndarray.ndims x) @@ Owl_types.R [] in
     let kind = Ndarray.data_type x in
     let m =
       Array.fold_right
         (fun y acc ->
           let k, c = RegularGrid.index_coord_pair grid y in
           ArrayMap.add_to_list k (c, Ndarray.get x y) acc)
-        (Indexing.coords_of_slice slice shard_shape) ArrayMap.empty
+        (Indexing.coords_of_slice [||] shard_shape) ArrayMap.empty
     in
     let xs =
       snd @@
@@ -253,10 +252,9 @@ end = struct
     let cps = Array.map2 (/) repr.shape t.chunk_shape in
     let idx_arr, b' = decode_index t cps b in
     let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
-    let slice = Array.make (Array.length repr.shape) @@ Owl_types.R [] in
     let icoords =
       Array.mapi
-        (fun i v -> i, v) @@ Indexing.coords_of_slice slice repr.shape in
+        (fun i v -> i, v) @@ Indexing.coords_of_slice [||] repr.shape in
     let m =
       Array.fold_left
         (fun acc (i, y) ->

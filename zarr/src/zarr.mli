@@ -38,7 +38,7 @@ module Codecs = Codecs
 
 (** {1 Indexing} *)
 
-module Indexing = Util.Indexing
+module Indexing = Ndarray.Indexing
 
 (** {1 Utils} *)
 

@@ -98,7 +98,7 @@ module type STORE = sig
   val write_array :
     t ->
     ArrayNode.t ->
-    Owl_types.index array ->
+    Ndarray.Indexing.index array ->
     'a Ndarray.t ->
     unit Deferred.t
   (** [write_array t n s x] writes n-dimensional array [x] to the slice [s]
@@ -113,7 +113,7 @@ module type STORE = sig
   val read_array :
     t ->
     ArrayNode.t ->
-    Owl_types.index array ->
+    Ndarray.Indexing.index array ->
     'a Ndarray.dtype ->
     'a Ndarray.t Deferred.t
   (** [read_array t n s k] reads an n-dimensional array of size determined

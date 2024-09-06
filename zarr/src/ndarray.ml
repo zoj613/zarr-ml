@@ -104,3 +104,131 @@ let transpose ?axis x =
   let p = Option.fold ~none:(Array.init n (fun i -> n - 1 - i)) ~some:Fun.id axis in
   let shape = Array.map (fun i -> x.shape.(i)) p in
   {x with shape; strides = make_strides shape}
+
+(* The [index] type definition as well as functions tagged with [@coverage off]
+  in this Indexing module were directly copied from the Owl project to emulate
+  its logic for munipulating slices. The code is licenced under the MIT license 
+  and can be found at: https://github.com/owlbarn/owl
+
+  The MIT License (MIT)
+  Copyright (c) 2016-2022 Liang Wang liang@ocaml.xyz *)
+module Indexing = struct
+  type index =
+    | I of int
+    | L of int array
+    | R of int array
+
+  (* this is copied from the Owl project so we skip testing it. *)
+  let[@coverage off] check_slice_definition axis shp =
+    let axis_len = Array.length axis in
+    let shp_len = Array.length shp in
+    assert (axis_len <= shp_len);
+    (* add missing definition on higher dimensions *)
+    let axis =
+      if axis_len < shp_len
+      then (
+        let suffix = Array.make (shp_len - axis_len) (R [||]) in
+        Array.append axis suffix)
+      else axis
+    in
+    (* re-format slice definition, note I_ will be replaced with L_ *)
+    Array.map2
+      (fun i n ->
+        match i with
+        | I x ->
+          let x = if x >= 0 then x else n + x in
+          assert (x < n);
+          R [| x; x; 1 |]
+        | L x ->
+          let is_cont = ref true in
+          if Array.length x <> n then is_cont := false;
+          let x =
+            Array.mapi
+              (fun i j ->
+                let j = if j >= 0 then j else n + j in
+                assert (j < n);
+                if i <> j then is_cont := false;
+                j)
+              x
+          in
+          if !is_cont = true then R [| 0; n - 1; 1 |] else L x
+        | R x ->
+          (match Array.length x with
+          | 0 -> R [| 0; n - 1; 1 |]
+          | 1 ->
+            let a = if x.(0) >= 0 then x.(0) else n + x.(0) in
+            assert (a < n);
+            R [| a; a; 1 |]
+          | 2 ->
+            let a = if x.(0) >= 0 then x.(0) else n + x.(0) in
+            let b = if x.(1) >= 0 then x.(1) else n + x.(1) in
+            let c = if a <= b then 1 else -1 in
+            assert (not (a >= n || b >= n));
+            R [| a; b; c |]
+          | 3 ->
+            let a = if x.(0) >= 0 then x.(0) else n + x.(0) in
+            let b = if x.(1) >= 0 then x.(1) else n + x.(1) in
+            let c = x.(2) in
+            assert (not (a >= n || b >= n || c = 0));
+            assert (not ((a < b && c < 0) || (a > b && c > 0)));
+            R [| a; b; c |]
+          | _ -> failwith "check_slice_definition: error"))
+      axis
+      shp
+
+  (* this was opied from the Owl project so we skip testing it. *)
+  let[@coverage off] calc_slice_shape axis =
+    Array.map
+      (function
+      | I _x -> 1 (* never reached *)
+      | L x -> Array.length x
+      | R x -> abs ((x.(1) - x.(0)) / x.(2)) + 1) axis
+
+  let rec cartesian_prod :
+    int list list -> int list list = function
+    | [] -> [[]]
+    | x :: xs ->
+      List.concat_map (fun i ->
+        List.map (List.cons i) (cartesian_prod xs)) x
+
+  let range ~step start stop =
+    List.of_seq @@ if step > 0 then
+      Seq.unfold (function
+        | x when x > stop -> None
+        | x -> Some (x, x + step)) start
+    else
+      let start, stop = stop, start in
+      Seq.unfold (function
+        | x when x < start -> None
+        | x -> Some (x, x + step)) stop
+
+  (* get indices from a reformated slice *)
+  let indices_of_slice = function
+    | R [|start; stop; step|] -> range ~step start stop
+    | L l -> Array.to_list l
+    (* this is added for exhaustiveness but is never reached since
+      a reformatted slice replaces a I index with an R index.*)
+    | _ -> failwith "Invalid slice index."
+
+  let coords_of_slice slice shape =
+    (Array.map indices_of_slice @@ check_slice_definition slice shape)
+    |> Array.to_list
+    |> cartesian_prod
+    |> List.map Array.of_list
+    |> Array.of_list
+
+  let slice_of_coords = function
+    | [] -> [||]
+    | x :: _ as xs ->
+      let module IntSet = Set.Make(Int) in
+      let ndims = Array.length x in
+      let indices = Array.make ndims IntSet.empty in
+      Array.map (fun x -> L (IntSet.elements x |> Array.of_list)) @@
+      List.fold_right (fun x acc ->
+        Array.iteri (fun i y ->
+          if IntSet.mem y acc.(i) then ()
+          else acc.(i) <- IntSet.add y acc.(i)) x; acc) xs indices
+
+  let slice_shape slice array_shape =
+    calc_slice_shape @@ check_slice_definition slice array_shape
+end

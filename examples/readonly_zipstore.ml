@@ -95,16 +95,13 @@ end
 
 let _ =
   Eio_main.run @@ fun _ ->
-  let open Zarr.Metadata in
   let open Zarr.Node in
 
   let store = ReadOnlyZipStore.open_store "examples/data/testdata.zip" in
   let xs, _ = ReadOnlyZipStore.find_all_nodes store in
   let anode = List.hd @@ Eio.Fiber.List.filter
       (fun node -> ArrayNode.to_path node = "/some/group/name") xs in
-  let meta = ReadOnlyZipStore.array_metadata store anode in
-  let slice = Array.map (Fun.const @@ Owl_types.R []) (ArrayMetadata.shape meta) in
-  let arr = ReadOnlyZipStore.read_array store anode slice Zarr.Ndarray.Char in
-  try ReadOnlyZipStore.write_array store anode slice arr with
+  let arr = ReadOnlyZipStore.read_array store anode [||] Zarr.Ndarray.Char in
+  try ReadOnlyZipStore.write_array store anode [||] arr with
   | ReadOnlyZipStore.Not_implemented -> print_endline "Store is read-only";
   ReadOnlyZipStore.close store

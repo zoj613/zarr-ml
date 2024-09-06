@@ -32,7 +32,6 @@
    (ezgzip (>= 0.2.0))
    (stdint (>= 0.7.2))
    (checkseum (>= 0.4.0))
-   (owl (>= 1.1))
    (odoc :with-doc)
    (ounit2 :with-test)
    (ppx_deriving :with-test)

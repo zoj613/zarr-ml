@@ -1,6 +1,7 @@
 open OUnit2
 open Zarr
 open Zarr.Metadata
+open Zarr.Indexing
 open Zarr.Node
 open Zarr.Codecs
 open Zarr_lwt.Storage
@@ -49,7 +50,7 @@ let test_storage
     ;index_codecs = [`Bytes BE]
     ;codecs = [`Bytes LE]} in
   let anode = ArrayNode.(gnode / "arrnode") in
-  let slice = Owl_types.[|R [0; 20]; I 10; R [0; 29]|] in
+  let slice = [|R [|0; 20|]; I 10; R [|0; 29|]|] in
   let exp = Ndarray.init Ndarray.Complex32 [|21; 1; 30|] (Fun.const Complex.one) in
 
   Lwt_list.iter_s

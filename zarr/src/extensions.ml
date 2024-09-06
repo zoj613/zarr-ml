@@ -28,7 +28,7 @@ module RegularGrid = struct
     grid_shape t array_shape
     |> Array.to_list
     |> List.map (fun x -> List.init x Fun.id)
-    |> Util.Indexing.cartesian_prod
+    |> Ndarray.Indexing.cartesian_prod
     |> List.map Array.of_list
 
   let ( = ) x y = x = y

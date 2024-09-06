@@ -39,11 +39,12 @@ Below is a demonstration of the library's API for synchronous reads/writes.
 A similar example using the `Lwt`-backed Asynchronous API can be found [here][7]
 ### setup
 ```ocaml
+open Zarr
 open Zarr.Metadata
 open Zarr.Node
 open Zarr.Codecs
+open Zarr.Indexing
 open Zarr_sync.Storage
-
 (* opens infix operators >>= and >>| for monadic bind & map *)
 open FilesytemStore.Deferred.Infix
 
@@ -62,35 +63,20 @@ FilesystemStore.create_array
   ~codecs:[`Transpose [|2; 0; 1|]; `Bytes BE; `Gzip L2]
   ~shape:[|100; 100; 50|]
   ~chunks:[|10; 15; 20|]
-  Bigarray.Char 
+  Ndarray.Char 
   '?'
   array_node
   store;;
 ```
 ### read/write from/to an array
 ```ocaml
-let slice = Owl_types.[|R [0; 20]; I 10; R []|];;
-let x = FilesystemStore.read_array store array_node slice Bigarray.Char;;
+let slice = [|R [|0; 20|]; I 10; R [||]|];;
+let x = FilesystemStore.read_array store array_node slice Ndarray.Char;;
 (* Do some computation on the array slice *)
-let x' =
-  Owl.Dense.Ndarray.Generic.map
-    (fun _ -> Owl_stats_dist.uniform_int_rvs ~a:0 ~b:255 |> Char.chr) x;;
+let x' = Zarr.Ndarray.map (fun _ -> Random.int 256 |> Char.chr) x;;
 FilesystemStore.write_array store array_node slice x';;
-
-FilesystemStore.read_array
-  store array_node Owl_types.[|R [0; 73]; I 10; R [0; 5]|] Bigarray.Char;;
-(*       C0  C1  C2  C3  C4  C5 
- R[0,0]   =      Ð   �       
- R[1,0]   d   ®   ê   ~   1    
- R[2,0]      £      Q   Ò   ø 
- R[3,0]   e   ^      Ò   Ê   B 
- R[4,0]   ú   2   �   1   `   n 
-        ... ... ... ... ... ... 
-R[69,0]   ?   ?   ?   ?   ?   ? 
-R[70,0]   ?   ?   ?   ?   ?   ? 
-R[71,0]   ?   ?   ?   ?   ?   ? 
-R[72,0]   ?   ?   ?   ?   ?   ? 
-R[73,0]   ?   ?   ?   ?   ?   ?  *)
+let y = FilesystemStore.read_array store array_node slice Ndarray.Char;;
+assert (Ndarray.equal x' y);;
 ```
 ### create an array with sharding
 ```ocaml

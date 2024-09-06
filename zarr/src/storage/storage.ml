@@ -3,7 +3,7 @@ open Metadata
 open Node
 
 module ArrayMap = Util.ArrayMap
-module Indexing = Util.Indexing
+module Indexing = Ndarray.Indexing
 
 module ArraySet = Set.Make (struct
   type t = int array
@@ -139,7 +139,7 @@ module Make (Io : Types.IO) = struct
   let read_array :
     type a. t ->
     ArrayNode.t ->
-    Owl_types.index array ->
+    Indexing.index array ->
     a Ndarray.dtype ->
     a Ndarray.t Deferred.t
     = fun t node slice kind ->

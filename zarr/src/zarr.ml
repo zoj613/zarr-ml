@@ -1,6 +1,6 @@
 module Node = Node
 module Util = Util
-module Indexing = Util.Indexing
+module Indexing = Ndarray.Indexing
 module Metadata = Metadata
 module Storage = Storage
 module Codecs = Codecs

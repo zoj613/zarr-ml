@@ -1,6 +1,7 @@
 open OUnit2
 open Zarr
 open Zarr.Metadata
+open Zarr.Indexing
 open Zarr.Node
 open Zarr.Codecs
 open Zarr_sync.Storage
@@ -53,7 +54,7 @@ let test_storage
     ;index_codecs = [`Bytes BE]
     ;codecs = [`Bytes LE]} in
   let anode = ArrayNode.(gnode / "arrnode") in
-  let slice = Owl_types.[|R [0; 20]; I 10; R [0; 29]|] in
+  let slice = [|R [|0; 20|]; I 10; R [|0; 29|]|] in
 
   List.iter
     (fun codecs ->
@@ -92,7 +93,7 @@ let test_storage
   assert_raises
     (Zarr.Storage.Invalid_data_type)
     (fun () -> read_array store anode slice Ndarray.Char);
-  let badslice = Owl_types.[|R [0; 20]; I 10; R []; R [] |] in
+  let badslice = [|R [|0; 20|]; I 10; R [||]; R [||] |] in
   assert_raises
     (Zarr.Storage.Invalid_array_slice)
     (fun () -> read_array store anode badslice Ndarray.Int);
@@ -101,7 +102,7 @@ let test_storage
     (fun () -> write_array store anode badslice exp);
   assert_raises
     (Zarr.Storage.Invalid_array_slice)
-    (fun () -> write_array store anode Owl_types.[|R [0; 20]; R []; R []|] exp);
+    (fun () -> write_array store anode [|R [|0; 20|]; R [||]; R [||]|] exp);
   let badarray = Ndarray.init Float64 [|21; 1; 30|] (Fun.const 0.) in
   assert_raises
     (Zarr.Storage.Invalid_data_type)

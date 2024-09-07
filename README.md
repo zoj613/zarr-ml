@@ -24,6 +24,16 @@ API documentation can be found [here][5]. The full specification of the storage
 format can be found [there][6].
 
 ## Installation
+The library comes in several flavors dependending on the synchronous/asynchronous
+backend of choice. To install the synchronous API, use
+```shell
+$ opam install zarr-sync
+```
+To install zarr with an asynchronous API powered by `Lwt` or `Eio`, use
+```shell
+$ opam install zarr-lwt
+$ opam install zarr-eio
+```
 To install the development version using the latest git commit, do
 ```
 # for zarr-sync

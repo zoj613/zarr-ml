@@ -81,6 +81,12 @@ val equal : 'a t -> 'a t -> bool
 val transpose : ?axis:int array -> 'a t -> 'a t
 (** [transpose o x] permutes the axes of [x] according to [o].*)
 
+val to_bigarray : 'a t -> ('a, 'b) Bigarray.kind -> ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
+(** [to_bigarray x] returns a C-layout Bigarray representation of [x]. *)
+
+val of_bigarray : ('a, 'b, 'c) Bigarray.Genarray.t -> 'a t
+(** [of_bigarray x] returns an N-dimensional array representation of [x].*)
+
 module Indexing : sig
   (** A module housing functions for creating and manipulating indices and
       slices for working with Zarr arrays. *)

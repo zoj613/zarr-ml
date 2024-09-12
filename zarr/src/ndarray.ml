@@ -76,6 +76,11 @@ let of_array dtype shape xs =
 let coord_to_index i s =
   Array.fold_left (fun a (x, y) -> Int.add a (x * y)) 0 @@ Array.combine i s
 
+let index_to_coord i s =
+  let n = Array.length s in
+  let c = List.init (n - 1) (fun j -> (i mod s.(j)) / s.(j+1)) in
+  Array.of_list @@ i / s.(0) :: c
+
 let get t i = t.data.(coord_to_index i t.strides)
 
 let set t i x = t.data.(coord_to_index i t.strides) <- x
@@ -87,6 +92,50 @@ let fill t v = Array.iteri (fun i _ -> t.data.(i) <- v) t.data
 let map f t = {t with data = Array.map f t.data}
 
 let iter f t = Array.iter f t.data
+
+module B = Bigarray
+
+let to_bigarray :
+  type a b. a t -> (a, b) B.kind -> (a, b, B.c_layout) B.Genarray.t
+  = fun x kind ->
+  let f k =
+    B.Genarray.init k C_layout x.shape @@ fun c ->
+    x.data.(coord_to_index c x.strides) in
+  match[@warning "-8"] kind with
+  | B.Char as k -> f k
+  | B.Int8_signed as k -> f k
+  | B.Int8_unsigned as k -> f k
+  | B.Int16_signed as k -> f k
+  | B.Int16_unsigned as k -> f k
+  | B.Int32 as k -> f k
+  | B.Int64 as k -> f k
+  | B.Float32 as k -> f k
+  | B.Float64 as k -> f k
+  | B.Nativeint as k -> f k
+  | B.Int as k -> f k
+  | B.Complex32 as k -> f k
+  | B.Complex64 as k -> f k
+
+let of_bigarray :
+  type a b c. (a, b, c) B.Genarray.t -> a t = fun x ->
+  let x' = B.Genarray.change_layout x C_layout in
+  let shape = B.Genarray.dims x' in
+  let s = make_strides shape in
+  let f d = init d shape @@ fun i -> B.Genarray.get x' (index_to_coord i s) in
+  match[@warning "-8"] B.Genarray.kind x with
+  | B.Char -> f Char
+  | B.Int8_signed -> f Int8
+  | B.Int8_unsigned -> f Uint8
+  | B.Int16_signed -> f Int16
+  | B.Int16_unsigned -> f Uint16
+  | B.Int32 -> f Int32
+  | B.Int64 -> f Int64
+  | B.Float32 -> f Float32
+  | B.Float64 -> f Float64
+  | B.Nativeint -> f Nativeint
+  | B.Int -> f Int
+  | B.Complex32 -> f Complex32
+  | B.Complex64 -> f Complex64
 
 let equal x y =
   x.data = y.data

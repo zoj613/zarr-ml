@@ -1,10 +1,3 @@
-module ExtPoint : sig
-  (** The type representing a JSON extension point metadata configuration. *)
-
-  type 'a t = {name : string ; configuration : 'a}
-  val ( = ) : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
-end
-
 (** A finite map over integer array keys. *)
 module ArrayMap : sig
   include Map.S with type key = int array

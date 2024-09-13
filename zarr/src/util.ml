@@ -1,13 +1,3 @@
-module ExtPoint = struct
-  type 'a t =
-    {name : string
-    ;configuration : 'a}
-
-  let ( = ) cmp x y =
-    (x.name = y.name) &&
-    cmp x.configuration y.configuration
-end
-
 module ArrayMap = struct
   include Map.Make (struct
     type t = int array

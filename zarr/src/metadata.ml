@@ -111,7 +111,7 @@ module ArrayMetadata = struct
     ;chunk_key_encoding : ChunkKeyEncoding.t
     ;attributes : Yojson.Safe.t
     ;dimension_names : string option list
-    ;storage_transformers : Yojson.Safe.t Util.ExtPoint.t list}
+    ;storage_transformers : Yojson.Safe.t list}
 
   let create
     ?(sep=`Slash)

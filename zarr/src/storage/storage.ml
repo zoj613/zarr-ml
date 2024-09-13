@@ -97,9 +97,9 @@ module Make (Io : Types.IO) = struct
     let* b = get t @@ ArrayNode.to_metakey node in
     let meta = ArrayMetadata.decode b in
     let shape = ArrayMetadata.shape meta in
-    let slice_shape =
-      try Indexing.slice_shape slice shape with
-      | Assert_failure _ -> raise Invalid_array_slice in
+    let slice_shape = match Indexing.slice_shape slice shape with
+      | exception Assert_failure _ -> raise Invalid_array_slice
+      | s -> s in
     if Ndarray.shape x <> slice_shape then raise Invalid_array_slice else
     let kind = Ndarray.data_type x in
     if not @@ ArrayMetadata.is_valid_kind meta kind then raise Invalid_data_type else
@@ -148,9 +148,9 @@ module Make (Io : Types.IO) = struct
     if not @@ ArrayMetadata.is_valid_kind meta kind
     then raise Invalid_data_type else
     let shape = ArrayMetadata.shape meta in
-    let slice_shape =
-      try Indexing.slice_shape slice shape with
-      | Assert_failure _ -> raise Invalid_array_slice in
+    let slice_shape = match Indexing.slice_shape slice shape with
+      | exception Assert_failure _ -> raise Invalid_array_slice
+      | s -> s in
     let ic = Array.mapi (fun i v -> i, v) (Indexing.coords_of_slice slice shape) in
     let m =
       Array.fold_left

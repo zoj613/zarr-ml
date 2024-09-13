@@ -204,8 +204,9 @@ module ArrayMetadata = struct
               | _ ->
                 Error "chunk_shape must only contain positive ints.") l (Ok []) in
           let cs = Array.of_list v in
-          let+ r = try Ok (RegularGrid.create ~array_shape:shape cs) with
-            | RegularGrid.Grid_shape_mismatch -> Error "grid shape mismatch."
+          let+ r = match RegularGrid.create ~array_shape:shape cs with
+            | exception RegularGrid.Grid_shape_mismatch -> Error "grid shape mismatch."
+            | g -> Ok g
           in cs, r
         | _ -> Error "Invalid Chunk grid name or configuration."
     in

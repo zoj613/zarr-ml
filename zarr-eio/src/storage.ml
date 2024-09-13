@@ -20,10 +20,10 @@ module FilesystemStore = struct
       Eio.Path.with_open_in (key_to_fspath t key) @@ fun flow ->
       Optint.Int63.to_int @@ Eio.File.size flow
 
-    let get t key =
-      try Eio.Path.load @@ key_to_fspath t key with
-      | Eio.Io (Eio.Fs.E Not_found Eio_unix.Unix_error _, _) ->
-        raise (Zarr.Storage.Key_not_found key)
+    let get t key = match Eio.Path.load @@ key_to_fspath t key with
+      | exception Eio.Io (Eio.Fs.E Not_found Eio_unix.Unix_error _, _) ->
+        raise @@ Zarr.Storage.Key_not_found key
+      | v -> v
 
     let get_partial_values t key ranges =
       Eio.Path.with_open_in (key_to_fspath t key) @@ fun flow ->

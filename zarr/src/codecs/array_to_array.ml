@@ -41,8 +41,9 @@ module TransposeCodec = struct
             | _ -> Error "transpose order values must be integers.") o (Ok []))
         (fun od ->
           let order = Array.of_list od in
-          try parse ~order chunk_shape; Ok (`Transpose order) with
-          | Invalid_transpose_order -> Error "Invalid_transpose_order")
+          match parse ~order chunk_shape with
+          | () -> Ok (`Transpose order)
+          | exception Invalid_transpose_order -> Error "Invalid_transpose_order")
     | _ -> Error "Invalid transpose configuration."
 end
 

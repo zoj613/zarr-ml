@@ -13,6 +13,9 @@
 exception Node_invariant
 (** raised when a node's invariants are violated. *)
 
+exception Cannot_rename_root
+(** raised when attempting to rename a root node. *)
+
 module GroupNode : sig
   type t
   (** The type of a Group node. *)
@@ -72,6 +75,14 @@ module GroupNode : sig
 
   val pp : Format.formatter -> t -> unit
   (** [pp fmt t] pretty prints a node type value. *)
+
+  val rename : t -> string -> t
+  (** [rename t s] returns a new group node with all properties of [t]
+      but with its name changed to [s].
+
+      @raise Node_invariant if [s] is invalid name.
+      @raise Renaming_root if [t] is a root node.*)
+
 end
 
 module ArrayNode : sig
@@ -126,4 +137,11 @@ module ArrayNode : sig
 
   val pp : Format.formatter -> t -> unit
   (** [pp fmt t] pretty prints a node type value. *)
+
+  val rename : t -> string -> t
+  (** [rename t s] returns a new node with all properties of [t]
+      but with its name changed to [s].
+
+      @raise Node_invariant if [s] is invalid name.
+      @raise Renaming_root if [t] is a root node.*)
 end

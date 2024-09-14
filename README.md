@@ -131,6 +131,8 @@ List.map GroupNode.to_path g;;
 
 FilesystemStore.erase_group_node store group_node;;
 FilesystemStore.erase_all_nodes store;; (* clears the store *)
+FilesystemStore.rename_group store group_node;;
+FilesystemStore.rename_array store anode;;
 ```
 
 [1]: https://codecov.io/gh/zoj613/zarr-ml/graph/badge.svg?token=KOOG2Y1SH5

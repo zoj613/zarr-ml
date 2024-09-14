@@ -89,6 +89,9 @@ module FilesystemStore = struct
           | p when Eio.Path.is_directory p -> 
             Either.right @@ (fspath_to_key t p) ^ "/"
           | p -> Either.left @@ fspath_to_key t p) (Eio.Path.read_dir dir) 
+
+    let rename t k k' =
+      Eio.Path.rename (key_to_fspath t k) (key_to_fspath t k')
   end
 
   module U = Zarr.Util

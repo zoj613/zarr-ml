@@ -52,4 +52,5 @@ module type IO = sig
   val list : t -> key list Deferred.t
   val list_dir : t -> key -> (key list * prefix list) Deferred.t
   val is_member : t -> key -> bool Deferred.t
+  val rename : t -> key -> key -> unit Deferred.t
 end

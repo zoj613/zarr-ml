@@ -135,6 +135,15 @@ end = struct
         (fun () ->
           t.ic <- Zipc.of_string_map m';
           Deferred.return_unit)
+
+    let rename t ok nk =
+      Lwt_mutex.with_lock t.mutex @@ fun () ->
+      let m = Zipc.to_string_map t.ic in
+      let m1, m2 = M.partition (fun k _ -> String.starts_with ~prefix:ok k) m in
+      let l = String.length ok in
+      let s = Seq.map
+        (fun (k, v) -> nk ^ String.(length k - l |> sub k l), v) @@ M.to_seq m1 in
+      t.ic <- Zipc.of_string_map @@ M.add_seq s m2; Lwt.return_unit
   end
 
   (* this functor generates the public signature of our Zip file store. *)
@@ -182,7 +191,10 @@ let _ =
   let* x = MemoryZipStore.read_array store anode slice Zarr.Ndarray.Char in
   let x' = x |> Zarr.Ndarray.map @@ fun _ -> Random.int 256 |> Char.chr in
   let* () = MemoryZipStore.write_array store anode slice x' in
-  let+ y = MemoryZipStore.read_array store anode slice Zarr.Ndarray.Char in
-  assert (Zarr.Ndarray.equal x' y)
+  let* y = MemoryZipStore.read_array store anode slice Zarr.Ndarray.Char in
+  assert (Zarr.Ndarray.equal x' y);
+  let* () = MemoryZipStore.rename_array store anode "name2" in
+  let+ exists = MemoryZipStore.array_exists store @@ ArrayNode.of_path "/some/group/name2" in
+  assert exists
   end;
   print_endline "Zip store has been update."

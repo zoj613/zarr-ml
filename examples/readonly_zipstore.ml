@@ -83,6 +83,8 @@ end = struct
     let erase _ = raise Not_implemented
 
     let erase_prefix _ = raise Not_implemented
+
+    let rename _ = raise Not_implemented
   end
 
   (* this functor generates the public signature of our Zip file store. *)

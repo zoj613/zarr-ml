@@ -202,4 +202,16 @@ module Make (Io : Types.IO) = struct
           | true -> erase t key
           | false -> Deferred.return_unit) ArraySet.(elements @@ diff s s')
     in set t mkey @@ ArrayMetadata.(encode @@ update_shape meta nshape)
+
+  let rename_array t node str =
+    let key = ArrayNode.to_key node in
+    array_exists t node >>= function
+    | false -> raise @@ Key_not_found key
+    | true -> rename t key ArrayNode.(rename node str |> to_key)
+
+  let rename_group t node str =
+    let key = GroupNode.to_key node in
+    group_exists t node >>= function
+    | false -> raise @@ Key_not_found key
+    | true -> rename t key GroupNode.(rename node str |> to_key)
 end

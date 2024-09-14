@@ -78,6 +78,16 @@ let group_node = [
     false @@
     GroupNode.is_child_group GroupNode.root GroupNode.root;
 
+  (* rename tests *)
+  assert_raises
+    (Zarr.Node.Cannot_rename_root)
+    (fun () -> GroupNode.rename GroupNode.root "somename");
+  assert_raises
+    (Zarr.Node.Node_invariant)
+    (fun () -> GroupNode.rename n "?illegal/");
+  let n' = GroupNode.rename n "newname" in
+  assert_bool "" GroupNode.(name n' <> name n);
+
   (* stringify tests *)
   assert_equal
     ~printer:Fun.id "" @@ GroupNode.to_key GroupNode.root;
@@ -149,6 +159,16 @@ let array_node = [
   let m = ArrayNode.of_path "/some" in
   assert_equal false ArrayNode.(is_parent root GroupNode.root);
   assert_equal true @@ ArrayNode.is_parent m GroupNode.root;
+
+  (* rename tests *)
+  assert_raises
+    (Zarr.Node.Cannot_rename_root)
+    (fun () -> ArrayNode.rename ArrayNode.root "somename");
+  assert_raises
+    (Zarr.Node.Node_invariant)
+    (fun () -> ArrayNode.rename n "?illegal/");
+  let n' = ArrayNode.rename n "newname" in
+  assert_bool "" ArrayNode.(name n' <> name n);
 
   (* stringify tests *)
   assert_equal

@@ -71,7 +71,7 @@ let test_storage
       assert_equal exp got)
     [[`ShardingIndexed cfg]; [`Bytes BE]] >>= fun () ->
 
-  let child = GroupNode.of_path "/some/child" in
+  let child = GroupNode.of_path "/some/child/group" in
   create_group store child >>= fun () ->
   find_child_nodes store gnode >>= fun (arrays, groups) ->
   assert_equal
@@ -87,7 +87,22 @@ let test_storage
     List.fast_sort String.compare @@
     List.map ArrayNode.show ac @ List.map GroupNode.show gc in
   assert_equal
-    ~printer:string_of_list ["/"; "/arrnode"; "/some"; "/some/child"] got;
+    ~printer:string_of_list
+    ["/"; "/arrnode"; "/some"; "/some/child"; "/some/child/group"] got;
+
+  (* tests for renaming nodes *)
+  let some = GroupNode.of_path "/some/child" in
+  rename_array store anode "ARRAYNODE" >>= fun () ->
+  rename_group store some "CHILD" >>= fun () ->
+  find_all_nodes store >>= fun (ac, gc) ->
+  let got =
+    List.fast_sort String.compare @@
+    List.map ArrayNode.show ac @ List.map GroupNode.show gc in
+  assert_equal
+    ~printer:string_of_list
+    ["/"; "/ARRAYNODE"; "/some"; "/some/CHILD"; "/some/CHILD/group"] got;
+  (* restore old array node name. *)
+  rename_array store (ArrayNode.of_path "/ARRAYNODE") "arrnode" >>= fun () ->
 
   let nshape = [|25; 32; 10|] in
   reshape store anode nshape >>= fun () ->

@@ -93,6 +93,9 @@ module FilesystemStore = struct
           | p when Sys.is_directory p ->
             Either.right @@ (fspath_to_key t p) ^ "/"
           | p -> Either.left @@ fspath_to_key t p) (Array.to_list @@ Sys.readdir dir)
+
+    let rename t k k' =
+      Sys.rename (key_to_fspath t k) (key_to_fspath t k')
   end
 
   module U = Zarr.Util

@@ -133,6 +133,20 @@ module type STORE = sig
         if [shape] does not have the same dimensions as [n]'s shape.
       @raise Key_not_found
         if node [n] is not a member of store [t]. *)
+
+  val rename_group : t -> GroupNode.t -> string -> unit Deferred.t
+  (** [rename t g name] changes the name of group node [g] in store [t] to [name].
+
+      @raise Key_not_found if [g] is not a member of store [t].
+      @raise Renaming_root if [g] is the store's root node.
+      @raise Node_invariant if [name] is an invalid node name.*)
+
+  val rename_array : t -> ArrayNode.t -> string -> unit Deferred.t
+  (** [rename t n name] changes the name of array node [n] in store [t] to [name].
+
+      @raise Key_not_found if [g] is not a member of store [t].
+      @raise Renaming_root if [g] is the store's root node.
+      @raise Node_invariant if [name] is an invalid node name.*)
 end
 
 module type Interface = sig

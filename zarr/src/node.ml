@@ -1,4 +1,5 @@
 exception Node_invariant
+exception Cannot_rename_root
 
 (* Check if the path's name satisfies path invariants *)
 let rep_ok name =
@@ -78,6 +79,12 @@ module GroupNode = struct
 
   let pp fmt t =
     Format.fprintf fmt "%s" @@ show t
+
+  let rename t str =
+    match t with
+    | Cons (parent, _) when rep_ok str -> Cons (parent, str)
+    | Cons _ -> raise Node_invariant
+    | Root -> raise Cannot_rename_root
 end
 
 module ArrayNode = struct
@@ -129,4 +136,10 @@ module ArrayNode = struct
   let show = to_path
 
   let pp fmt t = Format.fprintf fmt "%s" @@ show t
+
+  let rename t name =
+    match t.parent with
+    | Some _ when rep_ok name -> {t with name}
+    | Some _ -> raise Node_invariant
+    | None -> raise Cannot_rename_root
 end

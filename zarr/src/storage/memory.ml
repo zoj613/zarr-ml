@@ -81,4 +81,13 @@ module Make (Deferred : Types.Deferred) = struct
           | k when pred -> l, k :: r
           | _ -> a) m (S.empty, [])
     in Deferred.return (keys, S.elements prefs)
+
+  let rec rename t ok nk =
+    let m = Atomic.get t in
+    let m1, m2 = StrMap.partition (fun k _ -> String.starts_with ~prefix:ok k) m in
+    let l = String.length ok in
+    let s = Seq.map
+      (fun (k, v) -> nk ^ String.(length k - l |> sub k l), v) @@ StrMap.to_seq m1 in
+    let m' = StrMap.add_seq s m2 in
+    if Atomic.compare_and_set t m m' then Deferred.return_unit else rename t ok nk
 end

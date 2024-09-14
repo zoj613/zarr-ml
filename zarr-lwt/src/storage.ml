@@ -124,6 +124,9 @@ module FilesystemStore = struct
           | p when Sys.is_directory p ->
             Either.right @@ (fspath_to_key t p) ^ "/"
           | p -> Either.left @@ fspath_to_key t p) files
+
+    let rename t k k' =
+      Lwt_unix.rename (key_to_fspath t k) (key_to_fspath t k')
   end
 
   module U = Zarr.Util

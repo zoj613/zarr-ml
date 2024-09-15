@@ -34,7 +34,7 @@ module FilesystemStore = struct
         (fun () ->
           Lwt_io.with_file
             ~buffer:(Lwt_bytes.create bsize)
-            ~flags:Unix.[O_RDONLY; O_NONBLOCK]
+            ~flags:[Unix.O_RDONLY]
             ~perm:t.perm
             ~mode:Lwt_io.Input
             (key_to_fspath t key)
@@ -52,7 +52,7 @@ module FilesystemStore = struct
       in
       Lwt_io.with_file
         ~buffer:(Lwt_bytes.create l)
-        ~flags:Unix.[O_RDONLY; O_NONBLOCK]
+        ~flags:[Unix.O_RDONLY]
         ~perm:t.perm
         ~mode:Lwt_io.Input
         (key_to_fspath t key)
@@ -68,7 +68,7 @@ module FilesystemStore = struct
       let* () = create_parent_dir filename t.perm in
       Lwt_io.with_file
         ~buffer:(Lwt_bytes.create @@ String.length value)
-        ~flags:Unix.[O_WRONLY; O_TRUNC; O_CREAT; O_NONBLOCK]
+        ~flags:Unix.[O_WRONLY; O_TRUNC; O_CREAT]
         ~perm:t.perm
         ~mode:Lwt_io.Output
         filename
@@ -76,10 +76,9 @@ module FilesystemStore = struct
 
     let set_partial_values t key ?(append=false) rvs =
       let l = List.fold_left (fun a (_, s) -> Int.max a (String.length s)) 0 rvs in
-      let flags = Unix.[O_NONBLOCK; O_WRONLY] in
       Lwt_io.with_file
         ~buffer:(Lwt_bytes.create l)
-        ~flags:(if append then Unix.O_APPEND :: flags else flags)
+        ~flags:(if append then Unix.[O_APPEND; O_WRONLY] else [Unix.O_WRONLY])
         ~perm:t.perm
         ~mode:Lwt_io.Output
         (key_to_fspath t key)

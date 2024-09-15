@@ -8,6 +8,10 @@
  (name inmemory_zipstore)
  (modules inmemory_zipstore)
  (ocamlopt_flags (:standard -O3))
- (libraries zarr-lwt zipc)
- (preprocess
-   (pps ppx_deriving.show)))
+ (libraries zarr-lwt zipc))
+
+(executable
+ (name picos_fs_store)
+ (modules picos_fs_store)
+ (ocamlopt_flags (:standard -O3))
+ (libraries zarr_sync picos_io picos_mux.random))

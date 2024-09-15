@@ -17,12 +17,11 @@ module FilesystemStore = struct
 
     let get t key =
       let p = key_to_fspath t key in
-      try In_channel.(with_open_gen [Open_rdonly; Open_nonblock] t.perm p input_all)
+      try In_channel.(with_open_gen [Open_rdonly] t.perm p input_all)
       with Sys_error _ -> raise @@ Zarr.Storage.Key_not_found key
 
     let get_partial_values t key ranges =
-      let f = [Open_rdonly; Open_nonblock] in
-      In_channel.with_open_gen f t.perm (key_to_fspath t key) @@ fun ic ->
+      In_channel.with_open_gen [Open_rdonly] t.perm (key_to_fspath t key) @@ fun ic ->
       let s = In_channel.length ic |> Int64.to_int in
       ranges |> List.map @@ fun (ofs, len) ->
       In_channel.seek ic @@ Int64.of_int ofs;
@@ -32,11 +31,11 @@ module FilesystemStore = struct
     let set t key v =
       let p = key_to_fspath t key in
       Zarr.Util.create_parent_dir p t.perm;
-      let f = [Open_wronly; Open_trunc; Open_creat; Open_nonblock] in
+      let f = [Open_wronly; Open_trunc; Open_creat] in
       Out_channel.(with_open_gen f t.perm p @@ fun oc -> output_string oc v; flush oc)
 
     let set_partial_values t key ?(append=false) rvs =
-      let f = [Open_nonblock; if append then Open_append else Open_wronly] in
+      let f = [if append then Open_append else Open_wronly] in
       let p = key_to_fspath t key in
       Out_channel.with_open_gen f t.perm p @@ fun oc ->
       rvs |> List.iter (fun (rs, value) ->
@@ -49,8 +48,8 @@ module FilesystemStore = struct
     let erase t key = Sys.remove @@ key_to_fspath t key
 
     let size t key =
-      let f = [Open_rdonly; Open_nonblock] in
-      In_channel.(with_open_gen f t.perm (key_to_fspath t key) length) |> Int64.to_int
+      In_channel.(with_open_gen [Open_rdonly] t.perm (key_to_fspath t key) length)
+      |> Int64.to_int
 
     let rec walk t acc dir =
       List.fold_left

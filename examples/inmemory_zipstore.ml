@@ -2,10 +2,12 @@
    It supports both read and write operations. This is because the
    underlying Zip library used reads all Zip file bytes into memory. All
    store updates are done in-memory and thus to update the actual zip file
-   we must persist the data using `MemoryZipStore.write_to_file`.
+   we must write the update bytes to disk. The `with_open` convenience
+   function serves this purpose; it ensures that any updates to the store
+   are written to the zip file upon exit.
 
    The main requirement is to implement the signature of Zarr.Types.IO.
-   We use Zarr_lwt Deferred module for `Deferred` so that the store can be
+   We use Zarr_lwt's Deferred module for `Deferred` so that the store can be
    Lwt-aware.
 
   To compile & run this example execute the command
@@ -14,7 +16,6 @@
 
 module MemoryZipStore : sig
   include Zarr.Storage.STORE with type 'a Deferred.t = 'a Lwt.t
-  (*val create : ?level:Zipc_deflate.level -> string -> t *)
   val with_open : ?level:Zipc_deflate.level -> string -> (t -> 'a Deferred.t) -> 'a Deferred.t
 end = struct
   module M = Map.Make(String)
@@ -48,11 +49,9 @@ end = struct
       | None -> raise (Zarr.Storage.Key_not_found key)
       | Some m ->
         match Zipc.Member.kind m with
-        | Zipc.Member.Dir -> failwith "cannot get size of directory." 
+        | Zipc.Member.Dir -> failwith "A chunk key cannot be a directory." 
         | Zipc.Member.File f ->
-          match Zipc.File.to_binary_string f with
-          | Error e -> failwith e
-          | Ok s -> s
+          Result.fold ~error:failwith ~ok:Fun.id @@ Zipc.File.to_binary_string f
 
     let get_partial_values t key ranges =
       let+ data = get t key in
@@ -93,11 +92,8 @@ end = struct
         match Zipc.Member.(make ~path:key @@ File f) with
         | Error e -> failwith e
         | Ok m ->
-          Lwt_mutex.with_lock
-            t.mutex
-            (fun () ->
-              t.ic <- Zipc.add m t.ic;
-              Deferred.return_unit)
+          Lwt_mutex.with_lock t.mutex @@ fun () ->
+          Deferred.return (t.ic <- Zipc.add m t.ic)
 
     let set_partial_values t key ?(append=false) rv =
       let f = 
@@ -106,9 +102,9 @@ end = struct
             Deferred.return @@ acc ^ v
         else
           fun acc (rs, v) ->
-            let s = Bytes.of_string acc in
+            let s = Bytes.unsafe_of_string acc in
             String.(length v |> Bytes.blit_string v 0 s rs);
-            Deferred.return @@ Bytes.to_string s
+            Deferred.return @@ Bytes.unsafe_to_string s
       in
       match Zipc.Member.kind (Option.get @@ Zipc.find key t.ic) with
       | Zipc.Member.Dir -> Deferred.return_unit 
@@ -118,23 +114,15 @@ end = struct
         | Ok s -> Deferred.fold_left f s rv >>= set t key
 
     let erase t key =
-      Lwt_mutex.with_lock
-        t.mutex
-        (fun () ->
-          t.ic <- Zipc.remove key t.ic;
-          Deferred.return_unit)
+      Lwt_mutex.with_lock t.mutex @@ fun () ->
+      Deferred.return (t.ic <- Zipc.remove key t.ic)
 
     let erase_prefix t prefix =
       let m = Zipc.to_string_map t.ic in
-      let m' =
-        M.filter_map
-          (fun k v ->
-            if String.starts_with ~prefix k then None else Some v) m in
-      Lwt_mutex.with_lock
-        t.mutex
-        (fun () ->
-          t.ic <- Zipc.of_string_map m';
-          Deferred.return_unit)
+      let m' = M.filter_map
+        (fun k v -> if String.starts_with ~prefix k then None else Some v) m in
+      Lwt_mutex.with_lock t.mutex @@ fun () ->
+      Deferred.return (t.ic <- Zipc.of_string_map m')
 
     let rename t ok nk =
       Lwt_mutex.with_lock t.mutex @@ fun () ->
@@ -145,13 +133,8 @@ end = struct
         (fun (k, v) -> nk ^ String.(length k - l |> sub k l), v) @@ M.to_seq m1 in
       t.ic <- Zipc.of_string_map @@ M.add_seq s m2; Lwt.return_unit
   end
-
   (* this functor generates the public signature of our Zip file store. *)
   include Zarr.Storage.Make(Z)
-
-  (* now we create functions to open and close the store. *)
-
-  (*let create ?(level=`Default) path = Z.{ic = Zipc.empty; level; path} *)
 
   let with_open ?(level=`Default) path f =
     let s = In_channel.(with_open_bin path input_all) in
@@ -159,20 +142,13 @@ end = struct
       | Ok ic -> Z.{ic; level; path; mutex = Lwt_mutex.create ()}
       | Error e -> failwith e
     in
-    Lwt.finalize
-      (fun () -> f t)
-      (fun () ->
-        Lwt_io.with_file
-          ~flags:Unix.[O_WRONLY; O_TRUNC; O_CREAT; O_NONBLOCK]
-          ~mode:Lwt_io.Output
-          t.path
-          (fun oc ->
-            let open Lwt.Syntax in
-            match Zipc.to_binary_string t.ic with
-            | Error e -> failwith e
-            | Ok s' ->
-              if String.equal s s' then Lwt.return_unit else
-              let* () = Lwt_io.write oc s' in Lwt_io.flush oc))
+    Lwt.finalize (fun () -> f t) @@ fun () ->
+    Lwt_io.with_file
+      ~flags:Unix.[O_WRONLY; O_TRUNC; O_CREAT; O_NONBLOCK]
+      ~mode:Lwt_io.Output
+      t.path
+      (fun oc ->
+        Result.fold ~error:failwith ~ok:(Lwt_io.write oc) @@ Zipc.to_binary_string t.ic)
 end
 
 let _ =
@@ -181,10 +157,8 @@ let _ =
   let open Zarr.Indexing in
   let open MemoryZipStore.Deferred.Syntax in
 
-  let printlist = [%show: string list] in
   MemoryZipStore.with_open "examples/data/testdata.zip" @@ fun store ->
   let* xs, _ = MemoryZipStore.find_all_nodes store in
-  print_endline @@ "All array nodes: " ^ printlist (List.map ArrayNode.to_path xs);
   let anode = List.hd @@ List.filter
     (fun node -> ArrayNode.to_path node = "/some/group/name") xs in
   let slice = [|R [|0; 20|]; I 10; R [||]|] in

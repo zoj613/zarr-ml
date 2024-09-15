@@ -1,11 +1,10 @@
 (* This module implements a Read-only Zip file zarr store that is Eio-aware.
    The main requirement is to implement the signature of Zarr.Types.IO.
    We use Zarr_eio's Deferred module for `Deferred` so that the store can be
-   Eio-aware. Since Zip stores cannot have files updated or removed, we only
-   implement the get_* and list_* family of functions and raise an
-   Not_implemented exception for the set_* and erase_* family of functions.
-   This effectively allows us to create a read-only store since calling any
-   of the following functions would result in an `Not_implemented` exception:
+   Eio-aware. We only implement the get_* and list_* family of functions and
+   raise a Not_implemented exception for the set_* and erase_* family of
+   functions.  This effectively allows us to create a read-only store since
+   calling any of the following functions would result in error:
      - ReadOnlyZipStore.create_group
      - ReadOnlyZipStore.create_array
      - ReadOnlyZipStore.erase_group_node
@@ -13,6 +12,8 @@
      - ReadOnlyZipStore.erase_all_nodes
      - ReadOnlyZipStore.write_array
      - ReadOnlyZipStore.reshape
+     - ReadOnlyZipStore.rename_array
+     - ReadOnlyZipStore.rename_group
   Below we show how to implement this custom Zarr Store.
 
   To compile & run this example execute the command
@@ -21,11 +22,8 @@
 
 module ReadOnlyZipStore : sig
   exception Not_implemented
-
   include Zarr.Storage.STORE with type 'a Deferred.t = 'a
-  val open_store : string -> t
-  val close : t -> unit
-
+  val with_open : string -> (t -> 'a) -> 'a
 end = struct
   exception Not_implemented
 
@@ -87,23 +85,21 @@ end = struct
     let rename _ = raise Not_implemented
   end
 
-  (* this functor generates the public signature of our Zip file store. *)
   include Zarr.Storage.Make(Z)
 
-  (* now we create functions to open and close the store. *)
-  let open_store path = Zip.open_in path
-  let close = Zip.close_in
+  let with_open path f =
+    let x = Zip.open_in path in
+    Fun.protect ~finally:(fun () -> Zip.close_in x) @@ fun () -> f x
 end
 
 let _ =
   Eio_main.run @@ fun _ ->
   let open Zarr.Node in
 
-  let store = ReadOnlyZipStore.open_store "examples/data/testdata.zip" in
+  ReadOnlyZipStore.with_open "examples/data/testdata.zip" @@ fun store ->
   let xs, _ = ReadOnlyZipStore.find_all_nodes store in
   let anode = List.hd @@ Eio.Fiber.List.filter
       (fun node -> ArrayNode.to_path node = "/some/group/name") xs in
   let arr = ReadOnlyZipStore.read_array store anode [||] Zarr.Ndarray.Char in
   try ReadOnlyZipStore.write_array store anode [||] arr with
-  | ReadOnlyZipStore.Not_implemented -> print_endline "Store is read-only";
-  ReadOnlyZipStore.close store
+  | ReadOnlyZipStore.Not_implemented -> print_endline "Store is read-only"

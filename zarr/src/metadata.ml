@@ -99,7 +99,7 @@ module FillValue = struct
       `List [to_yojson (FloatBits re); to_yojson (FloatBits im)]
 end
 
-module ArrayMetadata = struct 
+module Array = struct 
   type t =
     {zarr_format : int
     ;shape : int array
@@ -347,7 +347,7 @@ module ArrayMetadata = struct
     | _ -> failwith "kind is not compatible with node's fill value."
 end
 
-module GroupMetadata = struct
+module Group = struct
   type t =
     {zarr_format : int
     ;node_type : string

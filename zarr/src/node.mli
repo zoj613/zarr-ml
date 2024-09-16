@@ -16,7 +16,7 @@ exception Node_invariant
 exception Cannot_rename_root
 (** raised when attempting to rename a root node. *)
 
-module GroupNode : sig
+module Group : sig
   type t
   (** The type of a Group node. *)
 
@@ -82,18 +82,17 @@ module GroupNode : sig
 
       @raise Node_invariant if [s] is invalid name.
       @raise Renaming_root if [t] is a root node.*)
-
 end
 
-module ArrayNode : sig
+module Array : sig
   type t
   (** The type of an array node. *)
 
-  val create : GroupNode.t -> string -> t
+  val create : Group.t -> string -> t
   (** [create p n] returns an array node with parent [p] and name [n].
       @raise Failure if node invariants are not satisfied. *)
 
-  val ( / ) : GroupNode.t -> string -> t
+  val ( / ) : Group.t -> string -> t
   (** The infix operator alias of {!ArrayNode.create} *)
 
   val root : t
@@ -109,7 +108,7 @@ module ArrayNode : sig
   val name : t -> string
   (** [name n] returns the name of array node [n]. *)
 
-  val parent : t -> GroupNode.t option
+  val parent : t -> Group.t option
   (** [parent n] returns [Some p] where [p] is the parent group node of [n]
       or [None] if node [n] is a root node. *)
 
@@ -117,10 +116,10 @@ module ArrayNode : sig
   (** [x = y] returns [true] if nodes [x] and [y] are equal,
       and [false] otherwise. *)
 
-  val ancestors : t -> GroupNode.t list
+  val ancestors : t -> Group.t list
   (** [ancestors n] returns ancestor group nodes of [n]. *)
 
-  val is_parent : t -> GroupNode.t -> bool
+  val is_parent : t -> Group.t -> bool
   (** [is_parent n g] returns [true] if group node [g] is the immediate
       parent of array node [n] and [false] otherwise. *)
 

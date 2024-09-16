@@ -1,13 +1,11 @@
 open OUnit2
 open Zarr
-open Zarr.Metadata
 open Zarr.Indexing
-open Zarr.Node
 open Zarr.Codecs
 open Zarr_lwt.Storage
 
 let string_of_list = [%show: string list]
-let print_node_pair = [%show: ArrayNode.t list * GroupNode.t list]
+let print_node_pair = [%show: Node.Array.t list * Node.Group.t list]
 let print_int_array = [%show : int array]
 
 module type LWT_STORE = sig
@@ -18,30 +16,30 @@ let test_storage
   (type a) (module M : LWT_STORE with type t = a) (store : a) =
   let open M in
   let open M.Deferred.Infix in
-  let gnode = GroupNode.root in
+  let gnode = Node.Group.root in
 
-  find_all_nodes store >>= fun nodes ->
+  hierarchy store >>= fun nodes ->
   assert_equal ~printer:print_node_pair ([], []) nodes;
 
-  create_group store gnode >>= fun () ->
-  group_exists store gnode >>= fun exists ->
+  Group.create store gnode >>= fun () ->
+  Group.exists store gnode >>= fun exists ->
   assert_equal ~printer:string_of_bool true exists;
 
-  group_metadata store gnode >>= fun meta ->
-  assert_equal ~printer:GroupMetadata.show GroupMetadata.default meta;
+  Group.metadata store gnode >>= fun meta ->
+  assert_equal ~printer:Metadata.Group.show Metadata.Group.default meta;
 
-  erase_group_node store gnode >>= fun () ->
-  group_exists store gnode >>= fun exists ->
+  Group.delete store gnode >>= fun () ->
+  Group.exists store gnode >>= fun exists ->
   assert_equal ~printer:string_of_bool false exists;
-  find_all_nodes store >>= fun nodes ->
+  hierarchy store >>= fun nodes ->
   assert_equal ~printer:print_node_pair ([], []) nodes;
 
   let attrs = `Assoc [("questions", `String "answer")] in
-  create_group ~attrs store gnode >>= fun () ->
-  group_metadata store gnode >>= fun meta ->
-  assert_equal ~printer:Yojson.Safe.show attrs @@ GroupMetadata.attributes meta;
+  Group.create ~attrs store gnode >>= fun () ->
+  Group.metadata store gnode >>= fun meta ->
+  assert_equal ~printer:Yojson.Safe.show attrs @@ Metadata.Group.attributes meta;
 
-  array_exists store @@ ArrayNode.(gnode / "non-member") >>= fun exists ->
+  Array.exists store @@ Node.Array.(gnode / "non-member") >>= fun exists ->
   assert_equal ~printer:string_of_bool false exists;
 
   let cfg =
@@ -49,69 +47,69 @@ let test_storage
     ;index_location = End
     ;index_codecs = [`Bytes BE]
     ;codecs = [`Bytes LE]} in
-  let anode = ArrayNode.(gnode / "arrnode") in
+  let anode = Node.Array.(gnode / "arrnode") in
   let slice = [|R [|0; 20|]; I 10; R [|0; 29|]|] in
   let exp = Ndarray.init Ndarray.Complex32 [|21; 1; 30|] (Fun.const Complex.one) in
 
   Lwt_list.iter_s
     (fun codecs ->
-      create_array
+      Array.create
         ~codecs ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
         Ndarray.Complex32 Complex.one anode store >>= fun () ->
-      write_array store anode slice exp >>= fun () ->
-      read_array store anode slice Complex32 >>= fun got ->
+      Array.write store anode slice exp >>= fun () ->
+      Array.read store anode slice Complex32 >>= fun got ->
       assert_equal exp got;
       Ndarray.fill exp Complex.{re=2.0; im=0.};
-      write_array store anode slice exp >>= fun () ->
-      read_array store anode slice Complex32 >>= fun arr ->
+      Array.write store anode slice exp >>= fun () ->
+      Array.read store anode slice Complex32 >>= fun arr ->
       assert_equal exp arr;
       Ndarray.fill exp Complex.{re=0.; im=3.0};
-      write_array store anode slice exp >>= fun () ->
-      read_array store anode slice Complex32 >>| fun got ->
+      Array.write store anode slice exp >>= fun () ->
+      Array.read store anode slice Complex32 >>| fun got ->
       assert_equal exp got)
     [[`ShardingIndexed cfg]; [`Bytes BE]] >>= fun () ->
 
-  let child = GroupNode.of_path "/some/child/group" in
-  create_group store child >>= fun () ->
-  find_child_nodes store gnode >>= fun (arrays, groups) ->
+  let child = Node.Group.of_path "/some/child/group" in
+  Group.create store child >>= fun () ->
+  Group.children store gnode >>= fun (arrays, groups) ->
   assert_equal
-    ~printer:string_of_list ["/arrnode"] (List.map ArrayNode.to_path arrays);
+    ~printer:string_of_list ["/arrnode"] (List.map Node.Array.to_path arrays);
   assert_equal
-    ~printer:string_of_list ["/some"] (List.map GroupNode.to_path groups);
+    ~printer:string_of_list ["/some"] (List.map Node.Group.to_path groups);
 
-  find_child_nodes store @@ GroupNode.(root / "fakegroup") >>= fun c ->
+  Group.children store @@ Node.Group.(root / "fakegroup") >>= fun c ->
   assert_equal ([], []) c;
 
-  find_all_nodes store >>= fun (ac, gc) ->
+  hierarchy store >>= fun (ac, gc) ->
   let got =
     List.fast_sort String.compare @@
-    List.map ArrayNode.show ac @ List.map GroupNode.show gc in
+    List.map Node.Array.show ac @ List.map Node.Group.show gc in
   assert_equal
     ~printer:string_of_list
     ["/"; "/arrnode"; "/some"; "/some/child"; "/some/child/group"] got;
 
   (* tests for renaming nodes *)
-  let some = GroupNode.of_path "/some/child" in
-  rename_array store anode "ARRAYNODE" >>= fun () ->
-  rename_group store some "CHILD" >>= fun () ->
-  find_all_nodes store >>= fun (ac, gc) ->
+  let some = Node.Group.of_path "/some/child" in
+  Array.rename store anode "ARRAYNODE" >>= fun () ->
+  Group.rename store some "CHILD" >>= fun () ->
+  hierarchy store >>= fun (ac, gc) ->
   let got =
     List.fast_sort String.compare @@
-    List.map ArrayNode.show ac @ List.map GroupNode.show gc in
+    List.map Node.Array.show ac @ List.map Node.Group.show gc in
   assert_equal
     ~printer:string_of_list
     ["/"; "/ARRAYNODE"; "/some"; "/some/CHILD"; "/some/CHILD/group"] got;
   (* restore old array node name. *)
-  rename_array store (ArrayNode.of_path "/ARRAYNODE") "arrnode" >>= fun () ->
+  Array.rename store (Node.Array.of_path "/ARRAYNODE") "arrnode" >>= fun () ->
 
   let nshape = [|25; 32; 10|] in
-  reshape store anode nshape >>= fun () ->
-  array_metadata store anode >>= fun meta ->
-  assert_equal ~printer:print_int_array nshape @@ ArrayMetadata.shape meta;
+  Array.reshape store anode nshape >>= fun () ->
+  Array.metadata store anode >>= fun meta ->
+  assert_equal ~printer:print_int_array nshape @@ Metadata.Array.shape meta;
 
-  erase_array_node store anode >>= fun () ->
-  erase_all_nodes store >>= fun () ->
-  find_all_nodes store >>= fun got ->
+  Array.delete store anode >>= fun () ->
+  clear store >>= fun () ->
+  hierarchy store >>= fun got ->
   assert_equal ~printer:print_node_pair ([], []) got;
   Deferred.return_unit
 

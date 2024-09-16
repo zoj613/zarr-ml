@@ -8,7 +8,7 @@ let rep_ok name =
   not (String.for_all (Char.equal '.') name) &&
   not (String.starts_with ~prefix:"__" name)
 
-module GroupNode = struct
+module Group = struct
   type t =
     | Root
     | Cons of t * string
@@ -87,8 +87,8 @@ module GroupNode = struct
     | Root -> raise Cannot_rename_root
 end
 
-module ArrayNode = struct
-  type t = {parent : GroupNode.t option; name : string}
+module Array = struct
+  type t = {parent : Group.t option; name : string}
 
   let create g name =
     if rep_ok name then {parent = Some g; name}
@@ -99,9 +99,9 @@ module ArrayNode = struct
   let root = {parent = None; name = ""}
 
   let of_path p =
-    let g = GroupNode.of_path p in
-    match GroupNode.parent g with
-    | Some _ as parent -> {parent; name = GroupNode.name g}
+    let g = Group.of_path p in
+    match Group.parent g with
+    | Some _ as parent -> {parent; name = Group.name g}
     | None -> raise Node_invariant
       
   let ( = )
@@ -114,19 +114,19 @@ module ArrayNode = struct
 
   let to_path {parent = p; name} = match p with
     | None -> "/"
-    | Some g when GroupNode.(g = root) -> "/" ^ name
-    | Some g -> GroupNode.to_path g ^ "/" ^ name
+    | Some g when Group.(g = root) -> "/" ^ name
+    | Some g -> Group.to_path g ^ "/" ^ name
   
   let ancestors {parent; _} = match parent with
     | None -> []
-    | Some g -> g :: GroupNode.ancestors g
+    | Some g -> g :: Group.ancestors g
 
   let is_parent {parent; _} y = match parent with
     | None -> false
-    | Some g -> GroupNode.(g = y)
+    | Some g -> Group.(g = y)
 
   let to_key {parent; name} = match parent with
-    | Some g -> GroupNode.to_prefix g ^ name
+    | Some g -> Group.to_prefix g ^ name
     | None -> "" 
 
   let to_metakey = function

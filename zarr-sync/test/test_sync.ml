@@ -1,13 +1,11 @@
 open OUnit2
 open Zarr
-open Zarr.Metadata
 open Zarr.Indexing
-open Zarr.Node
 open Zarr.Codecs
 open Zarr_sync.Storage
 
 let string_of_list = [%show: string list]
-let print_node_pair = [%show: ArrayNode.t list * GroupNode.t list]
+let print_node_pair = [%show: Node.Array.t list * Node.Group.t list]
 let print_int_array = [%show : int array]
 
 module type SYNC_STORE = sig
@@ -17,30 +15,30 @@ end
 let test_storage
   (type a) (module M : SYNC_STORE with type t = a) (store : a) =
   let open M in
-  let gnode = GroupNode.root in
+  let gnode = Node.Group.root in
 
-  let nodes = find_all_nodes store in
+  let nodes = hierarchy store in
   assert_equal ~printer:print_node_pair ([], []) nodes;
 
-  create_group store gnode;
-  let exists = group_exists store gnode in
+  Group.create store gnode;
+  let exists = Group.exists store gnode in
   assert_equal ~printer:string_of_bool true exists;
 
-  let meta = group_metadata store gnode in
-  assert_equal ~printer:GroupMetadata.show GroupMetadata.default meta;
+  let meta = Group.metadata store gnode in
+  assert_equal ~printer:Metadata.Group.show Metadata.Group.default meta;
 
-  erase_group_node store gnode;
-  let exists = group_exists store gnode in
+  Group.delete store gnode;
+  let exists = Group.exists store gnode in
   assert_equal ~printer:string_of_bool false exists;
-  let nodes = find_all_nodes store in
+  let nodes = hierarchy store in
   assert_equal ~printer:print_node_pair ([], []) nodes;
 
   let attrs = `Assoc [("questions", `String "answer")] in
-  create_group ~attrs store gnode;
-  let meta = group_metadata store gnode in
-  assert_equal ~printer:Yojson.Safe.show attrs @@ GroupMetadata.attributes meta;
+  Group.create ~attrs store gnode;
+  let meta = Group.metadata store gnode in
+  assert_equal ~printer:Yojson.Safe.show attrs @@ Metadata.Group.attributes meta;
 
-  let exists = array_exists store @@ ArrayNode.(gnode / "non-member") in
+  let exists = Array.exists store @@ Node.Array.(gnode / "non-member") in
   assert_equal ~printer:string_of_bool false exists;
 
   let cfg =
@@ -53,114 +51,114 @@ let test_storage
     ;index_location = Start
     ;index_codecs = [`Bytes BE]
     ;codecs = [`Bytes LE]} in
-  let anode = ArrayNode.(gnode / "arrnode") in
+  let anode = Node.Array.(gnode / "arrnode") in
   let slice = [|R [|0; 20|]; I 10; R [|0; 29|]|] in
 
   List.iter
     (fun codecs ->
-      create_array
+      Array.create
         ~codecs ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
         Complex32 Complex.one anode store;
       let exp = Ndarray.init Complex32 [|21; 1; 30|] (Fun.const Complex.one) in
-      let got = read_array store anode slice Complex32 in
+      let got = Array.read store anode slice Complex32 in
       assert_equal exp got;
       Ndarray.fill exp Complex.{re=2.0; im=0.};
-      write_array store anode slice exp;
-      let got = read_array store anode slice Complex32 in
+      Array.write store anode slice exp;
+      let got = Array.read store anode slice Complex32 in
       assert_equal exp got;
       Ndarray.fill exp Complex.{re=0.; im=3.0};
-      write_array store anode slice exp;
-      let got = read_array store anode slice Complex32 in
+      Array.write store anode slice exp;
+      let got = Array.read store anode slice Complex32 in
       assert_equal exp got;
-      erase_array_node store anode)
+      Array.delete store anode)
     [[`ShardingIndexed cfg]; [`ShardingIndexed cfg2]];
 
   (* repeat tests for non-sharding codec chain *)
-  create_array
+  Array.create
     ~sep:`Dot ~codecs:[`Bytes BE]
     ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
     Ndarray.Int Int.max_int anode store;
   (* test path where there is no chunk key present in store *)
   let exp = Ndarray.init Int [|21; 1; 30|] (Fun.const Int.max_int) in
-  write_array store anode slice exp;
-  let got = read_array store anode slice Int in
+  Array.write store anode slice exp;
+  let got = Array.read store anode slice Int in
   assert_equal exp got;
   (* test path where there is a chunk key present in store at write time. *)
-  write_array store anode slice exp;
-  let got = read_array store anode slice Int in
+  Array.write store anode slice exp;
+  let got = Array.read store anode slice Int in
   assert_equal exp got;
 
   assert_raises
     (Zarr.Storage.Invalid_data_type)
-    (fun () -> read_array store anode slice Ndarray.Char);
+    (fun () -> Array.read store anode slice Ndarray.Char);
   let badslice = [|R [|0; 20|]; I 10; R [||]; R [||] |] in
   assert_raises
     (Zarr.Storage.Invalid_array_slice)
-    (fun () -> read_array store anode badslice Ndarray.Int);
+    (fun () -> Array.read store anode badslice Ndarray.Int);
   assert_raises
     (Zarr.Storage.Invalid_array_slice)
-    (fun () -> write_array store anode badslice exp);
+    (fun () -> Array.write store anode badslice exp);
   assert_raises
     (Zarr.Storage.Invalid_array_slice)
-    (fun () -> write_array store anode [|R [|0; 20|]; R [||]; R [||]|] exp);
+    (fun () -> Array.write store anode [|R [|0; 20|]; R [||]; R [||]|] exp);
   let badarray = Ndarray.init Float64 [|21; 1; 30|] (Fun.const 0.) in
   assert_raises
     (Zarr.Storage.Invalid_data_type)
-    (fun () -> write_array store anode slice badarray);
+    (fun () -> Array.write store anode slice badarray);
 
-  let child = GroupNode.of_path "/some/child/group" in
-  create_group store child;
-  let arrays, groups = find_child_nodes store gnode in
+  let child = Node.Group.of_path "/some/child/group" in
+  Group.create store child;
+  let arrays, groups = Group.children store gnode in
   assert_equal
-    ~printer:string_of_list ["/arrnode"] (List.map ArrayNode.to_path arrays);
+    ~printer:string_of_list ["/arrnode"] (List.map Node.Array.to_path arrays);
   assert_equal
-    ~printer:string_of_list ["/some"] (List.map GroupNode.to_path groups);
+    ~printer:string_of_list ["/some"] (List.map Node.Group.to_path groups);
 
-  assert_equal ([], []) @@ find_child_nodes store child;
-  assert_equal ([], []) @@ find_child_nodes store GroupNode.(root / "fakegroup");
+  assert_equal ([], []) @@ Group.children store child;
+  assert_equal ([], []) @@ Group.children store Node.Group.(root / "fakegroup");
 
-  let ac, gc = find_all_nodes store in
+  let ac, gc = hierarchy store in
   let got =
     List.fast_sort String.compare @@
-    List.map ArrayNode.show ac @ List.map GroupNode.show gc in
+    List.map Node.Array.show ac @ List.map Node.Group.show gc in
   assert_equal
     ~printer:string_of_list
     ["/"; "/arrnode"; "/some"; "/some/child"; "/some/child/group"] got;
 
   (* tests for renaming nodes *)
-  let some = GroupNode.of_path "/some/child" in
-  rename_group store some "CHILD";
-  rename_array store anode "ARRAYNODE";
-  let ac, gc = find_all_nodes store in
+  let some = Node.Group.of_path "/some/child" in
+  Group.rename store some "CHILD";
+  Array.rename store anode "ARRAYNODE";
+  let ac, gc = hierarchy store in
   let got =
     List.fast_sort String.compare @@
-    List.map ArrayNode.show ac @ List.map GroupNode.show gc in
+    List.map Node.Array.show ac @ List.map Node.Group.show gc in
   assert_equal
     ~printer:string_of_list
     ["/"; "/ARRAYNODE"; "/some"; "/some/CHILD"; "/some/CHILD/group"] got;
   assert_raises
     (Zarr.Storage.Key_not_found "fakegroup")
-    (fun () -> rename_group store GroupNode.(gnode / "fakegroup") "somename");
+    (fun () -> Group.rename store Node.Group.(gnode / "fakegroup") "somename");
   assert_raises
     (Zarr.Storage.Key_not_found "fakearray")
-    (fun () -> rename_array store ArrayNode.(gnode / "fakearray") "somename");
+    (fun () -> Array.rename store Node.Array.(gnode / "fakearray") "somename");
 
   (* restore old array node name. *)
-  rename_array store (ArrayNode.of_path "/ARRAYNODE") "arrnode";
+  Array.rename store (Node.Array.of_path "/ARRAYNODE") "arrnode";
   let nshape = [|25; 32; 10|] in
-  reshape store anode nshape;
-  let meta = array_metadata store anode in
-  assert_equal ~printer:print_int_array nshape @@ ArrayMetadata.shape meta;
+  Array.reshape store anode nshape;
+  let meta = Array.metadata store anode in
+  assert_equal ~printer:print_int_array nshape @@ Metadata.Array.shape meta;
   assert_raises
     (Zarr.Storage.Invalid_resize_shape)
-    (fun () -> reshape store anode [|25; 10|]);
+    (fun () -> Array.reshape store anode [|25; 10|]);
   assert_raises
     (Zarr.Storage.Key_not_found "fakegroup/zarr.json")
-    (fun () -> array_metadata store ArrayNode.(gnode / "fakegroup"));
+    (fun () -> Array.metadata store Node.Array.(gnode / "fakegroup"));
 
-  erase_array_node store anode;
-  erase_all_nodes store;
-  let got = find_all_nodes store in
+  Array.delete store anode;
+  clear store;
+  let got = hierarchy store in
   assert_equal ~printer:print_node_pair ([], []) got
 
 let _ =
@@ -190,7 +188,7 @@ let _ =
         (Fun.flip Out_channel.output_string {|{"zarr_format":3,"node_type":"unknown"}|});
       assert_raises
         (Zarr.Metadata.Parse_error "invalid node_type in badnode/zarr.json")
-        (fun () -> FilesystemStore.find_all_nodes s);
+        (fun () -> FilesystemStore.hierarchy s);
       Sys.(remove fname; rmdir dname);
 
       (* ensure it works with an extra "/" appended to directory name. *)

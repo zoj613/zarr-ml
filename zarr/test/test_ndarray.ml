@@ -27,6 +27,8 @@ let tests = [
   let shape = [|2; 5; 3|] in
   run_test {shape; kind = M.Char} '?' 1;
 
+  run_test {shape; kind = M.Bool} false 1;
+
   run_test {shape; kind = M.Int8} 0 1;
 
   run_test {shape; kind = M.Uint8} 0 1;

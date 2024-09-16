@@ -23,6 +23,7 @@ module FillValue = struct
   = fun kind a ->
     match kind with
     | Ndarray.Char -> Char a
+    | Ndarray.Bool -> Bool a
     | Ndarray.Int8 -> Int (Stdint.Uint64.of_int a)
     | Ndarray.Uint8 -> Int (Stdint.Uint64.of_int a)
     | Ndarray.Int16 -> Int (Stdint.Uint64.of_int a)
@@ -299,6 +300,7 @@ module Array = struct
     = fun t kind ->
     match kind, t.data_type with
     | Ndarray.Char, Datatype.Char
+    | Ndarray.Bool, Datatype.Bool
     | Ndarray.Int8, Datatype.Int8
     | Ndarray.Uint8, Datatype.Uint8
     | Ndarray.Int16, Datatype.Int16
@@ -319,6 +321,7 @@ module Array = struct
     = fun t kind ->
     match kind, t.fill_value with
     | Ndarray.Char, FillValue.Char c -> c
+    | Ndarray.Bool, FillValue.Bool b -> b
     | Ndarray.Int8, FillValue.Int i -> Stdint.Uint64.to_int i
     | Ndarray.Uint8, FillValue.Int i -> Stdint.Uint64.to_int i
     | Ndarray.Int16, FillValue.Int i -> Stdint.Uint64.to_int i

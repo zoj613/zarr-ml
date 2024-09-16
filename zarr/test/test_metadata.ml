@@ -586,6 +586,14 @@ let array = [
   let chunks = [|5; 2; 6|] in
   let dimension_names = [Some "x"; None; Some "z"] in
 
+  (* tests using bool data type. *)
+  test_array_metadata
+    ~shape
+    ~chunks
+    Ndarray.Bool
+    Ndarray.Float32
+    false;
+
   (* tests using char data type. *)
   test_array_metadata
     ~shape

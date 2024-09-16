@@ -18,11 +18,12 @@ module BytesCodec = struct
     let open (val endian_module t) in
     let buf = Bytes.create @@ Ndarray.byte_size x in
     match Ndarray.data_type x with
-    | Char-> Ndarray.iteri (set_char buf) x; Bytes.unsafe_to_string buf
-    | Uint8-> Ndarray.iteri (set_uint8 buf) x; Bytes.unsafe_to_string buf
-    | Int8-> Ndarray.iteri (set_int8 buf) x; Bytes.unsafe_to_string buf
-    | Int16-> Ndarray.iteri (set_int16 buf) x; Bytes.unsafe_to_string buf
-    | Uint16-> Ndarray.iteri (set_uint16 buf) x; Bytes.unsafe_to_string buf
+    | Char -> Ndarray.iteri (set_char buf) x; Bytes.unsafe_to_string buf
+    | Bool -> Ndarray.iteri (set_bool buf) x; Bytes.unsafe_to_string buf
+    | Uint8 -> Ndarray.iteri (set_uint8 buf) x; Bytes.unsafe_to_string buf
+    | Int8 -> Ndarray.iteri (set_int8 buf) x; Bytes.unsafe_to_string buf
+    | Int16 -> Ndarray.iteri (set_int16 buf) x; Bytes.unsafe_to_string buf
+    | Uint16 -> Ndarray.iteri (set_uint16 buf) x; Bytes.unsafe_to_string buf
     | Int32 -> Ndarray.iteri (set_int32 buf) x; Bytes.unsafe_to_string buf
     | Int64 -> Ndarray.iteri (set_int64 buf) x; Bytes.unsafe_to_string buf
     | Uint64 -> Ndarray.iteri (set_uint64 buf) x; Bytes.unsafe_to_string buf
@@ -41,6 +42,7 @@ module BytesCodec = struct
     let buf = Bytes.unsafe_of_string str in
     match k, Ndarray.dtype_size k with
     | Char, _ -> Ndarray.init k shp @@ get_char buf
+    | Bool, _ -> Ndarray.init k shp @@ get_bool buf
     | Uint8, _ -> Ndarray.init k shp @@ get_int8 buf
     | Int8, _ -> Ndarray.init k shp @@ get_uint8 buf
     | Int16, s -> Ndarray.init k shp @@ fun i -> get_int16 buf (i*s)

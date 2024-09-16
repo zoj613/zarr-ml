@@ -1,5 +1,6 @@
 type _ dtype =
   | Char : char dtype
+  | Bool : bool dtype
   | Int8 : int dtype
   | Uint8 : int dtype
   | Int16 : int dtype
@@ -22,6 +23,7 @@ type 'a t =
 
 let dtype_size : type a. a dtype -> int = function
   | Char -> 1
+  | Bool -> 1
   | Int8 -> 1
   | Uint8 -> 1
   | Int16 -> 2

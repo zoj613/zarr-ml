@@ -1,5 +1,6 @@
 module type S = sig
   val set_char : bytes -> int -> char -> unit
+  val set_bool : bytes -> int -> bool -> unit
   val set_int8 : bytes -> int -> int -> unit
   val set_uint8 : bytes -> int -> int -> unit
   val set_int16 : bytes -> int -> int -> unit
@@ -15,6 +16,7 @@ module type S = sig
   val set_nativeint : bytes -> int -> nativeint -> unit
 
   val get_char : bytes -> int -> char
+  val get_bool : bytes -> int -> bool
   val get_int8 : bytes -> int -> int 
   val get_uint8 : bytes -> int -> int
   val get_int16 : bytes -> int -> int
@@ -34,6 +36,7 @@ module Little = struct
   let set_int8 = Bytes.set_int8
   let set_uint8 = Bytes.set_uint8
   let set_char buf i v = Char.code v |> set_uint8 buf i
+  let set_bool buf i v = Bool.to_int v |> set_uint8 buf i
   let set_int16 buf i v = Bytes.set_int16_le buf (2*i) v
   let set_uint16 buf i v = Bytes.set_uint16_le buf (2*i) v
   let set_int32 buf i v = Bytes.set_int32_le buf (4*i) v
@@ -53,6 +56,7 @@ module Little = struct
   let get_int8 = Bytes.get_int8
   let get_uint8 = Bytes.get_uint8
   let get_char buf i = get_uint8 buf i |> Char.chr
+  let get_bool buf i = match get_uint8 buf i with | 0 -> false | _ -> true
   let get_int16 = Bytes.get_int16_le
   let get_uint16 = Bytes.get_uint16_le
   let get_int32 = Bytes.get_int32_le
@@ -74,6 +78,7 @@ module Big = struct
   let set_int8 = Bytes.set_int8
   let set_uint8 = Bytes.set_uint8
   let set_char buf i v = Char.code v |> set_uint8 buf i
+  let set_bool buf i v = Bool.to_int v |> set_uint8 buf i
   let set_int16 buf i v = Bytes.set_int16_be buf (i * 2) v
   let set_uint16 buf i v = Bytes.set_uint16_be buf (i * 2) v
   let set_int32 buf i v = Bytes.set_int32_be buf (i * 4) v
@@ -93,6 +98,7 @@ module Big = struct
   let get_int8 = Bytes.get_int8
   let get_uint8 = Bytes.get_uint8
   let get_char buf i = get_uint8 buf i |> Char.chr
+  let get_bool buf i = match get_uint8 buf i with | 0 -> false | _ -> true
   let get_int16 = Bytes.get_int16_be
   let get_uint16 = Bytes.get_uint16_be
   let get_int32 = Bytes.get_int32_be

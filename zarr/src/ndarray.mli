@@ -1,6 +1,7 @@
 (** Supported data types for a Zarr array. *)
 type _ dtype =
   | Char : char dtype
+  | Bool : bool dtype
   | Int8 : int dtype
   | Uint8 : int dtype
   | Int16 : int dtype

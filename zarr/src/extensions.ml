@@ -105,6 +105,7 @@ end
 module Datatype = struct
   type t =
     | Char
+    | Bool
     | Int8
     | Uint8
     | Int16
@@ -123,6 +124,7 @@ module Datatype = struct
 
   let of_kind : type a. a Ndarray.dtype -> t = function
     | Ndarray.Char -> Char
+    | Ndarray.Bool -> Bool
     | Ndarray.Int8 -> Int8
     | Ndarray.Uint8 -> Uint8
     | Ndarray.Int16 -> Int16
@@ -139,6 +141,7 @@ module Datatype = struct
 
   let to_yojson = function
     | Char -> `String "char"
+    | Bool -> `String "bool"
     | Int8 -> `String "int8"
     | Uint8 -> `String "uint8"
     | Int16 -> `String "int16"
@@ -155,6 +158,7 @@ module Datatype = struct
 
   let of_yojson = function
     | `String "char" -> Ok Char
+    | `String "bool" -> Ok Bool
     | `String "int8" -> Ok Int8
     | `String "uint8" -> Ok Uint8
     | `String "int16" -> Ok Int16

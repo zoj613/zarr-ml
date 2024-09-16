@@ -23,6 +23,7 @@ module Datatype : sig
 
   type t =
     | Char
+    | Bool
     | Int8
     | Uint8
     | Int16

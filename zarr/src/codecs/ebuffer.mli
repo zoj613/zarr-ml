@@ -1,5 +1,6 @@
 module type S = sig
   val set_char : bytes -> int -> char -> unit
+  val set_bool : bytes -> int -> bool -> unit
   val set_int8 : bytes -> int -> int -> unit
   val set_uint8 : bytes -> int -> int -> unit
   val set_int16 : bytes -> int -> int -> unit
@@ -15,6 +16,7 @@ module type S = sig
   val set_nativeint : bytes -> int -> nativeint -> unit
 
   val get_char : bytes -> int -> char
+  val get_bool : bytes -> int -> bool
   val get_int8 : bytes -> int -> int 
   val get_uint8 : bytes -> int -> int
   val get_int16 : bytes -> int -> int

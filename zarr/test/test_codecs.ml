@@ -381,6 +381,10 @@ let tests = [
   (* test encoding/decoding of Char *)
   bytes_encode_decode {shape; kind = Ndarray.Char} '?';
 
+  (* test encoding/decoding of Bool *)
+  bytes_encode_decode {shape; kind = Ndarray.Bool} false;
+  bytes_encode_decode {shape; kind = Ndarray.Bool} true;
+
   (* test encoding/decoding of int8 *)
   bytes_encode_decode {shape; kind = Ndarray.Int8} 0;
 

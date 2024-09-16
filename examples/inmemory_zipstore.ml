@@ -14,7 +14,7 @@
     dune exec -- examples/inmemory_zipstore.exe
   in your shell at the root of this project. *) 
 
-module MemoryZipStore : sig
+module ZipStore : sig
   include Zarr.Storage.STORE with type 'a Deferred.t = 'a Lwt.t
   val with_open : ?level:Zipc_deflate.level -> string -> (t -> 'a Deferred.t) -> 'a Deferred.t
 end = struct
@@ -143,32 +143,30 @@ end = struct
       | Error e -> failwith e
     in
     Lwt.finalize (fun () -> f t) @@ fun () ->
-    Lwt_io.with_file
-      ~flags:Unix.[O_WRONLY; O_TRUNC; O_CREAT; O_NONBLOCK]
-      ~mode:Lwt_io.Output
-      t.path
-      (fun oc ->
-        Result.fold ~error:failwith ~ok:(Lwt_io.write oc) @@ Zipc.to_binary_string t.ic)
+    let flags = Unix.[O_WRONLY; O_TRUNC; O_CREAT; O_NONBLOCK] in
+    Lwt_io.with_file ~flags ~mode:Lwt_io.Output t.path @@ fun oc ->
+    Result.fold ~error:failwith ~ok:(Lwt_io.write oc) @@ Zipc.to_binary_string t.ic
 end
 
 let _ =
   Lwt_main.run @@ begin
-  let open Zarr.Node in
+  let open Zarr in
+  let open Zarr.Ndarray in
   let open Zarr.Indexing in
-  let open MemoryZipStore.Deferred.Syntax in
+  let open ZipStore.Deferred.Syntax in
 
-  MemoryZipStore.with_open "examples/data/testdata.zip" @@ fun store ->
-  let* xs, _ = MemoryZipStore.find_all_nodes store in
+  ZipStore.with_open "examples/data/testdata.zip" @@ fun store ->
+  let* xs, _ = ZipStore.hierarchy store in
   let anode = List.hd @@ List.filter
-    (fun node -> ArrayNode.to_path node = "/some/group/name") xs in
+    (fun node -> Node.Array.to_path node = "/some/group/name") xs in
   let slice = [|R [|0; 20|]; I 10; R [||]|] in
-  let* x = MemoryZipStore.read_array store anode slice Zarr.Ndarray.Char in
+  let* x = ZipStore.Array.read store anode slice Char in
   let x' = x |> Zarr.Ndarray.map @@ fun _ -> Random.int 256 |> Char.chr in
-  let* () = MemoryZipStore.write_array store anode slice x' in
-  let* y = MemoryZipStore.read_array store anode slice Zarr.Ndarray.Char in
+  let* () = ZipStore.Array.write store anode slice x' in
+  let* y = ZipStore.Array.read store anode slice Char in
   assert (Zarr.Ndarray.equal x' y);
-  let* () = MemoryZipStore.rename_array store anode "name2" in
-  let+ exists = MemoryZipStore.array_exists store @@ ArrayNode.of_path "/some/group/name2" in
+  let* () = ZipStore.Array.rename store anode "name2" in
+  let+ exists = ZipStore.Array.exists store @@ Node.Array.of_path "/some/group/name2" in
   assert exists
   end;
-  print_endline "Zip store has been update."
+  print_endline "Zip store has been updated."

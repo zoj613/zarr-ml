@@ -5,22 +5,22 @@
    raise a Not_implemented exception for the set_* and erase_* family of
    functions.  This effectively allows us to create a read-only store since
    calling any of the following functions would result in error:
-     - ReadOnlyZipStore.create_group
-     - ReadOnlyZipStore.create_array
-     - ReadOnlyZipStore.erase_group_node
-     - ReadOnlyZipStore.erase_array_node
-     - ReadOnlyZipStore.erase_all_nodes
-     - ReadOnlyZipStore.write_array
-     - ReadOnlyZipStore.reshape
-     - ReadOnlyZipStore.rename_array
-     - ReadOnlyZipStore.rename_group
+     - ZipStore.create_group
+     - ZipStore.create_array
+     - ZipStore.erase_group_node
+     - ZipStore.erase_array_node
+     - ZipStore.clear
+     - ZipStore.write_array
+     - ZipStore.reshape
+     - ZipStore.rename_array
+     - ZipStore.rename_group
   Below we show how to implement this custom Zarr Store.
 
   To compile & run this example execute the command
     dune exec -- examples/zipstore.exe
   in your shell at the root of this project. *)
 
-module ReadOnlyZipStore : sig
+module ZipStore : sig
   exception Not_implemented
   include Zarr.Storage.STORE with type 'a Deferred.t = 'a
   val with_open : string -> (t -> 'a) -> 'a
@@ -94,12 +94,13 @@ end
 
 let _ =
   Eio_main.run @@ fun _ ->
-  let open Zarr.Node in
+  let open Zarr in
+  let open Zarr.Ndarray in
 
-  ReadOnlyZipStore.with_open "examples/data/testdata.zip" @@ fun store ->
-  let xs, _ = ReadOnlyZipStore.find_all_nodes store in
+  ZipStore.with_open "examples/data/testdata.zip" @@ fun store ->
+  let xs, _ = ZipStore.hierarchy store in
   let anode = List.hd @@ Eio.Fiber.List.filter
-      (fun node -> ArrayNode.to_path node = "/some/group/name") xs in
-  let arr = ReadOnlyZipStore.read_array store anode [||] Zarr.Ndarray.Char in
-  try ReadOnlyZipStore.write_array store anode [||] arr with
-  | ReadOnlyZipStore.Not_implemented -> print_endline "Store is read-only"
+      (fun node -> Node.Array.to_path node = "/some/group/name") xs in
+  let arr = ZipStore.Array.read store anode [||] Char in
+  try ZipStore.Array.write store anode [||] arr with
+  | ZipStore.Not_implemented -> print_endline "Store is read-only"

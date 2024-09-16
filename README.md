@@ -52,8 +52,6 @@ A similar example using the `Lwt`-backed Asynchronous API can be found [here][7]
 ### setup
 ```ocaml
 open Zarr
-open Zarr.Metadata
-open Zarr.Node
 open Zarr.Codecs
 open Zarr.Indexing
 open Zarr_sync.Storage
@@ -64,14 +62,14 @@ let store = FilesystemStore.create "testdata.zarr";;
 ```
 ### create group
 ```ocaml
-let group_node = GroupNode.of_path "/some/group";;
-FilesystemStore.create_group store group_node;;
+let group_node = Node.Group.of_path "/some/group";;
+FilesystemStore.Group.create store group_node;;
 ```
 ### create an array
 ```ocaml
-let array_node = ArrayNode.(group_node / "name");;
+let array_node = Node.Array.(group_node / "name");;
 (* creates an array with char data type and fill value '?' *)
-FilesystemStore.create_array
+FilesystemStore.Array.create
   ~codecs:[`Transpose [|2; 0; 1|]; `Bytes BE; `Gzip L2]
   ~shape:[|100; 100; 50|]
   ~chunks:[|10; 15; 20|]
@@ -83,11 +81,11 @@ FilesystemStore.create_array
 ### read/write from/to an array
 ```ocaml
 let slice = [|R [|0; 20|]; I 10; R [||]|];;
-let x = FilesystemStore.read_array store array_node slice Ndarray.Char;;
+let x = FilesystemStore.Array.read store array_node slice Ndarray.Char;;
 (* Do some computation on the array slice *)
 let x' = Zarr.Ndarray.map (fun _ -> Random.int 256 |> Char.chr) x;;
-FilesystemStore.write_array store array_node slice x';;
-let y = FilesystemStore.read_array store array_node slice Ndarray.Char;;
+FilesystemStore.Array.write store array_node slice x';;
+let y = FilesystemStore.Array.read store array_node slice Ndarray.Char;;
 assert (Ndarray.equal x' y);;
 ```
 ### create an array with sharding
@@ -98,9 +96,9 @@ let config =
   ;index_codecs = [`Bytes BE; `Crc32c]
   ;index_location = Start};;
 
-let shard_node = ArrayNode.(group_node / "another");;
+let shard_node = Node.Array.(group_node / "another");;
 
-FilesystemStore.create_array
+FilesystemStore.Array.create
   ~codecs:[`ShardingIndexed config]
   ~shape:[|100; 100; 50|]
   ~chunks:[|10; 15; 20|]
@@ -111,30 +109,30 @@ FilesystemStore.create_array
 ```
 ### exploratory functions
 ```ocaml
-let a, g = FilesystemStore.find_all_nodes store;;
-List.map ArrayNode.to_path a;;
+let a, g = FilesystemStore.hierarchy store;;
+List.map Node.Array.to_path a;;
 (*- : string list = ["/some/group/name"; "/some/group/another"] *)
-List.map GroupNode.to_path g;;
+List.map Node.Group.to_path g;;
 (*- : string list = ["/"; "/some"; "/some/group"] *)
 
-FilesystemStore.reshape store array_node [|25; 32; 10|];;
+FilesystemStore.Array.reshape store array_node [|25; 32; 10|];;
 
-let meta = FilesystemStore.group_metadata store group_node;;
-GroupMetadata.show meta;; (* pretty prints the contents of the metadata *)
+let meta = FilesystemStore.Group.metadata store group_node;;
+Metadata.Group.show meta;; (* pretty prints the contents of the metadata *)
 
-FilesystemStore.array_exists store shard_node;;
-FilesystemStore.group_exists store group_node;;
+FilesystemStore.Array.exists store shard_node;;
+FilesystemStore.Group.exists store group_node;;
 
-let a, g = FilesystemStore.find_child_nodes store group_node;;
-List.map ArrayNode.to_path a;;
+let a, g = FilesystemStore.Group.children store group_node;;
+List.map Node.Array.to_path a;;
 (*- : string list = ["/some/group/name"; "/some/group/another"] *)
-List.map GroupNode.to_path g;;
+List.map Node.Group.to_path g;;
 (*- : string list = [] *)
 
-FilesystemStore.erase_group_node store group_node;;
-FilesystemStore.erase_all_nodes store;; (* clears the store *)
-FilesystemStore.rename_group store group_node;;
-FilesystemStore.rename_array store anode;;
+FilesystemStore.Group.delete store group_node;;
+FilesystemStore.clear store;; (* clears the store *)
+FilesystemStore.Group.rename store group_node;;
+FilesystemStore.Array.rename store anode;;
 ```
 
 [1]: https://codecov.io/gh/zoj613/zarr-ml/graph/badge.svg?token=KOOG2Y1SH5

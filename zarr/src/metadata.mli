@@ -25,7 +25,7 @@ module FillValue : sig
       a Zarr array. The permitted values depend on the data type. *)
 end
 
-module ArrayMetadata : sig
+module Array : sig
   (** A module which contains functionality to work with a parsed JSON
       Zarr array metadata document. *)
 
@@ -108,7 +108,7 @@ module ArrayMetadata : sig
       and false otherwise. *)
 end
 
-module GroupMetadata : sig
+module Group : sig
   (** A module which contains functionality to work with a parsed JSON
       Zarr group metadata document. *)
 

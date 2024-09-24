@@ -15,28 +15,23 @@
   in your shell at the root of this project. *) 
 
 module ZipStore : sig
-  include Zarr.Storage.STORE with type 'a Deferred.t = 'a Lwt.t
-  val with_open : ?level:Zipc_deflate.level -> string -> (t -> 'a Deferred.t) -> 'a Deferred.t
+  include Zarr.Storage.STORE with module Deferred = Zarr_lwt.Deferred
+  val with_open : ?level:Zipc_deflate.level -> Unix.file_perm -> string -> (t -> 'a Deferred.t) -> 'a Deferred.t
 end = struct
   module M = Map.Make(String)
 
   module Z = struct
     module Deferred = Zarr_lwt.Deferred
-    open Deferred.Infix
     open Deferred.Syntax
 
-    type t =
-      {mutable ic : Zipc.t
-      ;mutex : Lwt_mutex.t
-      ;level : Zipc_deflate.level
-      ;path : string}
+    type t = {ic : Zipc.t Atomic.t; level : Zipc_deflate.level}
 
     let is_member t key =
-      Deferred.return @@ Zipc.mem key t.ic
+      Deferred.return @@ Zipc.mem key @@ Atomic.get t.ic
 
     let size t key =
-      Deferred.return @@
-      match Zipc.find key t.ic with
+      Deferred.return @@ 
+      match Zipc.find key @@ Atomic.get t.ic with
       | None -> 0
       | Some m ->
         match Zipc.Member.kind m with
@@ -45,7 +40,7 @@ end = struct
 
     let get t key =
       Deferred.return @@
-      match Zipc.find key t.ic with
+      match Zipc.find key @@ Atomic.get t.ic with
       | None -> raise (Zarr.Storage.Key_not_found key)
       | Some m ->
         match Zipc.Member.kind m with
@@ -65,12 +60,12 @@ end = struct
         (fun m acc ->
           match Zipc.Member.kind m with
           | Zipc.Member.Dir -> acc
-          | Zipc.Member.File _ -> Zipc.Member.path m :: acc) t.ic []
+          | Zipc.Member.File _ -> Zipc.Member.path m :: acc) (Atomic.get t.ic) []
 
     let list_dir t prefix =
       let module S = Set.Make(String) in
       let n = String.length prefix in
-      let m = Zipc.to_string_map t.ic in
+      let m = Zipc.to_string_map @@ Atomic.get t.ic in
       let prefs, keys =
         M.fold
           (fun key v ((l, r) as acc) ->
@@ -85,17 +80,18 @@ end = struct
               | _ -> acc) m (S.empty, [])
       in Deferred.return (keys, S.elements prefs)
 
-    let set t key value =
+    let rec set t key value =
       match Zipc.File.deflate_of_binary_string ~level:t.level value with
       | Error e -> failwith e
       | Ok f ->
         match Zipc.Member.(make ~path:key @@ File f) with
         | Error e -> failwith e
         | Ok m ->
-          Lwt_mutex.with_lock t.mutex @@ fun () ->
-          Deferred.return (t.ic <- Zipc.add m t.ic)
+          let z = Atomic.get t.ic in
+          if Atomic.compare_and_set t.ic z @@ Zipc.add m z
+          then Deferred.return_unit else set t key value
 
-    let set_partial_values t key ?(append=false) rv =
+    let rec set_partial_values t key ?(append=false) rv =
       let f = 
         if append then
           fun acc (_, v) ->
@@ -106,46 +102,76 @@ end = struct
             String.(length v |> Bytes.blit_string v 0 s rs);
             Deferred.return @@ Bytes.unsafe_to_string s
       in
-      match Zipc.Member.kind (Option.get @@ Zipc.find key t.ic) with
+      let z = Atomic.get t.ic in
+      match Zipc.Member.kind (Option.get @@ Zipc.find key z) with
       | Zipc.Member.Dir -> Deferred.return_unit 
       | Zipc.Member.File file ->
         match Zipc.File.to_binary_string file with
         | Error e -> failwith e
-        | Ok s -> Deferred.fold_left f s rv >>= set t key
+        | Ok s ->
+          let* value = Deferred.fold_left f s rv in
+          match Zipc.File.deflate_of_binary_string ~level:t.level value with
+          | Error e -> failwith e
+          | Ok f ->
+            match Zipc.Member.(make ~path:key @@ File f) with
+            | Error e -> failwith e
+            | Ok m ->
+              if Atomic.compare_and_set t.ic z @@ Zipc.add m z
+              then Deferred.return_unit else set_partial_values t key ~append rv
 
-    let erase t key =
-      Lwt_mutex.with_lock t.mutex @@ fun () ->
-      Deferred.return (t.ic <- Zipc.remove key t.ic)
+    let rec erase t key =
+      let z = Atomic.get t.ic in
+      let z' = Zipc.remove key z in
+      if Atomic.compare_and_set t.ic z z'
+      then Deferred.return_unit else erase t key
 
-    let erase_prefix t prefix =
-      let m = Zipc.to_string_map t.ic in
+    let rec erase_prefix t prefix =
+      let z = Atomic.get t.ic in
+      let m = Zipc.to_string_map z in
       let m' = M.filter_map
         (fun k v -> if String.starts_with ~prefix k then None else Some v) m in
-      Lwt_mutex.with_lock t.mutex @@ fun () ->
-      Deferred.return (t.ic <- Zipc.of_string_map m')
+      let z' = Zipc.of_string_map m' in
+      if Atomic.compare_and_set t.ic z z'
+      then Deferred.return_unit else erase_prefix t prefix
 
-    let rename t ok nk =
-      Lwt_mutex.with_lock t.mutex @@ fun () ->
-      let m = Zipc.to_string_map t.ic in
-      let m1, m2 = M.partition (fun k _ -> String.starts_with ~prefix:ok k) m in
-      let l = String.length ok in
-      let s = Seq.map
-        (fun (k, v) -> nk ^ String.(length k - l |> sub k l), v) @@ M.to_seq m1 in
-      t.ic <- Zipc.of_string_map @@ M.add_seq s m2; Lwt.return_unit
+    (* Adapted from: https://github.com/dbuenzli/zipc/issues/8#issuecomment-2392417890 *)
+    let rec rename t prefix new_prefix =
+      let rename_member ~prefix ~new_prefix m =
+        let path = Zipc.Member.path m in
+        if not (String.starts_with ~prefix path) then m else
+        let l = String.length prefix in
+        let path = new_prefix ^ String.sub path l (String.length path - l) in
+        let mtime = Zipc.Member.mtime m in
+        let mode = Zipc.Member.mode m in
+        let kind = Zipc.Member.kind m in
+        match Zipc.Member.make ~mtime ~mode ~path kind with
+        | Ok m' -> m' | Error e -> failwith e
+      in
+      let z = Atomic.get t.ic in
+      let add m acc = Zipc.add (rename_member ~prefix ~new_prefix m) acc in
+      let z' = Zipc.fold add z Zipc.empty in
+      if Atomic.compare_and_set t.ic z z'
+      then Deferred.return_unit else rename t prefix new_prefix
   end
   (* this functor generates the public signature of our Zip file store. *)
   include Zarr.Storage.Make(Z)
 
-  let with_open ?(level=`Default) path f =
+  let with_open ?(level=`Default) perm path f =
     let s = In_channel.(with_open_bin path input_all) in
-    let t = match Zipc.of_binary_string s with
-      | Ok ic -> Z.{ic; level; path; mutex = Lwt_mutex.create ()}
+    let x = match Zipc.of_binary_string s with
+      | Ok z -> Z.{ic = Atomic.make z; level}
       | Error e -> failwith e
     in
-    Lwt.finalize (fun () -> f t) @@ fun () ->
-    let flags = Unix.[O_WRONLY; O_TRUNC; O_CREAT; O_NONBLOCK] in
-    Lwt_io.with_file ~flags ~mode:Lwt_io.Output t.path @@ fun oc ->
-    Result.fold ~error:failwith ~ok:(Lwt_io.write oc) @@ Zipc.to_binary_string t.ic
+    let open Deferred.Syntax in
+    let+ out = f x in
+    let flags = [Open_wronly; Open_trunc; Open_creat] in
+    match Zipc.to_binary_string @@ Atomic.get x.ic with
+    | Error e -> failwith e
+    | Ok v ->
+      Out_channel.with_open_gen flags perm path @@ fun oc ->
+      Out_channel.output_string oc v;
+      Out_channel.flush oc;
+      out
 end
 
 let _ =
@@ -155,7 +181,7 @@ let _ =
   let open Zarr.Indexing in
   let open ZipStore.Deferred.Syntax in
 
-  ZipStore.with_open "examples/data/testdata.zip" @@ fun store ->
+  ZipStore.with_open 0o700 "examples/data/testdata.zip" @@ fun store ->
   let* xs, _ = ZipStore.hierarchy store in
   let anode = List.hd @@ List.filter
     (fun node -> Node.Array.to_path node = "/some/group/name") xs in

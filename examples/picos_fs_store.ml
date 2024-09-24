@@ -10,7 +10,7 @@
 module PU = Picos_io.Unix
 
 module PicosFSStore : sig
-  include Zarr.Storage.STORE with type 'a Deferred.t = 'a
+  include Zarr.Storage.STORE with module Deferred = Zarr_sync.Deferred
   val create : ?perm:Unix.file_perm -> string -> t
 end = struct
   
@@ -129,28 +129,28 @@ end
 
 let _ =
   Picos_mux_random.run_on ~n_domains:1 @@ fun () ->
-  let open Zarr.Node in
+  let open Zarr in
   let open Zarr.Codecs in
   let open Zarr.Ndarray in
   let open Zarr.Indexing in
 
   let store = PicosFSStore.create "picosdata.zarr" in
-  let gnode = GroupNode.of_path "/some/group" in
-  PicosFSStore.create_group store gnode;
-  let anode = ArrayNode.(gnode / "name") in
+  let gnode = Node.Group.of_path "/some/group" in
+  PicosFSStore.Group.create store gnode;
+  let anode = Node.Array.(gnode / "name") in
   let config =
     {chunk_shape = [|5; 3; 5|]
     ;codecs = [`Bytes LE; `Gzip L5]
     ;index_codecs = [`Bytes BE; `Crc32c]
     ;index_location = Start} in
-  PicosFSStore.create_array
+  PicosFSStore.Array.create
     ~codecs:[`ShardingIndexed config]
     ~shape:[|100; 100; 50|]
     ~chunks:[|10; 15; 20|]
     Char '?' anode store;
   let slice = [|R [|0; 20|]; I 10; R [||]|] in
-  let x = PicosFSStore.read_array store anode slice Char in
+  let x = PicosFSStore.Array.read store anode slice Char in
   let x' = Zarr.Ndarray.map (fun _ -> Random.int 256 |> Char.chr) x in
-  PicosFSStore.write_array store anode slice x';
-  let y = PicosFSStore.read_array store anode slice Char in
+  PicosFSStore.Array.write store anode slice x';
+  let y = PicosFSStore.Array.read store anode slice Char in
   assert (equal x' y)

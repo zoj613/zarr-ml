@@ -131,8 +131,8 @@ List.map Node.Group.to_path g;;
 
 FilesystemStore.Group.delete store group_node;;
 FilesystemStore.clear store;; (* clears the store *)
-FilesystemStore.Group.rename store group_node;;
-FilesystemStore.Array.rename store anode;;
+FilesystemStore.Group.rename store group_node "new_name";;
+FilesystemStore.Array.rename store anode "new_name";;
 ```
 
 [1]: https://codecov.io/gh/zoj613/zarr-ml/graph/badge.svg?token=KOOG2Y1SH5

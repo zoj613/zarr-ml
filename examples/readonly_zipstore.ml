@@ -5,15 +5,15 @@
    raise a Not_implemented exception for the set_* and erase_* family of
    functions.  This effectively allows us to create a read-only store since
    calling any of the following functions would result in error:
-     - ZipStore.create_group
-     - ZipStore.create_array
-     - ZipStore.erase_group_node
-     - ZipStore.erase_array_node
+     - ZipStore.Group.create
+     - ZipStore.Array.create
+     - ZipStore.Group.delete
+     - ZipStore.Array.delete
      - ZipStore.clear
-     - ZipStore.write_array
-     - ZipStore.reshape
-     - ZipStore.rename_array
-     - ZipStore.rename_group
+     - ZipStore.Array.write
+     - ZipStore.Array.reshape
+     - ZipStore.Array.rename
+     - ZipStore.Group.rename
   Below we show how to implement this custom Zarr Store.
 
   To compile & run this example execute the command
@@ -22,7 +22,7 @@
 
 module ZipStore : sig
   exception Not_implemented
-  include Zarr.Storage.STORE with type 'a Deferred.t = 'a
+  include Zarr.Storage.STORE with module Deferred = Zarr_eio.Deferred
   val with_open : string -> (t -> 'a) -> 'a
 end = struct
   exception Not_implemented

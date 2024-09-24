@@ -25,14 +25,14 @@ module Group : sig
 
   val create : t -> string -> t
   (** [create p n] returns a group node with parent [p] and name [n].
-      @raise Failure if node invariants are not satisfied. *)
+      @raise Node_invariant if node invariants are not satisfied. *)
 
   val ( / ) : t -> string -> t
   (** The infix operator alias of {!create} *)
 
   val of_path : string -> t 
   (** [of_path s] returns a node from string [s].
-      @raise Failure if node invariants are not satisfied. *)
+      @raise Node_invariant if node invariants are not satisfied. *)
 
   val to_path : t -> string
   (** [to_path n] returns node [n] as a string path. *)
@@ -52,7 +52,7 @@ module Group : sig
   val ancestors : t -> t list
   (** [ancestors n] returns ancestor nodes of [n] including the root node.
       The root node has no ancestors, thus this returns the empty list
-      is called on a root node. *)
+      if called on a root node. *)
 
   val to_key : t -> string
   (** [to_key n] converts a node's path to a key, as defined in the Zarr V3
@@ -63,25 +63,25 @@ module Group : sig
       in the Zarr V3 specification. *)
 
   val to_metakey : t -> string
-  (** [to_prefix n] returns the metadata key associated with node [n],
+  (** [to_metakey n] returns the metadata key associated with node [n],
       as defined in the Zarr V3 specification. *)
 
   val is_child_group : t -> t -> bool
-  (** [is_child_group m n] Tests if group node [m] is a the immediate parent of
+  (** [is_child_group m n] Tests if group node [m] is the immediate parent of
       group node [n]. Returns [true] when the test passes and [false] otherwise. *)
 
   val show : t -> string
-  (** [show n] returns a string representation of a node type. *)
+  (** [show n] returns a string representation of a node type.*)
 
   val pp : Format.formatter -> t -> unit
-  (** [pp fmt t] pretty prints a node type value. *)
+  (** [pp fmt t] pretty prints a node type value.*)
 
   val rename : t -> string -> t
   (** [rename t s] returns a new group node with all properties of [t]
       but with its name changed to [s].
 
       @raise Node_invariant if [s] is invalid name.
-      @raise Renaming_root if [t] is a root node.*)
+      @raise Cannot_rename_root if [t] is a root node.*)
 end
 
 module Array : sig
@@ -90,17 +90,17 @@ module Array : sig
 
   val create : Group.t -> string -> t
   (** [create p n] returns an array node with parent [p] and name [n].
-      @raise Failure if node invariants are not satisfied. *)
+      @raise Node_invariant if node invariants are not satisfied. *)
 
   val ( / ) : Group.t -> string -> t
-  (** The infix operator alias of {!ArrayNode.create} *)
+  (** The infix operator alias of {!create} *)
 
   val root : t
   (** creates an array root node *)
 
   val of_path : string -> t
   (** [of_path s] returns an array node from string [s].
-      @raise Failure if node invariants are not satisfied. *)
+      @raise Node_invariant if node invariants are not satisfied. *)
 
   val to_path : t -> string
   (** [to_path n] returns array node [n] as a string path. *)
@@ -128,7 +128,7 @@ module Array : sig
       specification. *)
 
   val to_metakey : t -> string
-  (** [to_prefix n] returns the metadata key associated with node [n],
+  (** [to_metakey n] returns the metadata key associated with node [n],
       as defined in the Zarr V3 specification. *)
 
   val show : t -> string
@@ -142,5 +142,5 @@ module Array : sig
       but with its name changed to [s].
 
       @raise Node_invariant if [s] is invalid name.
-      @raise Renaming_root if [t] is a root node.*)
+      @raise Cannot_rename_root if [t] is a root node.*)
 end

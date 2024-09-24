@@ -169,7 +169,7 @@ module type Interface = sig
   (** The module interface that all supported stores must implement. *)
 
   module Make : functor (Io : Types.IO) -> STORE
-    with type t = Io.t and type 'a Deferred.t = 'a Io.Deferred.t
+    with type t = Io.t and module Deferred = Io.Deferred
   (** A functor for minting a new storage type as long as it's argument
       module implements the {!STORE} interface. *)
 end

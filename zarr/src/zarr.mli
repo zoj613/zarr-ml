@@ -53,8 +53,9 @@ module Ndarray = Ndarray
     {2:create_array Create, read & write array.}
     Here we show how the library's asynchronous API using Lwt's concurrency monad can be used.
     {@ocaml[
-    open Zarr.Metadata
-    open Zarr.Node
+    open Zarr
+    open Zarr.Ndarray
+    open Zarr.Indexing
     open Zarr.Codecs
     open Zarr_lwt.Storage
     open FilesystemStore.Deferred.Syntax
@@ -62,16 +63,16 @@ module Ndarray = Ndarray
     let _ =
       Lwt_main.run begin
         let store = FilesystemStore.create "testdata.zarr" in
-        let group_node = GroupNode.of_path "/some/group" in
-        let* () = FilesystemStore.create_group store group_node in
+        let group_node = Node.Group.root in
+        let* () = FilesystemStore.Group.create group_node in
         let array_node = ArrayNode.(group_node / "name") in
-        let* () = FilesystemStore.create_array
+        let* () = FilesystemStore.Array.create
           ~codecs:[`Bytes BE] ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
-          Bigarray.Float32 Float.neg_infinity array_node store in
-        let slice = Owl_types.[|R [0; 20]; I 10; R []|] in
-        let* x = FilesystemStore.read_array store array_node slice Bigarray.Float32 in
-        let x' = Owl.Dense.Ndarray.Generic.map (fun _ -> Owl_stats_dist.uniform_rvs 0. 10.) x
-        in FilesystemStore.write_array store array_node slice x'
+          Ndarray.Float32 Float.neg_infinity array_node store in
+        let slice = [|R [|0; 20|]; I 10; L [||]|] in
+        let* x = FilesystemStore.Array.read store array_node slice Ndarray.Float32 in
+        let x' = Ndarray.map (fun _ -> Random.int 11 |> Float.of_int) x
+        in FilesystemStore.Array.write store array_node slice x'
       end
     ]} *)
 
@@ -94,8 +95,7 @@ module Ndarray = Ndarray
     Although this implementation tries to be spec compliant, it does come with
     a few limitations:
     {ul
-      {- Ocaml does not have support for unsigned integers as array data types
-         and thus this library cannot support reading values of datatypes
-         [uint32], [uint64] and [complex128].}
+      {- Currently we do not support the following data types: [float16],
+      [uint32], [complex128], [r*], and variable length strings.}
     }
     *)

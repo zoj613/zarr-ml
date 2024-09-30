@@ -26,7 +26,9 @@ module FilesystemStore = struct
       | true -> Lwt.return_unit
 
     let size t key =
-      Lwt_io.file_length (key_to_fspath t key) >>| Int64.to_int
+      Lwt.catch
+        (fun () -> Lwt_io.file_length (key_to_fspath t key) >>| Int64.to_int)
+        (fun _ -> Deferred.return 0)
 
     let get t key =
       let* bsize = size t key in
@@ -76,17 +78,18 @@ module FilesystemStore = struct
 
     let set_partial_values t key ?(append=false) rvs =
       let l = List.fold_left (fun a (_, s) -> Int.max a (String.length s)) 0 rvs in
+      let flags = match append with
+        | false -> Unix.[O_WRONLY; O_CREAT] 
+        | true -> Unix.[O_APPEND; O_WRONLY; O_CREAT] 
+      in
+      let fp = key_to_fspath t key in
+      let* () = create_parent_dir fp t.perm in
       Lwt_io.with_file
-        ~buffer:(Lwt_bytes.create l)
-        ~flags:(if append then Unix.[O_APPEND; O_WRONLY] else [Unix.O_WRONLY])
-        ~perm:t.perm
-        ~mode:Lwt_io.Output
-        (key_to_fspath t key)
-        @@ fun oc ->
-          Lwt_list.iter_s
-            (fun (ofs, value) ->
-              let* () = Lwt_io.set_position oc @@ Int64.of_int ofs in
-              Lwt_io.write oc value) rvs
+        ~buffer:(Lwt_bytes.create l) ~flags ~perm:t.perm ~mode:Lwt_io.Output fp @@ fun oc ->
+        Lwt_list.iter_s
+          (fun (ofs, value) ->
+            let* () = Lwt_io.set_position oc @@ Int64.of_int ofs in
+            Lwt_io.write oc value) rvs
 
     let rec walk t acc dir =
       Lwt_stream.fold_s

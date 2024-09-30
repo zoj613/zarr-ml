@@ -20,6 +20,7 @@ module Make (Io : Types.IO) : sig
     int ->
     'a array_repr ->
     (int array * 'a) list ->
+    'a ->
     unit Deferred.t
   val partial_decode :
     t ->
@@ -27,5 +28,6 @@ module Make (Io : Types.IO) : sig
     int ->
     'a array_repr ->
     (int * int array) list ->
+    'a ->
     (int * 'a) list Deferred.t
 end

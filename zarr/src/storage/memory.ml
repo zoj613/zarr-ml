@@ -30,7 +30,8 @@ module Make (Deferred : Types.Deferred) = struct
     then Deferred.return_unit else erase t key
 
   let size t key =
-    Deferred.return @@ String.length @@ M.find key @@ Atomic.get t
+    Deferred.return @@ 
+    Option.fold ~none:0 ~some:String.length (M.find_opt key @@ Atomic.get t)
 
   let rec erase_prefix t prefix =
     let pred ~prefix k v = if String.starts_with ~prefix k then None else Some v in
@@ -48,17 +49,18 @@ module Make (Deferred : Types.Deferred) = struct
     List.fold_left (add ~value ~size) [] (List.rev ranges)
 
   let rec set_partial_values t key ?(append=false) rv =
-    let f = if append then fun acc (_, v) -> acc ^ v else
+    let m = Atomic.get (t : t) in
+    let ov = Option.fold ~none:String.empty ~some:Fun.id @@ M.find_opt key m in
+    let f = if append || ov = String.empty then
+      fun acc (_, v) -> acc ^ v else
       fun acc (rs, v) ->
         let s = Bytes.of_string acc in
-        String.(length v |> Bytes.blit_string v 0 s rs);
-        Bytes.to_string s in
-    let m = Atomic.get (t : t) in
-    let ov = M.find key m in
+        Bytes.blit_string v 0 s rs String.(length v);
+        Bytes.to_string s
+    in
     let m' = M.add key (List.fold_left f ov rv) m in
-    let success = Atomic.compare_and_set t m m' in
-    if not success then set_partial_values t key ~append rv
-    else Deferred.return_unit
+    if Atomic.compare_and_set t m m'
+    then Deferred.return_unit else set_partial_values t key ~append rv
 
   let list_dir t prefix =
     let module S = Set.Make(String) in

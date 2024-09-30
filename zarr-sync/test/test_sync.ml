@@ -53,6 +53,7 @@ let test_storage
     ;codecs = [`Bytes LE]} in
   let anode = Node.Array.(gnode / "arrnode") in
   let slice = [|R [|0; 20|]; I 10; R [|0; 29|]|] in
+  let bigger_slice =  [|R [|0; 21|]; L [|9; 10|] ; R [|0; 30|]|] in
 
   List.iter
     (fun codecs ->
@@ -65,10 +66,13 @@ let test_storage
       Ndarray.fill exp Complex.{re=2.0; im=0.};
       Array.write store anode slice exp;
       let got = Array.read store anode slice Complex32 in
+      (* test if a bigger slice containing new elements can be read from store *)
+      let _ = Array.read store anode bigger_slice Complex32 in
       assert_equal exp got;
-      Ndarray.fill exp Complex.{re=0.; im=3.0};
-      Array.write store anode slice exp;
+      (* test writing a bigger slice to store *)
+      Array.write store anode bigger_slice @@ Ndarray.init Complex32 [|22; 2; 31|] (Fun.const Complex.{re=0.; im=3.0});
       let got = Array.read store anode slice Complex32 in
+      Ndarray.fill exp Complex.{re=0.; im=3.0};
       assert_equal exp got;
       Array.delete store anode)
     [[`ShardingIndexed cfg]; [`ShardingIndexed cfg2]];
@@ -163,12 +167,7 @@ let test_storage
 
 let _ =
   run_test_tt_main @@ ("Run Zarr sync API tests" >::: [
-
-  "test in-memory store" >::
-    (fun _ -> test_storage (module MemoryStore) @@ MemoryStore.create ())
-  ;
-
-  "test filesystem store" >::
+  "test sync-based stores" >::
     (fun _ ->
       let rand_num = string_of_int @@ Random.int 1_000_000 in
       let tmp_dir = Filename.(concat (get_temp_dir_name ()) (rand_num ^ ".zarr")) in
@@ -204,5 +203,6 @@ let _ =
         (Zarr.Storage.Not_a_filesystem_store fn)
         (fun () -> FilesystemStore.open_store fn);
 
+      test_storage (module MemoryStore) @@ MemoryStore.create ();
       test_storage (module FilesystemStore) s)
   ])

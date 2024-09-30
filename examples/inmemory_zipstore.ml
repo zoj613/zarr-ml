@@ -92,23 +92,28 @@ end = struct
           then Deferred.return_unit else set t key value
 
     let rec set_partial_values t key ?(append=false) rv =
-      let f = 
-        if append then
-          fun acc (_, v) ->
-            Deferred.return @@ acc ^ v
-        else
-          fun acc (rs, v) ->
-            let s = Bytes.unsafe_of_string acc in
-            String.(length v |> Bytes.blit_string v 0 s rs);
-            Deferred.return @@ Bytes.unsafe_to_string s
-      in
       let z = Atomic.get t.ic in
-      match Zipc.Member.kind (Option.get @@ Zipc.find key z) with
+      let mem = match Zipc.find key z with
+        | Some m -> m
+        | None ->
+          let empty = Result.fold
+            ~error:failwith ~ok:Fun.id @@ Zipc.File.stored_of_binary_string String.empty in
+          Result.fold
+            ~error:failwith ~ok:Fun.id @@ Zipc.Member.make ~path:key (Zipc.Member.File empty)
+      in
+      match Zipc.Member.kind mem with
       | Zipc.Member.Dir -> Deferred.return_unit 
       | Zipc.Member.File file ->
         match Zipc.File.to_binary_string file with
         | Error e -> failwith e
         | Ok s ->
+          let f = if append || s = String.empty then
+            fun acc (_, v) -> Deferred.return @@ acc ^ v else
+            fun acc (rs, v) ->
+              let s = Bytes.unsafe_of_string acc in
+              String.(length v |> Bytes.blit_string v 0 s rs);
+              Deferred.return @@ Bytes.unsafe_to_string s
+          in
           let* value = Deferred.fold_left f s rv in
           match Zipc.File.deflate_of_binary_string ~level:t.level value with
           | Error e -> failwith e

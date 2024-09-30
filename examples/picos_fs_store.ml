@@ -33,10 +33,12 @@ end = struct
         PU.mkdir parent_dir perm
 
     let size t key =
-      let fd = PU.openfile (key_to_fspath t key) [PU.O_RDONLY] t.perm in
-      Fun.protect ~finally:(fun () -> PU.close fd) @@ fun () ->
-      PU.set_nonblock fd;
-      PU.(fstat fd).st_size
+      match PU.openfile (key_to_fspath t key) [PU.O_RDONLY] t.perm with
+      | exception Unix.Unix_error (Unix.ENOENT, "open", _) -> 0
+      | fd ->
+        Fun.protect ~finally:(fun () -> PU.close fd) @@ fun () ->
+        PU.set_nonblock fd;
+        PU.(fstat fd).st_size
 
     let get t key =
       let fd = PU.openfile (key_to_fspath t key) [PU.O_RDONLY] t.perm in
@@ -72,8 +74,14 @@ end = struct
       ignore @@ PU.write_substring fd v 0 (String.length v)
 
     let set_partial_values t key ?(append=false) rvs =
-      let flags = if append then PU.[O_APPEND; O_WRONLY] else [PU.O_WRONLY] in
-      let fd = PU.openfile (key_to_fspath t key) flags t.perm in
+      let flags = match append with
+        | false -> PU.[O_WRONLY; O_CREAT] 
+        | true -> PU.[O_APPEND; O_WRONLY; O_CREAT] 
+      in
+      let p = key_to_fspath t key in
+      create_parent_dir p t.perm;
+      let fd = PU.openfile p flags t.perm in
+      Fun.protect ~finally:(fun () -> PU.close fd) @@ fun () ->
       rvs |> List.iter @@ fun (ofs, v) ->
       if append then ignore @@ PU.lseek fd 0 PU.SEEK_END
       else ignore @@ PU.lseek fd ofs PU.SEEK_SET;
@@ -113,8 +121,8 @@ end = struct
       Fun.protect ~finally:(fun () -> PU.closedir h) @@ fun () ->
       entries h [] |> List.partition_map @@ fun x ->
       match Filename.concat dir x with
-      | p when Sys.is_directory p -> Either.right @@ (fspath_to_key t p) ^ "/"
-      | p -> Either.left @@ fspath_to_key t p 
+      | p when (PU.stat p).st_kind = PU.S_DIR -> Either.right @@ (fspath_to_key t p) ^ "/"
+      | p -> Either.left @@ fspath_to_key t p
 
     let rename t k k' = PU.rename (key_to_fspath t k) (key_to_fspath t k')
   end

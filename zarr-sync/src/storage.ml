@@ -25,8 +25,7 @@ module FilesystemStore = struct
       let s = In_channel.length ic |> Int64.to_int in
       ranges |> List.map @@ fun (ofs, len) ->
       In_channel.seek ic @@ Int64.of_int ofs;
-      let l = Option.fold ~none:(s - ofs) ~some:Fun.id len in 
-      Option.get @@ In_channel.really_input_string ic l
+      really_input_string ic @@ Option.fold ~none:(s - ofs) ~some:Fun.id len
 
     let set t key v =
       let p = key_to_fspath t key in
@@ -35,12 +34,17 @@ module FilesystemStore = struct
       Out_channel.(with_open_gen f t.perm p @@ fun oc -> output_string oc v; flush oc)
 
     let set_partial_values t key ?(append=false) rvs =
-      let f = [if append then Open_append else Open_wronly] in
       let p = key_to_fspath t key in
-      Out_channel.with_open_gen f t.perm p @@ fun oc ->
-      rvs |> List.iter (fun (rs, value) ->
-      Out_channel.seek oc @@ Int64.of_int rs;
-      Out_channel.output_string oc value);
+      Zarr.Util.create_parent_dir p t.perm;
+      let flags = match append with
+        | false -> [Open_creat; Open_wronly]
+        | true -> [Open_append; Open_creat; Open_wronly]
+      in
+      Out_channel.with_open_gen flags t.perm p @@ fun oc ->
+      List.iter
+        (fun (rs, value) ->
+          Out_channel.seek oc @@ Int64.of_int rs;
+          Out_channel.output_string oc value) rvs;
       Out_channel.flush oc
 
     let is_member t key = Sys.file_exists @@ key_to_fspath t key
@@ -48,8 +52,9 @@ module FilesystemStore = struct
     let erase t key = Sys.remove @@ key_to_fspath t key
 
     let size t key =
-      In_channel.(with_open_gen [Open_rdonly] t.perm (key_to_fspath t key) length)
-      |> Int64.to_int
+      match In_channel.(with_open_gen [Open_rdonly] t.perm (key_to_fspath t key) length) with
+      | exception Sys_error _ -> 0
+      | s -> Int64.to_int s
 
     let rec walk t acc dir =
       List.fold_left

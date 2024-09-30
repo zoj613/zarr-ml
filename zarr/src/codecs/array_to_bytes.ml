@@ -213,8 +213,8 @@ end = struct
     in
     let ib = encode_index_chain t.index_codecs shard_idx in
     match t.index_location with
-    | Start -> String.concat "" @@ ib :: List.rev xs
-    | End -> String.concat "" @@ List.rev @@ ib :: xs
+    | Start -> String.concat String.empty @@ ib :: List.rev xs
+    | End -> String.concat String.empty @@ List.rev @@ ib :: xs
 
   let decode_chain t repr x =
     let shape = List.fold_left ArrayToArray.encoded_repr repr.shape t.a2a in
@@ -387,96 +387,158 @@ module Make (Io : Types.IO) = struct
   open Io
   open Deferred.Syntax
   open ShardingIndexedCodec
-  type t = ShardingIndexedCodec.t
 
+  type t = ShardingIndexedCodec.t
   type set_fn = ?append:bool -> (int * string) list -> unit Deferred.t
 
-  let partial_encode t get_partial (set_partial : set_fn) csize repr pairs =
+  let add_binding ~grid acc (c, v) =
+    let id, co = RegularGrid.index_coord_pair grid c in
+    ArrayMap.add_to_list id (co, v) acc
+
+  (* specialized function for partially writing possibly multiple inner chunks
+     to an empty shard of a designated array using the sharding indexed codec.*)
+  let partial_encode_empty_shard t (set_partial : set_fn) repr pairs fill_value =
+    let update_index ~index i z (ofs, acc) =
+      let arr = Ndarray.create repr.kind t.chunk_shape fill_value in
+      List.iter (fun (c, v) -> Ndarray.set arr c v) z;
+      let s = encode_chain t.codecs arr in
+      let n = String.length s in
+      Ndarray.set index (Array.append i [|0|]) @@ Stdint.Uint64.of_int ofs;
+      Ndarray.set index (Array.append i [|1|]) @@ Stdint.Uint64.of_int n;
+      ofs + n, (ofs, s) :: acc
+    in
+    (* simulate the inner chunks of a shard as a regular grid of specified shape.*)
+    let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
+    (* build a finite map with its keys being an inner chunk's index and values
+       being a list of (coord-within-inner-chunk, new-value) pairs such that
+       new-value is set for the coordinate coord-within-inner-chunk of the inner
+       chunk represented by the associated key.*)
+    let m = List.fold_left (add_binding ~grid) ArrayMap.empty pairs in
+    let cps = Array.map2 (/) repr.shape t.chunk_shape in
+    let init = match t.index_location with
+      | Start -> index_size t.index_codecs cps
+      | End -> 0
+    in
+    let index = Ndarray.create Uint64 (Array.append cps [|2|]) Stdint.Uint64.max_int in
+    let shard_size, ranges = ArrayMap.fold (update_index ~index) m (init, []) in
+    let indexbytes = encode_index_chain t.index_codecs index in
+    (* write all resultant (offset, bytes) pairs into the bytes of the new shard
+       taking note to append/prepend the bytes of the shard's index array.*)
+    match t.index_location with
+    | Start -> set_partial @@ (0, indexbytes) :: List.rev ranges
+    | End -> set_partial @@ List.rev @@ (shard_size, indexbytes) :: ranges
+
+  (* function to partially write new values to one or more inner chunks of
+     an existing shard using the sharding indexed codec. *)
+  let partial_encode t get_partial (set_partial : set_fn) shardsize repr pairs fv =
+    if shardsize = 0 then partial_encode_empty_shard t set_partial repr pairs fv else
     let cps = Array.map2 (/) repr.shape t.chunk_shape in
     let is = index_size t.index_codecs cps in
-    let l, pad =
-      match t.index_location with
-      | Start -> get_partial [0, Some is], is
-      | End -> get_partial [csize - is, None], 0 in
-    let* xs = l in
-    let idx_arr = fst @@ decode_index t cps @@ List.hd xs in
+    let* l = match t.index_location with
+      | Start -> get_partial [0, Some is]
+      | End -> get_partial [shardsize - is, None]
+    in
+    let idx_arr = fst @@ decode_index t cps @@ List.hd l in
     let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
-    let m =
-      List.fold_left
-        (fun acc (c, v) ->
-          let id, co = RegularGrid.index_coord_pair grid c in
-          ArrayMap.add_to_list id (co, v) acc) ArrayMap.empty pairs
+    let m = List.fold_left (add_binding ~grid) ArrayMap.empty pairs in
+    (* split the finite map m into key-value pairs representing empty inner chunks
+       and those that don't (using the fact that empty inner chunks have index
+       array values equal to 2^64 - 1; then process these seperately.*)
+    let empty, nonempty = List.partition_map
+      (fun ((i, _) as bd) ->
+        let oc = Array.append i [|0|] and nc = Array.append i [|1|] in
+        match Ndarray.(get idx_arr oc, get idx_arr nc) with
+        | o, n when Stdint.Uint64.(max_int = o && max_int = n) ->
+          Either.Left ((-1, None), (oc, nc, -1, 0, bd))
+        | o, n ->
+          let o', n' = Stdint.Uint64.(to_int o, to_int n) in
+          Either.Right ((o', Some n'), (oc, nc, o', n', bd))) ArrayMap.(bindings m)
     in
-    let bindings = ArrayMap.bindings m in
-    let ranges, coords =
-      List.split @@
-      List.map
-       (fun (i, _) ->
-          let oc = Array.append i [|0|] in
-          let nc = Array.append i [|1|] in
-          let ofs = Stdint.Uint64.to_int @@ Ndarray.get idx_arr oc in
-          let nb = Stdint.Uint64.to_int @@ Ndarray.get idx_arr nc in
-          (pad + ofs, Some nb), (oc, nc, ofs, nb)) bindings
-    in
+    let ranges, nonempty' = List.split nonempty in
+    (* fold over the nonempty index coordinates and finite map to obtain
+       (offset, bytes) pairs to write in-place and those to append at the
+       end of the shard. bytes to write in-place are determined by comparing
+       encoded size vs the corresponding nbytes[i] value already contained in
+       the shard's index array.*)
     let* xs = get_partial ranges in
     let repr' = {repr with shape = t.chunk_shape} in
-    let bsize, inplace, append = 
-    List.fold_left
-      (fun (a, l, r) ((x, (oc, nc, ofs, nb)), (_, z)) -> 
-          let arr = decode_chain t.codecs repr' x in
-          List.iter (fun (c, v) -> Ndarray.set arr c v) z;
-          let s = encode_chain t.codecs arr in
-          let nb' = String.length s in
-          if nb' = nb then a, (pad + ofs, s) :: l, r
-          else
-            (Ndarray.set idx_arr oc @@ Stdint.Uint64.of_int a;
-            Ndarray.set idx_arr nc @@ Stdint.Uint64.of_int nb';
-            a + nb', l, (a, s) :: r)) 
-      (csize - pad, [], []) List.(combine (combine xs coords) bindings)
+    let bsize, inplace, nonempty_append = List.fold_left2
+      (fun (acc, l, r) x (oc, nc, ofs, nb, (_, z)) -> 
+        let arr = decode_chain t.codecs repr' x in
+        List.iter (fun (c, v) -> Ndarray.set arr c v) z;
+        let s = encode_chain t.codecs arr in
+        let nb' = String.length s in
+        if nb' = nb then acc, (ofs, s) :: l, r else begin
+          Ndarray.set idx_arr oc @@ Stdint.Uint64.of_int acc;
+          Ndarray.set idx_arr nc @@ Stdint.Uint64.of_int nb';
+          acc + nb', l, (acc, s) :: r end) (shardsize, [], []) xs nonempty'
     in
     let* () = match inplace with
       | [] -> Deferred.return_unit
-      | xs -> set_partial xs
+      | rs -> set_partial rs
     in
-    let* () = match append with
+    let* () = match nonempty_append with
       | [] -> Deferred.return_unit
-      | xs -> set_partial ~append:true xs
+      | rs -> set_partial ~append:true @@ List.rev rs
+    in
+    (* new values that need to be written to previously empty inner chunks will
+       be appended at the end of the shard and the corresponding index array's
+       offset and number-of-bytes values updated accordingly.*)
+    let bsize', empty_append = List.fold_left
+      (fun (ofs, l) (_, (oc, nc, _, _, (_, z))) -> 
+        let arr = Ndarray.create repr'.kind repr'.shape fv in
+        List.iter (fun (c, v) -> Ndarray.set arr c v) z;
+        let s = encode_chain t.codecs arr in
+        let n = String.length s in
+        Ndarray.set idx_arr oc @@ Stdint.Uint64.of_int ofs;
+        Ndarray.set idx_arr nc @@ Stdint.Uint64.of_int n;
+        ofs + n, (ofs, s) :: l) (bsize, []) empty
+    in
+    let* () = match empty_append with
+      | [] -> Deferred.return_unit
+      | rs -> set_partial ~append:true @@ List.rev rs
     in
     let ib = encode_index_chain t.index_codecs idx_arr in
     match t.index_location with
     | Start -> set_partial [0, ib]
-    | End -> set_partial ~append:true [bsize, ib]
+    | End -> set_partial ~append:true [bsize', ib]
 
-  let partial_decode t get_partial csize repr pairs =
+  (* function to partially read values off of a non-empty shard previously
+     encoded using the sharding indexed codec. *) 
+  let partial_decode t get_partial shardsize repr pairs fill_value =
+    let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
+    let add_binding ~grid acc (i, y) =
+      let id, c = RegularGrid.index_coord_pair grid y in
+      ArrayMap.add_to_list id (i, c) acc
+    in
+    let m = List.fold_left (add_binding ~grid) ArrayMap.empty pairs in
     let cps = Array.map2 (/) repr.shape t.chunk_shape in
     let is = index_size t.index_codecs cps in
-    let l, pad =
-      match t.index_location with
-      | Start -> get_partial [0, Some is], is
-      | End -> get_partial [csize - is, None], 0 in
-    let* xs = l in
-    let idx_arr = fst @@ decode_index t cps @@ List.hd xs in
-    let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
-    let m =
-      List.fold_left
-        (fun acc (i, y) ->
-          let id, c = RegularGrid.index_coord_pair grid y in
-          ArrayMap.add_to_list id (i, c) acc) ArrayMap.empty pairs
+    let* l = match t.index_location with
+      | Start -> get_partial [0, Some is]
+      | End -> get_partial [shardsize - is, None]
     in
-    let ranges =
-      List.map
-       (fun (i, _) ->
-          let oc = Array.append i [|0|] in
-          let nc = Array.append i [|1|] in
-          let ofs = Stdint.Uint64.to_int @@ Ndarray.get idx_arr oc in
-          let nb = Stdint.Uint64.to_int @@ Ndarray.get idx_arr nc in
-          pad + ofs, Some nb) ArrayMap.(bindings m)
+    let index = fst @@ decode_index t cps @@ List.hd l in
+    let empty, nonempty = List.partition_map
+      (fun ((i, _) as bd) ->
+        match Ndarray.(get index @@ Array.append i [|0|],
+                       get index @@ Array.append i [|1|]) with
+        | o, n when Stdint.Uint64.(max_int = o && max_int = n) ->
+          Either.Left ((-1, None), bd)
+        | o, n ->
+          let o', n' = Stdint.Uint64.(to_int o, to_int n) in
+          Either.Right ((o', Some n'), bd)) ArrayMap.(bindings m)
     in
+    let ranges, bindings = List.split nonempty in
     let+ xs = get_partial ranges in
     let repr' = {repr with shape = t.chunk_shape} in
-    List.concat_map
-      (fun (x, (_, z)) ->
+    let res1 = List.concat @@ List.map2
+      (fun x (_, z) ->
         let arr = decode_chain t.codecs repr' x in
-        List.map (fun (i, c) -> i, Ndarray.get arr c) z)
-      List.(combine xs @@ ArrayMap.bindings m)
+        List.map (fun (i, c) -> i, Ndarray.get arr c) z) xs bindings
+    in
+    let res2 = List.concat_map
+      (fun (_, (_, z)) -> List.map (fun (i, _) -> i, fill_value) z) empty
+    in  
+    res1 @ res2
 end

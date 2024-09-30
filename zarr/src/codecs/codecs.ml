@@ -133,15 +133,15 @@ module Make (Io : Types.IO) = struct
     | {a2a = []; a2b = `ShardingIndexed _; b2b = []} -> true
     | _ -> false
 
-  let partial_encode t f g bsize repr pairs =
+  let partial_encode t f g bsize repr pairs fv =
     match t.a2b with
     | `ShardingIndexed c ->
-      ShardingIndexedCodec.partial_encode c f g bsize repr pairs
+      ShardingIndexedCodec.partial_encode c f g bsize repr pairs fv
     | `Bytes _ -> failwith "bytes codec does not support partial encoding." 
 
-  let partial_decode t f s repr pairs =
+  let partial_decode t f s repr pairs fv =
     match t.a2b with
     | `ShardingIndexed c ->
-      ShardingIndexedCodec.partial_decode c f s repr pairs
+      ShardingIndexedCodec.partial_decode c f s repr pairs fv
     | `Bytes _ -> failwith "bytes codec does not support partial decoding."
 end

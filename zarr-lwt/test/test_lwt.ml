@@ -65,8 +65,11 @@ let test_storage
       assert_equal exp arr;
       Ndarray.fill exp Complex.{re=0.; im=3.0};
       Array.write store anode slice exp >>= fun () ->
-      Array.read store anode slice Complex32 >>| fun got ->
-      assert_equal exp got)
+      Array.read store anode slice Complex32 >>= fun got ->
+      assert_equal exp got;
+      match codecs with
+      | [`ShardingIndexed _] -> Array.delete store anode
+      | _ -> Deferred.return_unit)
     [[`ShardingIndexed cfg]; [`Bytes BE]] >>= fun () ->
 
   let child = Node.Group.of_path "/some/child/group" in

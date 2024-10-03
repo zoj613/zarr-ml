@@ -29,7 +29,6 @@
    (ocaml
      (and (>= 4.14.0)))
    (yojson (>= 1.6.0))
-   (ezgzip (>= 0.2.0))
    (stdint (>= 0.7.2))
    (checkseum (>= 0.4.0))
    (odoc :with-doc)

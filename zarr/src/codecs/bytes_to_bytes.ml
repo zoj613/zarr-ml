@@ -14,10 +14,13 @@ module GzipCodec = struct
       Error (Printf.sprintf "Invalid Gzip level %d" i)
 
   let encode l x =
-    Ezgzip.compress ~level:(to_int l) x
+    Bytes.Reader.to_string @@
+    Bytesrw_zlib.Gzip.compress_reads ~level:(to_int l) () @@
+    Bytes.Reader.of_string x
 
   let decode x =
-    Result.get_ok @@ Ezgzip.decompress x
+    Bytes.Reader.to_string @@
+    Bytesrw_zlib.Gzip.decompress_reads () @@ Bytes.Reader.of_string x
 
   let to_yojson l =
     `Assoc

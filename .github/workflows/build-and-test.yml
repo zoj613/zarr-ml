@@ -44,6 +44,7 @@ jobs:
       - name: setup
         run: |
           opam install --deps-only --with-test --with-doc --yes zarr
+          opam install bytesrw conf-zlib conf-zstd --yes
           opam install lwt --yes
           opam exec -- dune build zarr zarr-sync zarr-lwt
       

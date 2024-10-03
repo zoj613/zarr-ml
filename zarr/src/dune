@@ -4,6 +4,7 @@
  (libraries
    yojson
    ezgzip
+   bytesrw.zstd
    stdint
    checkseum)
  (ocamlopt_flags

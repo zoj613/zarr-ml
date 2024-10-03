@@ -40,3 +40,6 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/zoj613/zarr-ml.git"
+pin-depends: [
+  ["bytesrw.dev" "git+https://erratique.ch/repos/bytesrw.git"]
+]

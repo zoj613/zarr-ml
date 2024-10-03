@@ -1,4 +1,5 @@
 open Codecs_intf
+open Bytesrw
 
 (* https://zarr-specs.readthedocs.io/en/latest/v3/codecs/gzip/v1.0.html *)
 module GzipCodec = struct
@@ -52,27 +53,68 @@ module Crc32cCodec = struct
       Ok `Crc32c
 end
 
+(* https://github.com/zarr-developers/zarr-specs/pull/256 *)
+module ZstdCodec = struct
+  let min_clevel = -131072 and max_clevel = 22
+
+  let parse_clevel l =
+    if l < min_clevel || max_clevel < l then (raise Invalid_zstd_level)
+
+  let encode clevel checksum x =
+    let params = Bytesrw_zstd.Cctx_params.make ~checksum ~clevel () in
+    Bytes.Reader.to_string @@
+    Bytesrw_zstd.compress_reads ~params () @@ Bytes.Reader.of_string x
+
+  let decompress_params = Bytesrw_zstd.Dctx_params.default
+
+  let decode x =
+    Bytes.Reader.to_string @@
+    Bytesrw_zstd.decompress_reads ~params:decompress_params () @@
+    Bytes.Reader.of_string x
+
+  let to_yojson l c =
+    `Assoc
+    [("name", `String "zstd")
+    ;("configuration", `Assoc [("level", `Int l); ("checksum", `Bool c)])]
+
+  let of_yojson x =
+    match Yojson.Safe.Util.(member "configuration" x) with
+    | `Assoc [("level", `Int l); ("checksum", `Bool c)] ->
+      begin match parse_clevel l with
+      | exception Invalid_zstd_level -> Error "Invalid_zstd_level"
+      | () -> Result.ok @@ `Zstd (l, c) end
+    | _ -> Error "Invalid Zstd configuration."
+end
+
 module BytesToBytes = struct
   let encoded_size :
     int -> fixed_bytestobytes -> int
     = fun input_size -> function
     | `Crc32c -> Crc32cCodec.encoded_size input_size
 
+  let parse = function
+    | `Gzip _ | `Crc32c -> ()
+    | `Zstd (l, _) -> ZstdCodec.parse_clevel l
+
   let encode x = function
     | `Gzip l -> GzipCodec.encode l x
     | `Crc32c -> Crc32cCodec.encode x
+    | `Zstd (l, c) -> ZstdCodec.encode l c x
 
   let decode t x = match t with
     | `Gzip _ -> GzipCodec.decode x
     | `Crc32c -> Crc32cCodec.decode x
+    | `Zstd _ -> ZstdCodec.decode x
 
   let to_yojson = function
     | `Gzip l -> GzipCodec.to_yojson l
     | `Crc32c -> Crc32cCodec.to_yojson 
+    | `Zstd (l, c) -> ZstdCodec.to_yojson l c
 
   let of_yojson x =
     match Util.get_name x with
     | "gzip" -> GzipCodec.of_yojson x
     | "crc32c" -> Crc32cCodec.of_yojson x
+    | "zstd" -> ZstdCodec.of_yojson x
     | s -> Error (Printf.sprintf "codec %s is not supported." s)
 end

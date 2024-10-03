@@ -238,19 +238,22 @@ let tests = [
             [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
     ~msg:"Must be exactly one array->bytes codec.";
   (* test violation of index_codec invariant when it contains variable-sized codecs. *)
-  decode_chain
-    ~shape:[|5; 5; 5|]
-    ~str:{|[
-      {"name": "sharding_indexed",
-       "configuration":
-         {"index_location": "start",
-          "chunk_shape": [5, 5, 5],
-          "index_codecs":
-            [{"name": "bytes", "configuration": {"endian": "big"}},
-             {"name": "gzip", "configuration": {"level": 1}}],
-          "codecs":
-            [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
-    ~msg:"Must be exactly one array->bytes codec.";
+  List.iter
+    (fun c ->
+      decode_chain
+        ~shape:[|5; 5; 5|]
+        ~str:(Format.sprintf {|[
+          {"name": "sharding_indexed",
+           "configuration":
+             {"index_location": "start",
+              "chunk_shape": [5, 5, 5],
+              "index_codecs":
+                [{"name": "bytes", "configuration": {"endian": "big"}}, %s],
+              "codecs":
+                [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|} c)
+        ~msg:"Must be exactly one array->bytes codec.")
+    [{|{"name": "zstd", "configuration": {"level": 0, "checksum": false}}|}
+    ;{|{"name": "gzip", "configuration": {"level": 1}}|}];
 
   let shape = [|10; 15; 10|] in
   let kind = Ndarray.Float64 in
@@ -365,6 +368,47 @@ let tests = [
       assert_equal arr @@ Chain.decode c {shape; kind} encoded)
     [L0; L1; L2; L3; L4; L5; L6; L7; L8; L9])
 ;
+
+"test zstd codec" >:: (fun _ ->
+  (* test wrong compression level *)
+  List.iter
+    (fun l ->
+      decode_chain
+        ~shape:[||]
+        ~str:(Format.sprintf {|[{"name": "bytes", "configuration": {"endian": "little"}},
+                {"name": "zstd", "configuration": {"level": %d, "checksum": false}}]|} l)
+        ~msg:"zstd codec is unsupported or has invalid configuration.")
+    [50; -500_000];
+
+  (* test incorrect configuration *)
+  decode_chain
+    ~shape:[||]
+    ~str:{|[{"name": "bytes", "configuration": {"endian": "little"}},
+            {"name": "zstd", "configuration": {"something": -1}}]|}
+    ~msg:"zstd codec is unsupported or has invalid configuration.";
+
+  (* test correct deserialization of zstd compression level *)
+  let shape = [|10; 15; 10|] in
+  List.iter
+    (fun level ->
+      let str =
+        Format.sprintf
+        {|[{"name": "bytes", "configuration": {"endian": "little"}},
+           {"name": "zstd", "configuration": {"level": %d, "checksum": false}}]|} level 
+      in
+      let r = Chain.of_yojson shape @@ Yojson.Safe.from_string str in
+      assert_bool "Encoding this chain should not fail" @@ Result.is_ok r) [-131072; 0];
+
+  (* test encoding/decoding for various compression levels *)
+  let arr = Ndarray.create Int shape Int.max_int in
+  List.iter
+    (fun (level, checksum) ->
+      let c = Chain.create shape [`Bytes LE; `Zstd (level, checksum)] in
+      let encoded = Chain.encode c arr in
+      assert_equal arr @@ Chain.decode c {shape; kind = Ndarray.Int} encoded)
+    [(-131072, false); (-131072, true); (0, false); (0, true)])
+;
+
 "test bytes codec" >:: (fun _ ->
   let shape = [|2; 2; 2|] in
   (* test decoding of chain with invalid endianness name *)

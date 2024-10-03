@@ -76,6 +76,7 @@ module Chain = struct
     | x :: _ as xs -> 
       ArrayToArray.parse x shape;
       List.fold_left ArrayToArray.encoded_repr shape xs);
+    List.iter BytesToBytes.parse b2b;
     {a2a; a2b; b2b}
 
   let encode t x =

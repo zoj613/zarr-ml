@@ -1,6 +1,7 @@
 open Codecs_intf
 
 module BytesToBytes : sig
+  val parse : bytestobytes -> unit
   val encoded_size : int -> fixed_bytestobytes -> int
   val encode : string -> bytestobytes -> string
   val decode : bytestobytes -> string -> string

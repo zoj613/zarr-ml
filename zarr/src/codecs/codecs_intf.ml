@@ -2,6 +2,7 @@ exception Array_to_bytes_invariant
 exception Invalid_transpose_order
 exception Invalid_sharding_chunk_shape
 exception Invalid_codec_ordering
+exception Invalid_zstd_level
 
 type arraytoarray =
   [ `Transpose of int array ]
@@ -13,7 +14,8 @@ type fixed_bytestobytes =
   [ `Crc32c ]
 
 type variable_bytestobytes =
-  [ `Gzip of compression_level ]
+  [ `Gzip of compression_level
+  | `Zstd of int * bool ]
 
 type bytestobytes =
   [ fixed_bytestobytes | variable_bytestobytes ]
@@ -62,6 +64,9 @@ module type Interface = sig
   (** raised when a codec chain has incorrect ordering of codecs. i.e if the
       ordering is not [arraytoarray list -> 1 arraytobytes -> bytestobytes list]. *)
 
+  exception Invalid_zstd_level
+  (** raised when a codec chain contains a Zstd codec with an incorrect compression value.*)
+
   (** The type of [array -> array] codecs. *)
   type arraytoarray =
     [ `Transpose of int array ]
@@ -78,7 +83,8 @@ module type Interface = sig
   (** A type representing [bytes -> bytes] codecs that produce
       variable sized encoded strings. *)
   type variable_bytestobytes =
-    [ `Gzip of compression_level ]
+    [ `Gzip of compression_level
+    | `Zstd of int * bool ]
 
   (** The type of [bytes -> bytes] codecs. *)
   type bytestobytes =

@@ -92,7 +92,7 @@ assert (Ndarray.equal x' y);;
 ```ocaml
 let config =
   {chunk_shape = [|5; 3; 5|]
-  ;codecs = [`Transpose [|2; 0; 1|]; `Bytes LE; `Gzip L5]
+  ;codecs = [`Transpose [|2; 0; 1|]; `Bytes LE; `Zstd (0, true)]
   ;index_codecs = [`Bytes BE; `Crc32c]
   ;index_location = Start};;
 

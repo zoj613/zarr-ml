@@ -375,7 +375,7 @@ end = struct
         let* l = acc in
         match c with
         | `Crc32c -> Ok (`Crc32c :: l)
-        | `Gzip _ -> Error msg) ic.b2b (Ok [])
+        | `Gzip _ | `Zstd _ -> Error msg) ic.b2b (Ok [])
     in
     let+ a2b = match ic.a2b with
       | `Bytes e -> Ok (`Bytes e)

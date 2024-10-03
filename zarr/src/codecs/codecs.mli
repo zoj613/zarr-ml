@@ -19,6 +19,8 @@ module Chain : sig
         if [c] contains more than one bytes->bytes codec.
       @raise Invalid_transpose_order
         if [c] contains a transpose codec with invalid order array.
+      @raise Invalid_zstd_level
+        if [c] contains a Zstd codec whose compression level is invalid.
       @raise Invalid_sharding_chunk_shape
         if [c] contains a shardingindexed codec with an
         incorrect inner chunk shape. *)

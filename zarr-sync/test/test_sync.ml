@@ -45,7 +45,7 @@ let test_storage
     {chunk_shape = [|2; 5; 5|]
     ;index_location = End
     ;index_codecs = [`Bytes LE; `Crc32c]
-    ;codecs = [`Transpose [|2; 0; 1|]; `Bytes BE; `Gzip L5]} in
+    ;codecs = [`Transpose [|2; 0; 1|]; `Bytes BE; `Zstd (0, false)]} in
   let cfg2 =
     {chunk_shape = [|2; 5; 5|]
     ;index_location = Start

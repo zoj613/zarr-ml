@@ -16,12 +16,12 @@ module TransposeCodec = struct
 
   (* See https://github.com/owlbarn/owl/issues/671#issuecomment-2241761001 *)
 
-  let encode o x = Ndarray.transpose ~axis:o x
+  let encode o x = Ndarray.transpose ~axes:o x
 
   let decode o x =
     let inv_order = Array.(make (length o) 0) in
     Array.iteri (fun i x -> inv_order.(x) <- i) o;
-    Ndarray.transpose ~axis:inv_order x
+    Ndarray.transpose ~axes:inv_order x
 
   let to_yojson order =
     let o = `List (Array.to_list @@ Array.map (fun x -> `Int x) order) in

@@ -180,7 +180,7 @@ end = struct
     = fun t x ->
     let y = match t.a2a with
       | [] -> x
-      | `Transpose o :: _ -> Ndarray.transpose ~axis:o x in
+      | `Transpose o :: _ -> Ndarray.transpose ~axes:o x in
     let z = match t.a2b with
       | `Bytes e -> BytesCodec.encode y e in
     List.fold_left BytesToBytes.encode z (t.b2b :> bytestobytes list)
@@ -237,7 +237,7 @@ end = struct
     | `Transpose o :: _ ->
       let inv_order = Array.(make (length o) 0) in
       Array.iteri (fun i x -> inv_order.(x) <- i) o;
-      Ndarray.transpose ~axis:inv_order arr
+      Ndarray.transpose ~axes:inv_order arr
 
   let index_size index_chain cps =
     encoded_size (16 * Util.prod cps) index_chain

@@ -66,6 +66,22 @@ let tests = [
   assert_equal ~printer:Fun.id "????" (Buffer.contents buf);
 )
 ;
+"test transpose functionality" >:: (fun _ ->
+  let shape = [|2; 1; 3|]
+  and axes = [|2; 0; 1|] 
+  and a = [|0.15458236; 0.94363903; 0.63893012; 0.29207497; 0.31390295; 0.42341309|] in
+  let x = M.of_array Float32 shape a in
+  let x' = M.transpose ~axes x in
+  assert_equal ~printer:[%show: int array] [|3; 2; 1|] (M.shape x');
+  (* test if a particular value is transposed correctly. *)
+  assert_equal ~printer:string_of_float (M.get x [|1; 0; 2|]) (M.get x' [|2; 1; 0|]);
+  let flat_exp = [|0.15458236; 0.29207497; 0.94363903; 0.31390295; 0.63893012; 0.42341309|] in
+  assert_equal ~printer:[%show: float array] flat_exp (M.to_array x');
+  let inv_order = Array.(make (length axes) 0) in
+  Array.iteri (fun i x -> inv_order.(x) <- i) axes;
+  assert_equal true @@ M.equal x (M.transpose ~axes:inv_order x')
+)
+;
 "test interop with bigarrays" >:: (fun _ ->
   let s = [|2; 5; 3|] in
   let module B = Bigarray in

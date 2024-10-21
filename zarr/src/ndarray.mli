@@ -79,7 +79,7 @@ val iter : ('a -> unit) -> 'a t -> unit
 val equal : 'a t -> 'a t -> bool
 (** [equal x y] is [true] iff [x] and [y] are equal, else [false].*)
 
-val transpose : ?axis:int array -> 'a t -> 'a t
+val transpose : ?axes:int array -> 'a t -> 'a t
 (** [transpose o x] permutes the axes of [x] according to [o].*)
 
 val to_bigarray : 'a t -> ('a, 'b) Bigarray.kind -> ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t

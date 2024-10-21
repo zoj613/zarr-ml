@@ -78,10 +78,15 @@ let of_array dtype shape xs =
 let coord_to_index i s =
   Array.fold_left (fun a (x, y) -> Int.add a (x * y)) 0 @@ Array.combine i s
 
-let index_to_coord i s =
-  let n = Array.length s in
-  let c = List.init (n - 1) (fun j -> (i mod s.(j)) / s.(j+1)) in
-  Array.of_list @@ i / s.(0) :: c
+(* This snippet is adapted from the Owl project.
+
+   The MIT License (MIT)
+   Copyright (c) 2016-2022 Liang Wang liang@ocaml.xyz *)
+let index_to_coord ~strides i j =
+  j.(0) <- i / strides.(0);
+  for k = 1 to Array.length strides - 1 do
+    j.(k) <- i mod strides.(k - 1) / strides.(k)
+  done
 
 let get t i = t.data.(coord_to_index i t.strides)
 
@@ -122,8 +127,13 @@ let of_bigarray :
   type a b c. (a, b, c) B.Genarray.t -> a t = fun x ->
   let x' = B.Genarray.change_layout x C_layout in
   let shape = B.Genarray.dims x' in
-  let s = make_strides shape in
-  let f d = init d shape @@ fun i -> B.Genarray.get x' (index_to_coord i s) in
+  let coord = Array.make (B.Genarray.num_dims x') 0 in
+  let strides = make_strides shape in
+  let value_at_index i =
+    index_to_coord ~strides i coord;
+    B.Genarray.get x' coord
+  in
+  let f d = init d shape value_at_index in
   match[@warning "-8"] B.Genarray.kind x with
   | B.Char -> f Char
   | B.Int8_signed -> f Int8
@@ -150,11 +160,22 @@ let equal x y =
    shares internal data with the input. Since this function is only ever
    used when serializing/deserializing an Ndarray.t type then this should not
    be an issue since the input array is never used again after it is transposed. *)
-let transpose ?axis x =
+let transpose ?axes x =
   let n = ndims x in
-  let p = Option.fold ~none:(Array.init n (fun i -> n - 1 - i)) ~some:Fun.id axis in
+  let p = Option.fold ~none:(Array.init n (fun i -> n - 1 - i)) ~some:Fun.id axes in
   let shape = Array.map (fun i -> x.shape.(i)) p in
-  {x with shape; strides = make_strides shape}
+  let x' = {x with shape; strides = make_strides shape; data = Array.copy x.data} in
+  let c = Array.make n 0 and c' = Array.make n 0 in
+  (* Project a 1d-indexed value of the input ndarray into its corresponding
+     n-dimensional index/coordinate of the transposed ndarray according to the
+     permutation described by [p].*)
+  let project_1d_to_nd i a =
+    index_to_coord ~strides:x.strides i c;
+    Array.iteri (fun j b -> c'.(j) <- c.(b)) p; 
+    set x' c' a
+  in
+  iteri project_1d_to_nd x;
+  x'
 
 (* The [index] type definition as well as functions tagged with [@coverage off]
   in this Indexing module were directly copied from the Owl project to emulate

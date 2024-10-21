@@ -54,9 +54,9 @@ module Make (Deferred : Types.Deferred) = struct
     let f = if append || ov = String.empty then
       fun acc (_, v) -> acc ^ v else
       fun acc (rs, v) ->
-        let s = Bytes.of_string acc in
+        let s = Bytes.unsafe_of_string acc in
         Bytes.blit_string v 0 s rs String.(length v);
-        Bytes.to_string s
+        Bytes.unsafe_to_string s
     in
     let m' = M.add key (List.fold_left f ov rv) m in
     if Atomic.compare_and_set t m m'

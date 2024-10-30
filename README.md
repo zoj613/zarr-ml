@@ -143,5 +143,5 @@ FilesystemStore.Array.rename store anode "new_name";;
 [6]: https://zarr-specs.readthedocs.io/en/latest/v3/core/v3.0.html
 [7]: https://zoj613.github.io/zarr-ml/zarr/Zarr/index.html#examples
 [8]: https://github.com/ocaml-multicore/eio
-[9]: https://github.com/zoj613/zarr-ml/tree/main/examples/inmemory_zipstore.ml
+[9]: https://github.com/zoj613/zarr-ml/tree/main/examples/zipstore.ml
 [10]: https://github.com/zoj613/zarr-ml/tree/main/examples/picos_fs_store.ml

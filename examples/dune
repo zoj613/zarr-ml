@@ -1,6 +1,6 @@
 (executable
- (name readonly_zipstore)
- (modules readonly_zipstore)
+ (name zipstore)
+ (modules zipstore)
  (ocamlopt_flags (:standard -O3))
  (libraries zarr-eio camlzip))
 

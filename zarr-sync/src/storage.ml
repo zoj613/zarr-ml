@@ -4,6 +4,12 @@ module MemoryStore = struct
   let create = M.create
 end
 
+module ZipStore = struct
+  module Z = Zarr.Zip.Make(Deferred)
+  include Zarr.Storage.Make(Z)
+  let with_open = Z.with_open
+end
+
 module FilesystemStore = struct
   module F = struct
     module Deferred = Deferred

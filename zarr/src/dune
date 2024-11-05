@@ -5,6 +5,7 @@
    yojson
    bytesrw.zstd
    bytesrw.zlib
+   zipc
    stdint
    checkseum)
  (ocamlopt_flags

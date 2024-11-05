@@ -141,8 +141,11 @@ let _ =
         (Zarr.Storage.Not_a_filesystem_store fn)
         (fun () -> FilesystemStore.open_store fn);
 
-      Lwt_main.run @@
-      Lwt.join 
-        [test_storage (module MemoryStore) @@ MemoryStore.create ()
+      let zpath = tmp_dir ^ ".zip" in
+      Lwt_main.run @@ Lwt.join 
+        [ZipStore.with_open `Read_write zpath (fun z -> test_storage (module ZipStore) z)
+         (* test just opening the now exisitant archive created by the previous test. *)
+        ;ZipStore.with_open `Read_only zpath (fun _ -> ZipStore.Deferred.return_unit)
+        ;test_storage (module MemoryStore) @@ MemoryStore.create ()
         ;test_storage (module FilesystemStore) s])
 ])

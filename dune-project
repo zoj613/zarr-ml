@@ -30,6 +30,7 @@
      (and (>= 4.14.0)))
    (yojson (>= 1.6.0))
    (stdint (>= 0.7.2))
+   (zipc (>= 0.2.0))
    (checkseum (>= 0.4.0))
    (odoc :with-doc)
    (ounit2 :with-test)

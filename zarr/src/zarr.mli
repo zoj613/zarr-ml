@@ -30,6 +30,7 @@ module Metadata = Metadata
 
 module Storage = Storage
 module Memory = Memory
+module Zip = Zip
 module Types = Types
 
 (** {1 Codecs} *)

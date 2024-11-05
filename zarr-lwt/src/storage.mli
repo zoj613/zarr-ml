@@ -7,6 +7,9 @@ module MemoryStore : sig
   (** [create ()] returns a new In-memory Zarr store type. *)
 end
 
+(** An Lwt-aware Zip file storage backend for a Zarr v3 hierarchy. *)
+module ZipStore : sig include Zarr.Zip.S with type 'a Deferred.t = 'a Lwt.t end
+
 module FilesystemStore : sig
   (** A local filesystem storage backend for a Zarr V3 hierarchy. *)
 

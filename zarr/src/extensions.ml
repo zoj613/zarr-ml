@@ -3,25 +3,21 @@ module RegularGrid = struct
 
   type t = int array
 
-  let chunk_shape t = t
+  let chunk_shape : t -> int array = Fun.id
 
-  let create ~array_shape cs =
-    if Array.(length cs <> length array_shape) || Util.(max cs > max array_shape)
-    then raise Grid_shape_mismatch else cs
+  let create : array_shape:int array -> int array -> t
+    = fun ~array_shape chunk_shape ->
+    if Array.(length chunk_shape <> length array_shape) || Util.(max chunk_shape > max array_shape)
+    then raise Grid_shape_mismatch else chunk_shape
 
-  let ceildiv x y =
-    Float.(to_int @@ ceil (of_int x /. of_int y))
+  let ceildiv x y = Float.(to_int @@ ceil (of_int x /. of_int y))
 
-  let floordiv x y =
-    Float.(to_int @@ floor (of_int x /. of_int y))
+  let floordiv x y = Float.(to_int @@ floor (of_int x /. of_int y))
 
-  let grid_shape t array_shape =
-    Array.map2 ceildiv array_shape t
+  let grid_shape t array_shape = Array.map2 ceildiv array_shape t
 
   let index_coord_pair t coord =
-    Array.map2
-      (fun x y -> floordiv x y, Int.rem x y) coord t
-    |> Array.split
+    (Array.map2 floordiv coord t, Array.map2 Int.rem coord t)
 
   (* returns all chunk indices in this regular grid *)
   let indices t array_shape =
@@ -33,10 +29,8 @@ module RegularGrid = struct
 
   let ( = ) x y = x = y
 
-  let to_yojson t =
-    let chunk_shape = 
-      `List (Array.to_list @@ Array.map (fun x -> `Int x) t)
-    in
+  let to_yojson : t -> Yojson.Safe.t = fun t ->
+    let chunk_shape = `List (List.map (fun x -> `Int x) @@ Array.to_list t) in
     `Assoc
     [("name", `String "regular")
     ;("configuration", `Assoc [("chunk_shape", chunk_shape)])]
@@ -52,41 +46,25 @@ module ChunkKeyEncoding = struct
 
   (* map a chunk coordinate index to a key. E.g, (2,3,1) maps to c/2/3/1 *)
   let encode {name; sep; _} index =
-    let f i acc =
-      string_of_int i :: acc
-    in
+    let xs = Array.fold_right (fun i acc -> string_of_int i :: acc) index [] in
     match name with
-    | Default ->
-      String.concat sep @@
-      "c" :: Array.fold_right f index []
-    | V2 ->
-      if Array.length index = 0 
-      then
-        "0"
-      else
-        String.concat sep @@
-        Array.fold_right f index []
+    | Default -> String.concat sep ("c" :: xs)
+    | V2 -> if Array.length index = 0 then "0" else String.concat sep xs
 
   let ( = ) x y =
     x.name = y.name && x.sep = y.sep && x.is_default = y.is_default
 
-  let to_yojson {name; sep; is_default} =
-    let str =
-      match name with
+  let to_yojson : t -> Yojson.Safe.t = fun {name; sep; is_default} ->
+    let str = match name with
       | Default -> "default"
       | V2 -> "v2"
     in
-    if is_default then
-      `Assoc [("name", `String str)]
-    else
-      `Assoc
-      [("name", `String str)
-      ;("configuration", `Assoc [("separator", `String sep)])]
+    if is_default then `Assoc [("name", `String str)] else
+    `Assoc
+    [("name", `String str)
+    ;("configuration", `Assoc [("separator", `String sep)])]
 
-  let of_yojson x =
-    match
-      Util.get_name x, Yojson.Safe.Util.member "configuration" x
-    with
+  let of_yojson x = match Util.get_name x, Yojson.Safe.Util.member "configuration" x with
     | "default", `Null ->
       Ok {name = Default; sep = "/"; is_default = true}
     | "default", `Assoc [("separator", `String "/")] ->

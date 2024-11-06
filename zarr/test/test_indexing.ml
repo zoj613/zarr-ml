@@ -29,7 +29,7 @@ let tests = [
     ;[|9; 1; 9|]; [|9; 1; 6|]; [|9; 1; 3|]
     ;[|5; 1; 9|]; [|5; 1; 6|]; [|5; 1; 3|]|]
   in
-  assert_equal expected @@ Indexing.coords_of_slice slice shape;
+  assert_equal ~printer:[%show: int array array] expected @@ Indexing.coords_of_slice slice shape;
 
   (* test using an empty slice translates to selection the whole array. *)
   assert_equal

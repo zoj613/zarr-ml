@@ -5,7 +5,11 @@ module ArrayMap = struct
   end)
 
   let add_to_list k v map =
-    update k (Option.fold ~none:(Some [v]) ~some:(fun l -> Some (v :: l))) map
+    let f ~v = function
+      | None -> Some [v]
+      | Some l -> Some (v :: l)
+    in
+    update k (f ~v) map
 end
 
 module Result_syntax = struct
@@ -13,11 +17,9 @@ module Result_syntax = struct
   let (let+) x f = Result.map f x
 end
 
-let get_name j =
-  Yojson.Safe.Util.(member "name" j |> to_string)
+let get_name j = Yojson.Safe.Util.(member "name" j |> to_string)
 
-let prod x =
-  Array.fold_left Int.mul 1 x
+let prod x = Array.fold_left Int.mul 1 x
 
 let max = Array.fold_left Int.max Int.min_int
 
@@ -29,5 +31,6 @@ let rec create_parent_dir fn perm =
     Sys.mkdir parent_dir perm
   end
 
-let sanitize_dir dir =
-  Option.fold ~none:dir ~some:Fun.id @@ Filename.chop_suffix_opt ~suffix:"/" dir
+let sanitize_dir dir = match Filename.chop_suffix_opt ~suffix:"/" dir with
+  | None -> dir
+  | Some d -> d

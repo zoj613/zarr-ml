@@ -105,9 +105,8 @@ module B = Bigarray
 let to_bigarray :
   type a b. a t -> (a, b) B.kind -> (a, b, B.c_layout) B.Genarray.t
   = fun x kind ->
-  let f k =
-    B.Genarray.init k C_layout x.shape @@ fun c ->
-    x.data.(coord_to_index c x.strides) in
+  let initialize ~x c = x.data.(coord_to_index c x.strides) in
+  let f k = B.Genarray.init k C_layout x.shape (initialize ~x) in
   match[@warning "-8"] kind with
   | B.Char as k -> f k
   | B.Int8_signed as k -> f k
@@ -129,11 +128,11 @@ let of_bigarray :
   let shape = B.Genarray.dims x' in
   let coord = Array.make (B.Genarray.num_dims x') 0 in
   let strides = make_strides shape in
-  let value_at_index i =
+  let initialize ~strides ~coord ~x' i =
     index_to_coord ~strides i coord;
     B.Genarray.get x' coord
   in
-  let f d = init d shape value_at_index in
+  let f d = init d shape (initialize ~strides ~coord ~x') in
   match[@warning "-8"] B.Genarray.kind x with
   | B.Char -> f Char
   | B.Int8_signed -> f Int8
@@ -256,24 +255,18 @@ module Indexing = struct
       | L x -> Array.length x
       | R x -> abs ((x.(1) - x.(0)) / x.(2)) + 1) axis
 
-  let rec cartesian_prod :
-    int list list -> int list list = function
+  let rec cartesian_prod : int list list -> int list list = function
     | [] -> [[]]
     | x :: xs ->
-      List.concat_map (fun i ->
-        List.map (List.cons i) (cartesian_prod xs)) x
+      List.concat_map (fun i -> List.map (List.cons i) (cartesian_prod xs)) x
 
   let range ~step start stop =
-    List.of_seq @@ if step > 0 then
-      Seq.unfold (function
-        | x when x > stop -> None
-        | x -> Some (x, x + step)) start
-    else
-      let start, stop = stop, start in
-      Seq.unfold (function
-        | x when x < start -> None
-        | x -> Some (x, x + step)) stop
-
+    let rec aux ~step ~stop acc = function
+      | x when (step < 0 && x < stop) || (step > 0 && x > stop) -> List.rev acc
+      | x -> aux ~step ~stop (x :: acc) (x + step)
+    in
+    aux ~step ~stop [] start
+       
   (* get indices from a reformated slice *)
   let indices_of_slice = function
     | R [|start; stop; step|] -> range ~step start stop
@@ -283,24 +276,22 @@ module Indexing = struct
     | _ -> failwith "Invalid slice index."
 
   let coords_of_slice slice shape =
-    (Array.map indices_of_slice @@ check_slice_definition slice shape)
-    |> Array.to_list
-    |> cartesian_prod
-    |> List.map Array.of_list
-    |> Array.of_list
+    let indices = Array.map indices_of_slice (check_slice_definition slice shape) in
+    let cprod = cartesian_prod (Array.to_list indices) in
+    let listofarrays = List.map Array.of_list cprod in
+    Array.of_list listofarrays
 
   let slice_of_coords = function
     | [] -> [||]
     | x :: _ as xs ->
-      let module IntSet = Set.Make(Int) in
+      let module S = Set.Make(Int) in
+      let to_slice_index s = L (Array.of_list (S.elements s)) in
+      let add_unique ~acc i y = if S.mem y acc.(i) then () else acc.(i) <- S.add y acc.(i) in
+      let fill_dims coord acc = Array.iteri (add_unique ~acc) coord; acc in
       let ndims = Array.length x in
-      let indices = Array.make ndims IntSet.empty in
-      Array.map (fun x -> L (IntSet.elements x |> Array.of_list)) @@
-      List.fold_right (fun x acc ->
-        Array.iteri (fun i y ->
-          if IntSet.mem y acc.(i) then ()
-          else acc.(i) <- IntSet.add y acc.(i)) x; acc) xs indices
+      let indices = Array.make ndims S.empty in
+      Array.map to_slice_index (List.fold_right fill_dims xs indices)
 
   let slice_shape slice array_shape =
-    calc_slice_shape @@ check_slice_definition slice array_shape
+    calc_slice_shape (check_slice_definition slice array_shape)
 end

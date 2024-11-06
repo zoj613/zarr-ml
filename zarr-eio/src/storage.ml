@@ -1,6 +1,7 @@
 module MemoryStore = struct
-  include Zarr.Storage.Make(Zarr.Memory.Make(Deferred))
-  let create = Zarr.Memory.create
+  module M = Zarr.Memory.Make(Deferred)
+  include Zarr.Storage.Make(M)
+  let create = M.create
 end
 
 module FilesystemStore = struct
@@ -12,21 +13,19 @@ module FilesystemStore = struct
     let fspath_to_key t (path : Eio.Fs.dir_ty Eio.Path.t) =
       let s = snd path in
       let pos = String.length (snd t.root) + 1 in
-      String.(sub s pos @@ length s - pos)
+      String.sub s pos (String.length s - pos)
 
     let key_to_fspath t key = Eio.Path.(t.root / key)
 
     let size t key =
-      try
-        Eio.Path.with_open_in (key_to_fspath t key) @@ fun flow ->
-        Optint.Int63.to_int @@ Eio.File.size flow
-      with
+      let flow_size flow = Optint.Int63.to_int (Eio.File.size flow) in
+      try Eio.Path.with_open_in (key_to_fspath t key) flow_size with
       | Eio.Io (Eio.Fs.E Not_found Eio_unix.Unix_error _, _) -> 0
 
     let get t key =
-      try Eio.Path.load @@ key_to_fspath t key with
+      try Eio.Path.load (key_to_fspath t key) with
       | Eio.Io (Eio.Fs.E Not_found Eio_unix.Unix_error _, _) ->
-        raise @@ Zarr.Storage.Key_not_found key
+        raise (Zarr.Storage.Key_not_found key)
 
     let get_partial_values t key ranges =
       let add ~size a (s, l) =
@@ -40,7 +39,7 @@ module FilesystemStore = struct
         Cstruct.to_string buf
       in
       Eio.Path.with_open_in (key_to_fspath t key) @@ fun flow ->
-      let size = Optint.Int63.to_int @@ Eio.File.size flow in
+      let size = Optint.Int63.to_int (Eio.File.size flow) in
       let size', ranges' = List.fold_left_map (add ~size) 0 ranges in
       let buffer = Bigarray.Array1.create Char C_layout size' in
       List.map (read ~flow ~buffer) ranges'
@@ -78,36 +77,32 @@ module FilesystemStore = struct
         | p when Eio.Path.is_directory p -> walk t a p
         | p -> (fspath_to_key t p) :: a
       in
-      List.fold_left (add ~t ~dir) acc @@ Eio.Path.read_dir dir
+      List.fold_left (add ~t ~dir) acc (Eio.Path.read_dir dir)
 
     let list t = walk t [] t.root
 
-    let list_prefix t prefix = walk t [] @@ key_to_fspath t prefix
+    let list_prefix t prefix = walk t [] (key_to_fspath t prefix)
 
-    let is_member t key =
-      Eio.Path.is_file @@ key_to_fspath t key
+    let is_member t key = Eio.Path.is_file (key_to_fspath t key)
 
-    let erase t key =
-      Eio.Path.unlink @@ key_to_fspath t key
+    let erase t key = Eio.Path.unlink (key_to_fspath t key)
 
     let erase_prefix t pre =
       (* if prefix points to the root of the store, only delete sub-dirs and files.*)
       let prefix = key_to_fspath t pre in
       if Filename.chop_suffix (snd prefix) "/" = snd t.root
-      then Eio.Fiber.List.iter (erase t) @@ list_prefix t pre
+      then Eio.Fiber.List.iter (erase t) (list_prefix t pre)
       else Eio.Path.rmtree ~missing_ok:true prefix
 
     let list_dir t prefix =
       let choose ~t ~dir x = match Eio.Path.(dir / x) with
-        | p when Eio.Path.is_directory p -> 
-          Either.right @@ (fspath_to_key t p) ^ "/"
-        | p -> Either.left @@ fspath_to_key t p
+        | p when Eio.Path.is_directory p -> Either.right @@ (fspath_to_key t p) ^ "/"
+        | p -> Either.left (fspath_to_key t p)
       in
       let dir = key_to_fspath t prefix in
-      List.partition_map (choose ~t ~dir) @@ Eio.Path.read_dir dir
+      List.partition_map (choose ~t ~dir) (Eio.Path.read_dir dir)
 
-    let rename t k k' =
-      Eio.Path.rename (key_to_fspath t k) (key_to_fspath t k')
+    let rename t k k' = Eio.Path.rename (key_to_fspath t k) (key_to_fspath t k')
   end
 
   module U = Zarr.Util
@@ -120,7 +115,7 @@ module FilesystemStore = struct
   let open_store ?(perm=0o700) ~env dirname =
     if Sys.is_directory dirname
     then FS.{root = Eio.Path.(Eio.Stdenv.fs env / U.sanitize_dir dirname); perm}
-    else raise @@ Zarr.Storage.Not_a_filesystem_store dirname
+    else raise (Zarr.Storage.Not_a_filesystem_store dirname)
 
   include Zarr.Storage.Make(FS)
 end

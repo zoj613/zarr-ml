@@ -80,50 +80,46 @@ module Chain = struct
     {a2a; a2b; b2b}
 
   let encode t x =
-      List.fold_left
-        BytesToBytes.encode
-        (ArrayToBytes.encode t.a2b @@
-          List.fold_left ArrayToArray.encode x t.a2a) t.b2b
+    let a = List.fold_left ArrayToArray.encode x t.a2a in
+    let b = ArrayToBytes.encode t.a2b a in
+    List.fold_left BytesToBytes.encode b t.b2b
 
   let decode t repr x =
     let shape = List.fold_left ArrayToArray.encoded_repr repr.shape t.a2a in
-    List.fold_right
-      ArrayToArray.decode t.a2a @@
-      ArrayToBytes.decode t.a2b {repr with shape} @@
-      List.fold_right BytesToBytes.decode t.b2b x
+    let b = List.fold_right BytesToBytes.decode t.b2b x in
+    let a = ArrayToBytes.decode t.a2b {repr with shape} b in
+    List.fold_right ArrayToArray.decode t.a2a a
 
   let ( = ) x y =
     x.a2a = y.a2a && x.a2b = y.a2b && x.b2b = y.b2b
 
-  let to_yojson t =
-    `List
-      (List.map ArrayToArray.to_yojson t.a2a @
-      (ArrayToBytes.to_yojson t.a2b) ::
-      List.map BytesToBytes.to_yojson t.b2b)
+  let to_yojson : t -> Yojson.Safe.t = fun t ->
+    let a2a = List.map ArrayToArray.to_yojson t.a2a in
+    let a2b = ArrayToBytes.to_yojson t.a2b in
+    let b2b = List.map BytesToBytes.to_yojson t.b2b in
+    `List (a2a @ (a2b :: b2b))
 
   let of_yojson chunk_shape x =
     let open Util.Result_syntax in
-    let filter_partition f encoded =
-      List.fold_right (fun c (l, r) ->
-        Result.fold ~ok:(fun v -> v :: l, r) ~error:(fun _ -> l, c :: r) @@ f c)
-        encoded ([], []) in
+    let split ~f codec (l, r) = 
+      Result.fold ~ok:(fun v -> v :: l, r) ~error:(fun _ -> l, codec :: r) (f codec)
+    in
+    let partition f encoded = List.fold_right (split ~f) encoded ([], []) in
     let* codecs = match Yojson.Safe.Util.to_list x with
       | [] -> Error "No codec specified."
       | y -> Ok y
     in
-    let* a2b, rest =
-      match filter_partition (ArrayToBytes.of_yojson chunk_shape) codecs with
+    let* a2b, rest = match partition (ArrayToBytes.of_yojson chunk_shape) codecs with
       | [x], rest -> Ok (x, rest)
       | _ -> Error "Must be exactly one array->bytes codec."
     in
-    let a2a, rest = filter_partition (ArrayToArray.of_yojson chunk_shape) rest in
-    let b2b, rest = filter_partition BytesToBytes.of_yojson rest in
+    let a2a, rest = partition (ArrayToArray.of_yojson chunk_shape) rest in
+    let b2b, rest = partition BytesToBytes.of_yojson rest in
     match rest with
     | [] -> Ok {a2a; a2b; b2b}
     | x :: _ ->
-      Result.error @@
-      Printf.sprintf
-        "%s codec is unsupported or has invalid configuration." @@ Util.get_name x
+      let codec = Util.get_name x in
+      Error (Printf.sprintf "%s codec is unsupported or has invalid configuration." codec)
 end
 
 module Make (Io : Types.IO) = struct
@@ -133,14 +129,12 @@ module Make (Io : Types.IO) = struct
     | {a2a = []; a2b = `ShardingIndexed _; b2b = []} -> true
     | _ -> false
 
-  let partial_encode t f g bsize repr pairs fv =
-    match t.a2b with
+  let partial_encode t f g bsize repr pairs fv = match t.a2b with
     | `ShardingIndexed c ->
       ShardingIndexedCodec.partial_encode c f g bsize repr pairs fv
     | `Bytes _ -> failwith "bytes codec does not support partial encoding." 
 
-  let partial_decode t f s repr pairs fv =
-    match t.a2b with
+  let partial_decode t f s repr pairs fv = match t.a2b with
     | `ShardingIndexed c ->
       ShardingIndexedCodec.partial_decode c f s repr pairs fv
     | `Bytes _ -> failwith "bytes codec does not support partial decoding."

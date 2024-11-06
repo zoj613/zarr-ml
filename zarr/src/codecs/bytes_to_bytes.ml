@@ -14,15 +14,15 @@ module GzipCodec = struct
       Error (Printf.sprintf "Invalid Gzip level %d" i)
 
   let encode l x =
-    Bytes.Reader.to_string @@
-    Bytesrw_zlib.Gzip.compress_reads ~level:(to_int l) () @@
-    Bytes.Reader.of_string x
+    let level = to_int l in
+    let r = Bytes.Reader.of_string x in
+    Bytes.Reader.to_string (Bytesrw_zlib.Gzip.compress_reads ~level () r)
 
   let decode x =
-    Bytes.Reader.to_string @@
-    Bytesrw_zlib.Gzip.decompress_reads () @@ Bytes.Reader.of_string x
+    let r = Bytes.Reader.of_string x in
+    Bytes.Reader.to_string (Bytesrw_zlib.Gzip.decompress_reads () r)
 
-  let to_yojson l =
+  let to_yojson : compression_level -> Yojson.Safe.t = fun l ->
     `Assoc
     [("name", `String "gzip")
     ;("configuration", `Assoc ["level", `Int (to_int l)])]
@@ -41,41 +41,35 @@ module Crc32cCodec = struct
     let size = String.length x in
     let buf = Buffer.create size in
     Buffer.add_string buf x;
-    Buffer.add_int32_le buf @@
-    Checkseum.Crc32c.(default |> unsafe_digest_string x 0 size |> to_int32);
+    let checksum = Checkseum.Crc32c.(default |> unsafe_digest_string x 0 size |> to_int32) in
+    Buffer.add_int32_le buf checksum;
     Buffer.contents buf
 
-  let decode x = String.(length x - 4 |> sub x 0)
+  let decode x = String.sub x 0 (String.length x - 4)
 
-  let to_yojson =
-    `Assoc [("name", `String "crc32c")]
+  let to_yojson : Yojson.Safe.t = `Assoc [("name", `String "crc32c")]
 
-  let of_yojson _ =
-    (* checks for validity of configuration are done via
-       BytesToBytes.of_yojson so just return valid result.*)
-      Ok `Crc32c
+  (* checks for validity of configuration are done via
+     BytesToBytes.of_yojson so just return valid result.*)
+  let of_yojson _ = Ok `Crc32c
 end
 
 (* https://github.com/zarr-developers/zarr-specs/pull/256 *)
 module ZstdCodec = struct
   let min_clevel = -131072 and max_clevel = 22
 
-  let parse_clevel l =
-    if l < min_clevel || max_clevel < l then (raise Invalid_zstd_level)
+  let parse_clevel l = if l < min_clevel || max_clevel < l then (raise Invalid_zstd_level)
 
   let encode clevel checksum x =
     let params = Bytesrw_zstd.Cctx_params.make ~checksum ~clevel () in
-    Bytes.Reader.to_string @@
-    Bytesrw_zstd.compress_reads ~params () @@ Bytes.Reader.of_string x
-
-  let decompress_params = Bytesrw_zstd.Dctx_params.default
+    let r = Bytes.Reader.of_string x in
+    Bytes.Reader.to_string (Bytesrw_zstd.compress_reads ~params () r)
 
   let decode x =
-    Bytes.Reader.to_string @@
-    Bytesrw_zstd.decompress_reads ~params:decompress_params () @@
-    Bytes.Reader.of_string x
+    let r = Bytes.Reader.of_string x in
+    Bytes.Reader.to_string (Bytesrw_zstd.decompress_reads () r)
 
-  let to_yojson l c =
+  let to_yojson : int -> bool -> Yojson.Safe.t = fun l c ->
     `Assoc
     [("name", `String "zstd")
     ;("configuration", `Assoc [("level", `Int l); ("checksum", `Bool c)])]
@@ -83,9 +77,9 @@ module ZstdCodec = struct
   let of_yojson x =
     match Yojson.Safe.Util.(member "configuration" x) with
     | `Assoc [("level", `Int l); ("checksum", `Bool c)] ->
-      begin match parse_clevel l with
-      | exception Invalid_zstd_level -> Error "Invalid_zstd_level"
-      | () -> Result.ok @@ `Zstd (l, c) end
+      (match parse_clevel l with
+      | () -> Result.ok @@ `Zstd (l, c)
+      | exception Invalid_zstd_level -> Error "Invalid_zstd_level")
     | _ -> Error "Invalid Zstd configuration."
 end
 
@@ -114,7 +108,7 @@ module BytesToBytes = struct
     | `Crc32c -> Crc32cCodec.to_yojson 
     | `Zstd (l, c) -> ZstdCodec.to_yojson l c
 
-  let of_yojson x =
+  let of_yojson : Yojson.Safe.t -> (bytestobytes, string) result = fun x ->
     match Util.get_name x with
     | "gzip" -> GzipCodec.of_yojson x
     | "crc32c" -> Crc32cCodec.of_yojson x

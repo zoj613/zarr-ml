@@ -1,17 +1,21 @@
-module M = Map.Make(String)
-
-let create () : string M.t Atomic.t = Atomic.make M.empty
+module type S = sig
+  include Storage.STORE
+  val create : unit -> t
+  (** [create ()] returns a new In-memory Zarr store type.*)
+end
 
 module Make (Deferred : Types.Deferred) = struct
+  module M = Map.Make(String)
   module Deferred = Deferred
   open Deferred.Syntax
 
   type t = string M.t Atomic.t
 
-  let get t key =
-    match M.find_opt key @@ Atomic.get (t : t) with
+  let create : unit -> t = fun () -> Atomic.make M.empty
+
+  let get t key = match M.find_opt key (Atomic.get (t : t)) with
+    | None -> raise (Storage.Key_not_found key)
     | Some v -> Deferred.return v
-    | None -> raise @@ Storage.Key_not_found key
 
   let rec set t key value =
     let m = Atomic.get (t : t) in
@@ -19,38 +23,39 @@ module Make (Deferred : Types.Deferred) = struct
     then Deferred.return_unit else set t key value 
 
   let list t =
-    Deferred.return @@ M.fold (fun k _ acc -> k :: acc) (Atomic.get t) []
+    Deferred.return @@ M.fold (fun k _ acc -> k :: acc) (Atomic.get (t : t)) []
 
-  let is_member t key =
-    Deferred.return @@ M.mem key (Atomic.get t)
+  let is_member t key = Deferred.return @@ M.mem key (Atomic.get (t : t))
 
   let rec erase t key =
-    let m = Atomic.get t in
-    if Atomic.compare_and_set t m @@ M.update key (Fun.const None) m
+    let m = Atomic.get (t : t) in
+    let m' = M.update key (Fun.const None) m in
+    if Atomic.compare_and_set t m m'
     then Deferred.return_unit else erase t key
 
   let size t key =
-    Deferred.return @@ 
-    Option.fold ~none:0 ~some:String.length (M.find_opt key @@ Atomic.get t)
+    let binding_opt = M.find_opt key (Atomic.get (t : t)) in
+    Deferred.return (Option.fold ~none:0 ~some:String.length binding_opt)
 
   let rec erase_prefix t prefix =
     let pred ~prefix k v = if String.starts_with ~prefix k then None else Some v in
-    let m = Atomic.get t in
-    if Atomic.compare_and_set t m @@ M.filter_map (pred ~prefix) m
+    let m = Atomic.get (t : t) in
+    let m' = M.filter_map (pred ~prefix) m in
+    if Atomic.compare_and_set t m m'
     then Deferred.return_unit else erase_prefix t prefix
 
   let get_partial_values t key ranges =
-    let add ~value ~size acc (ofs, len) = match len with
-      | Some l -> String.sub value ofs l :: acc
-      | None -> String.sub value ofs (size - ofs) :: acc
+    let read_range ~data ~size (ofs, len) = match len with
+      | Some l -> String.sub data ofs l
+      | None -> String.sub data ofs (size - ofs)
     in
-    let+ value = get t key in
-    let size = String.length value in
-    List.fold_left (add ~value ~size) [] (List.rev ranges)
+    let+ data = get t key in
+    let size = String.length data in
+    List.map (read_range ~data ~size) ranges
 
   let rec set_partial_values t key ?(append=false) rv =
     let m = Atomic.get (t : t) in
-    let ov = Option.fold ~none:String.empty ~some:Fun.id @@ M.find_opt key m in
+    let ov = Option.fold ~none:String.empty ~some:Fun.id (M.find_opt key m) in
     let f = if append || ov = String.empty then
       fun acc (_, v) -> acc ^ v else
       fun acc (rs, v) ->
@@ -65,16 +70,13 @@ module Make (Deferred : Types.Deferred) = struct
   let list_dir t prefix =
     let module S = Set.Make(String) in
     let m = Atomic.get (t : t) in
-    let add ~size ~prefix key _ ((l, r) as a) =
-      let pred = String.starts_with ~prefix key in
-      match key with
-      | k when pred && String.contains_from k size '/' ->
-        S.add String.(sub k 0 @@ 1 + index_from k size '/') l, r
-      | k when pred -> l, k :: r
-      | _ -> a
+    let add ~size ~prefix key _ ((l, r) as acc) =
+      if not (String.starts_with ~prefix key) then acc else
+      if not (String.contains_from key size '/') then key :: l, r else
+      l, S.add String.(sub key 0 @@ 1 + index_from key size '/') r
     in
     let size = String.length prefix in
-    let prefixes, keys = M.fold (add ~prefix ~size) m (S.empty, []) in
+    let keys, prefixes = M.fold (add ~prefix ~size) m ([], S.empty) in
     Deferred.return (keys, S.elements prefixes)
 
   let rec rename t prefix new_prefix =

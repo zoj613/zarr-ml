@@ -114,7 +114,9 @@ module type STORE = sig
 
     val reshape : t -> Node.Array.t -> int array -> unit Deferred.t
     (** [reshape t n shape] resizes array node [n] of store [t] into new
-        size [shape].
+        size [shape]. Note that when the resizing involves shrinking an array
+        along any dimensions, any old unreachable chunks that fall outside of
+        the array's new shape are deleted from the store.
 
         @raise Invalid_resize_shape
           if [shape] does not have the same dimensions as [n]'s shape.

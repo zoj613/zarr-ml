@@ -1,5 +1,5 @@
 type 'a t = 'a
-let return x = x
+let return = Fun.id
 let return_unit = ()
 let iter = List.iter
 let fold_left = List.fold_left

@@ -20,8 +20,7 @@ module FillValue = struct
 
   let of_kind
   : type a. a Ndarray.dtype -> a -> t
-  = fun kind a ->
-    match kind with
+  = fun kind a -> match kind with
     | Ndarray.Char -> Char a
     | Ndarray.Bool -> Bool a
     | Ndarray.Int8 -> Int (Stdint.Uint64.of_int a)
@@ -38,58 +37,42 @@ module FillValue = struct
     | Ndarray.Int -> Int (Stdint.Uint64.of_int a)
     | Ndarray.Nativeint -> Int (Stdint.Uint64.of_nativeint a)
 
-  let rec of_yojson x =
-    match x with
+  let rec of_yojson x = match x with
     | `Bool b -> Ok (Bool b)
     | `Int i -> Result.ok @@ Int (Stdint.Uint64.of_int i)
     | `String "Infinity" -> Ok (Float Float.infinity)
     | `String "-Infinity" -> Ok (Float Float.neg_infinity)
     | `String "NaN" -> Ok (Float Float.nan)
     | `Float f -> Ok (Float f)
-    | `String s when String.length s = 1 ->
-      Ok (Char (String.get s 0))
+    | `String s when String.length s = 1 -> Ok (Char (String.get s 0))
     | `String s when String.starts_with ~prefix:"0x" s ->
-      let b = Int64.of_string s in
-      Ok (FloatBits (Int64.float_of_bits b))
+      Ok (FloatBits Int64.(float_of_bits @@ of_string s))
     | `List [`Int x; `Int y] ->
-      let re = Float.of_int x
-      and im = Float.of_int y in
-      Ok (IntComplex Complex.{re; im})
-    | `List [`Float re; `Float im] ->
-      Ok (FloatComplex Complex.{re; im})
+      Ok (IntComplex Complex.{re=Float.of_int x; im=Float.of_int y})
+    | `List [`Float re; `Float im] -> Ok (FloatComplex Complex.{re; im})
     | `List [`String _ as a; `String _ as b] ->
         Result.bind (of_yojson a) @@ fun x ->
         Result.bind (of_yojson b) @@ fun y ->
         (match x, y with
-        | Float re, Float im ->
-          Ok (FFComplex Complex.{re; im})
-        | Float re, FloatBits im ->
-          Ok (FBComplex Complex.{re; im})
-        | FloatBits re, Float im ->
-          Ok (BFComplex Complex.{re; im})
-        | FloatBits re, FloatBits im ->
-          Ok (BBComplex Complex.{re; im})
+        | Float re, Float im -> Ok (FFComplex Complex.{re; im})
+        | Float re, FloatBits im -> Ok (FBComplex Complex.{re; im})
+        | FloatBits re, Float im -> Ok (BFComplex Complex.{re; im})
+        | FloatBits re, FloatBits im -> Ok (BBComplex Complex.{re; im})
         | _ -> Error "Unsupported fill value.")
     | _ -> Error "Unsupported fill value."
 
   let rec to_yojson = function
     | Bool b -> `Bool b
     | Int i -> `Int (Stdint.Uint64.to_int i)
-    | Char c ->
-      `String (String.of_seq @@ List.to_seq [c])
-    | Float f when Float.is_nan f ->
-      `String "NaN"
-    | Float f when f = Float.infinity ->
-      `String "Infinity"
-    | Float f when f = Float.neg_infinity ->
-      `String "-Infinity"
+    | Char c -> `String (Printf.sprintf "%c" c)
+    | Float f when Float.is_nan f -> `String "NaN"
+    | Float f when f = Float.infinity -> `String "Infinity"
+    | Float f when f = Float.neg_infinity -> `String "-Infinity"
     | Float f -> `Float f
-    | FloatBits f ->
-      `String (Stdint.Int64.to_string_hex @@ Int64.bits_of_float f)
+    | FloatBits f -> `String (Stdint.Int64.to_string_hex @@ Int64.bits_of_float f)
     | IntComplex Complex.{re; im} ->
       `List [`Int (Float.to_int re); `Int (Float.to_int im)]
-    | FloatComplex Complex.{re; im} ->
-      `List [`Float re; `Float im]
+    | FloatComplex Complex.{re; im} -> `List [`Float re; `Float im]
     | FFComplex Complex.{re; im} ->
       `List [to_yojson (Float re); to_yojson (Float im)]
     | FBComplex Complex.{re; im} ->
@@ -115,14 +98,9 @@ module Array = struct
     ;storage_transformers : Yojson.Safe.t list}
 
   let create
-    ?(sep=`Slash)
-    ?(dimension_names=[])
-    ?(attributes=`Null)
-    ~codecs
-    ~shape
-    kind
-    fv
-    chunks
+    ?(sep=`Slash) ?(dimension_names=[]) ?(attributes=`Null)
+    ~codecs ~shape
+    kind fv chunks
     =
     {shape
     ;codecs
@@ -136,9 +114,8 @@ module Array = struct
     ;chunk_key_encoding = ChunkKeyEncoding.create sep
     ;chunk_grid = RegularGrid.create ~array_shape:shape chunks}
 
-  let to_yojson t =
-    let shape =
-      Array.map (fun x -> `Int x) t.shape |> Array.to_list in
+  let to_yojson : t -> Yojson.Safe.t = fun t ->
+    let shape = List.map (fun x -> `Int x) (Array.to_list t.shape) in
     let l =
       [("zarr_format", `Int t.zarr_format)
       ;("shape", `List shape)
@@ -150,8 +127,7 @@ module Array = struct
       ;("chunk_key_encoding",
         ChunkKeyEncoding.to_yojson t.chunk_key_encoding)]
     in
-    let l =
-      match t.attributes with
+    let l = match t.attributes with
       | `Null -> l
       | x -> l @ [("attributes", x)]
     in
@@ -164,6 +140,12 @@ module Array = struct
   let of_yojson x =
     let open Yojson.Safe.Util in
     let open Util.Result_syntax in
+    let add_as_int ~error a acc = 
+      let* k = acc in
+      match a with
+      | `Int i when i > 0 -> Ok (i :: k)
+      | _ -> Error error
+    in
     let* zarr_format = match member "zarr_format" x with
       | `Int (3 as i) -> Ok i
       | `Null -> Error "array metadata must contain a zarr_format field."
@@ -176,16 +158,11 @@ module Array = struct
     in
     let* shape = match member "shape" x with
       | `List xs ->
-        let+ l = List.fold_right
-          (fun a acc ->
-            let* k = acc in
-            match a with
-            | `Int i when i > 0 -> Ok (i :: k)
-            | _ ->
-              Result.error "shape field list must only contain positive integers.")
-          xs (Ok []) in Array.of_list l
-       | `Null -> Error "array metadata must contain a shape field."
-       | _ -> Error "shape field must be a list of integers."
+        let error = "shape field list must only contain positive integers." in
+        let+ l = List.fold_right (add_as_int ~error) xs (Ok []) in
+        Array.of_list l
+      | `Null -> Error "array metadata must contain a shape field."
+      | _ -> Error "shape field must be a list of integers."
     in
     let* data_type = match member "data_type" x with
       | `String _ as c -> Datatype.of_yojson c
@@ -197,13 +174,8 @@ module Array = struct
       | xs ->
         match Util.get_name xs, member "configuration" xs with
         | "regular", `Assoc [("chunk_shape", `List l)] ->
-          let* v = List.fold_right
-            (fun a acc ->
-              let* k = acc in
-              match a with 
-              | `Int i when i > 0 -> Ok (i :: k)
-              | _ ->
-                Error "chunk_shape must only contain positive ints.") l (Ok []) in
+          let error = "chunk_shape must only contain positive ints." in
+          let* v = List.fold_right (add_as_int ~error) l (Ok []) in
           let cs = Array.of_list v in
           let+ r = match RegularGrid.create ~array_shape:shape cs with
             | exception RegularGrid.Grid_shape_mismatch -> Error "grid shape mismatch."
@@ -221,25 +193,26 @@ module Array = struct
       | xs -> FillValue.of_yojson xs
     in
     let* chunk_key_encoding = match member "chunk_key_encoding" x with 
-      | `Null ->
-        Error "array metadata must contain a chunk_key_encoding field." 
+      | `Null -> Error "array metadata must contain a chunk_key_encoding field."
       | xs -> ChunkKeyEncoding.of_yojson xs
     in
     (* Optional fields *)
+    let add_as_str ~error a acc =
+      let* k = acc in
+      match a with
+      | `String s -> Ok (Some s :: k)
+      | `Null -> Ok (None :: k)
+      | _ -> Error error
+    in
     let attributes = member "attributes" x in
     let* dimension_names = match member "dimension_names" x with
       | `Null -> Ok []
       | `List xs ->
         if List.length xs <> Array.length shape then
-          Error ("dimension_names length and array dimensionality must be equal.")
+          Error "dimension_names length and array dimensionality must be equal."
         else
-          List.fold_right
-            (fun a acc ->
-              let* k = acc in
-              match a with
-              | `String s -> Ok (Some s :: k)
-              | `Null -> Ok (None :: k)
-              | _ -> Error "dimension_names must contain strings or null values.") xs (Ok [])
+          let error = "dimension_names must contain strings or null values." in
+          List.fold_right (add_as_str ~error) xs (Ok [])
       | _ -> Error "dimension_names field must be a list."
     in
     let+ storage_transformers = match member "storage_transformers" x with
@@ -270,35 +243,27 @@ module Array = struct
 
   let attributes t = t.attributes
 
-  let chunk_shape t =
-    RegularGrid.chunk_shape t.chunk_grid
+  let chunk_shape t = RegularGrid.chunk_shape t.chunk_grid
 
-  let index_coord_pair t coord =
-    RegularGrid.index_coord_pair t.chunk_grid coord
+  let index_coord_pair t coord = RegularGrid.index_coord_pair t.chunk_grid coord
 
-  let chunk_key t index =
-    ChunkKeyEncoding.encode t.chunk_key_encoding index
+  let chunk_key t index = ChunkKeyEncoding.encode t.chunk_key_encoding index
 
-  let chunk_indices t shape =
-    RegularGrid.indices t.chunk_grid shape
+  let chunk_indices t shape = RegularGrid.indices t.chunk_grid shape
 
-  let encode t =
-    Yojson.Safe.to_string @@ to_yojson t
+  let encode t = Yojson.Safe.to_string (to_yojson t)
 
-  let decode s = 
-    match of_yojson @@ Yojson.Safe.from_string s with
+  let decode s = match of_yojson (Yojson.Safe.from_string s) with
+    | Error e -> raise (Parse_error e)
     | Ok m -> m
-    | Error e -> raise @@ Parse_error e
 
-  let update_attributes t attrs =
-    {t with attributes = attrs}
+  let update_attributes t attrs = {t with attributes = attrs}
 
   let update_shape t shape = {t with shape}
 
   let is_valid_kind
     : type a. t -> a Ndarray.dtype -> bool
-    = fun t kind ->
-    match kind, t.data_type with
+    = fun t kind -> match kind, t.data_type with
     | Ndarray.Char, Datatype.Char
     | Ndarray.Bool, Datatype.Bool
     | Ndarray.Int8, Datatype.Int8
@@ -318,8 +283,7 @@ module Array = struct
 
   let fillvalue_of_kind
     : type a. t -> a Ndarray.dtype -> a
-    = fun t kind ->
-    match kind, t.fill_value with
+    = fun t kind -> match kind, t.fill_value with
     | Ndarray.Char, FillValue.Char c -> c
     | Ndarray.Bool, FillValue.Bool b -> b
     | Ndarray.Int8, FillValue.Int i -> Stdint.Uint64.to_int i
@@ -351,18 +315,12 @@ module Array = struct
 end
 
 module Group = struct
-  type t =
-    {zarr_format : int
-    ;node_type : string
-    ;attributes : Yojson.Safe.t}
+  type t = {zarr_format : int; node_type : string; attributes : Yojson.Safe.t}
 
-  let default =
-    {zarr_format = 3; node_type = "group"; attributes = `Null}
+  let default = {zarr_format = 3; node_type = "group"; attributes = `Null}
 
-  let to_yojson t =
-    let l =
-      [("zarr_format", `Int t.zarr_format)
-      ;("node_type", `String t.node_type)] in
+  let to_yojson : t -> Yojson.Safe.t = fun t ->
+    let l = [("zarr_format", `Int t.zarr_format); ("node_type", `String t.node_type)] in
     match t.attributes with
     | `Null -> `Assoc l
     | x -> `Assoc (l @ [("attributes", x)])
@@ -383,23 +341,21 @@ module Group = struct
     let attributes = match member "attributes" x with
       | `Null -> `Null 
       | xs -> xs
-    in {zarr_format; node_type; attributes}
+    in
+    {zarr_format; node_type; attributes}
 
-  let decode s = 
-    match of_yojson @@ Yojson.Safe.from_string s with
+  let decode s = match of_yojson (Yojson.Safe.from_string s) with
+    | Error e -> raise (Parse_error e)
     | Ok m -> m
-    | Error e -> raise @@ Parse_error e
 
-  let encode t =
-    Yojson.Safe.to_string @@ to_yojson t
+  let encode t = Yojson.Safe.to_string (to_yojson t)
 
-  let update_attributes t attrs =
-    {t with attributes = attrs}
+  let update_attributes t attrs = {t with attributes = attrs}
 
   let attributes t = t.attributes
 
   let show t =
     Format.sprintf
       {|"{zarr_format=%d; node_type=%s; attributes=%s}"|}
-      t.zarr_format t.node_type @@ Yojson.Safe.show t.attributes
+      t.zarr_format t.node_type (Yojson.Safe.show t.attributes)
 end

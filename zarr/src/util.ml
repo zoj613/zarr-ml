@@ -1,7 +1,7 @@
 module ArrayMap = struct
   include Map.Make (struct
     type t = int array
-    let compare (x : t) (y : t) = Stdlib.compare x y
+    let compare : t -> t -> int = Stdlib.compare
   end)
 
   let add_to_list k v map =

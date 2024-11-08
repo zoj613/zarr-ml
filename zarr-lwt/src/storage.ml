@@ -1,14 +1,5 @@
-module MemoryStore = struct
-  module M = Zarr.Memory.Make(Deferred)
-  include Zarr.Storage.Make(M)
-  let create = M.create
-end
-
-module ZipStore = struct
-  module Z = Zarr.Zip.Make(Deferred)
-  include Zarr.Storage.Make(Z)
-  let with_open = Z.with_open
-end
+module ZipStore = Zarr.Zip.Make(Deferred)
+module MemoryStore = Zarr.Memory.Make(Deferred)
 
 module FilesystemStore = struct
   module FS = struct

@@ -1,12 +1,11 @@
-(** An in-memory storage backend for Zarr V3 hierarchy. *)
-module MemoryStore : sig include Zarr.Memory.S with type 'a Deferred.t = 'a end
+(** A blocking I/O in-memory storage backend for Zarr v3 hierarchy. *)
+module MemoryStore : Zarr.Memory.S with type 'a Deferred.t = 'a
 
 (** A blocking I/O Zip file storage backend for a Zarr v3 hierarchy. *)
-module ZipStore : sig include Zarr.Zip.S with type 'a Deferred.t = 'a end
+module ZipStore : Zarr.Zip.S with type 'a Deferred.t = 'a
 
+(** A blocking I/O local filesystem storage backend for a Zarr v3 hierarchy. *)
 module FilesystemStore : sig
-  (** A local filesystem storage backend for a Zarr V3 hierarchy. *)
-
   include Zarr.Storage.STORE with type 'a Deferred.t = 'a
 
   val create : ?perm:Unix.file_perm -> string -> t

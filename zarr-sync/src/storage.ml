@@ -2,7 +2,7 @@ module ZipStore = Zarr.Zip.Make(Deferred)
 module MemoryStore = Zarr.Memory.Make(Deferred)
 
 module FilesystemStore = struct
-  module F = struct
+  module IO = struct
     module Deferred = Deferred
 
     type t = {dirname : string; perm : Unix.file_perm}
@@ -85,17 +85,15 @@ module FilesystemStore = struct
     let rename t k k' = Sys.rename (key_to_fspath t k) (key_to_fspath t k')
   end
 
-  module U = Zarr.Util
-
   let create ?(perm=0o700) dirname =
-    U.create_parent_dir dirname perm;
+    Zarr.Util.create_parent_dir dirname perm;
     Sys.mkdir dirname perm;
-    F.{dirname = U.sanitize_dir dirname; perm}
+    IO.{dirname = Zarr.Util.sanitize_dir dirname; perm}
 
   let open_store ?(perm=0o700) dirname =
     if Sys.is_directory dirname
-    then F.{dirname = U.sanitize_dir dirname; perm}
+    then IO.{dirname = Zarr.Util.sanitize_dir dirname; perm}
     else raise (Zarr.Storage.Not_a_filesystem_store dirname)
 
-  include Zarr.Storage.Make(F)
+  include Zarr.Storage.Make(IO)
 end

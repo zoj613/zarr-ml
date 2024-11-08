@@ -5,7 +5,7 @@ module Indexing = Ndarray.Indexing
 
 module ArraySet = Set.Make (struct
   type t = int array
-  let compare (x : t) (y : t) = Stdlib.compare x y
+  let compare : t -> t -> int = Stdlib.compare
 end)
 
 module Make (Io : Types.IO) = struct
@@ -18,6 +18,10 @@ module Make (Io : Types.IO) = struct
 
   type t = Io.t
 
+  let maybe_rename t old_name new_name = function
+    | false -> raise (Key_not_found old_name)
+    | true -> rename t old_name new_name
+
   let node_kind t metakey =
     let+ s = get t metakey in
     match Yojson.Safe.(Util.member "node_type" @@ from_string s) with
@@ -25,18 +29,18 @@ module Make (Io : Types.IO) = struct
     | `String "group" -> `Group
     | _ -> raise (Metadata.Parse_error (Printf.sprintf "invalid node_type in %s" metakey))
 
-  let choose ~path ~left ~right = function
+  let choose path left right = function
     | `Array -> Node.Array.of_path path :: left, right
     | `Group -> left, Node.Group.of_path path :: right
 
   let hierarchy t =
-    let add ((left, right) as acc) k =
+    let add ~t ((left, right) as acc) k =
       if not (String.ends_with ~suffix:"zarr.json" k) then Deferred.return acc else
       let path = if k = "zarr.json" then "/" else "/" ^ String.(sub k 0 (length k - 10)) in
       let+ kind = node_kind t k in
-      choose ~path ~left ~right kind
+      choose path left right kind
     in
-    list t >>= Deferred.fold_left add ([], [])
+    list t >>= Deferred.fold_left (add ~t) ([], [])
 
   let clear t = erase_prefix t ""
 
@@ -45,39 +49,42 @@ module Make (Io : Types.IO) = struct
 
     (* This recursively creates parent group nodes if they don't exist.*)
     let rec create ?(attrs=`Null) t node =
-      exists t node >>= function
-      | true -> Deferred.return_unit
-      | false ->
-        let k = Node.Group.to_metakey node in
-        let* () = set t k Metadata.Group.(update_attributes default attrs |> encode) in
-        match Node.Group.parent node with
-        | None -> Deferred.return_unit
-        | Some p -> create t p
+      let maybe_create ~attrs t node = function
+        | true -> Deferred.return_unit
+        | false ->
+          let key = Node.Group.to_metakey node in
+          let meta = Metadata.Group.(update_attributes default attrs) in
+          let* () = set t key (Metadata.Group.encode meta) in
+          match Node.Group.parent node with
+          | None -> Deferred.return_unit
+          | Some p -> create t p
+      in
+      exists t node >>= maybe_create ~attrs t node
 
     let metadata t node =
       let+ data = get t (Node.Group.to_metakey node) in
       Metadata.Group.decode data
 
     let children t node =
-      let add (left, right) prefix =
+      let add ~t (left, right) prefix =
         let path = "/" ^ String.sub prefix 0 (String.length prefix - 1) in
         let+ kind = node_kind t (prefix ^ "zarr.json") in
-        choose ~path ~left ~right kind
+        choose path left right kind
       in
-      exists t node >>= function
-      | false -> Deferred.return ([], [])
-      | true ->
-        let* _, ps = list_dir t (Node.Group.to_prefix node) in
-        Deferred.fold_left add ([], []) ps
+      let maybe_enumerate t node = function
+        | false -> Deferred.return ([], [])
+        | true ->
+          let* _, ps = list_dir t (Node.Group.to_prefix node) in
+          Deferred.fold_left (add ~t) ([], []) ps
+      in
+      exists t node >>= maybe_enumerate t node
 
     let delete t node = erase_prefix t (Node.Group.to_prefix node)
 
     let rename t node str =
-      let key = Node.Group.to_key node in
-      let key' = Node.Group.(rename node str |> to_key) in
-      exists t node >>= function
-      | false -> raise (Key_not_found key)
-      | true -> rename t key key'
+      let key = Node.Group.to_key node
+      and key' = Node.Group.(rename node str |> to_key) in
+      exists t node >>= maybe_rename t key key'
   end
   
   module Array = struct
@@ -103,6 +110,7 @@ module Make (Io : Types.IO) = struct
     let delete t node = erase_prefix t (Node.Array.to_key node ^ "/")
 
     let write t node slice x =
+      let update_ndarray ~arr (c, v) = Ndarray.set arr c v in
       let add_coord_value ~meta acc (co, y) =
         let chunk_idx, c = Metadata.Array.index_coord_pair meta co in
         ArrayMap.add_to_list chunk_idx (c, y) acc
@@ -118,11 +126,11 @@ module Make (Io : Types.IO) = struct
         | true ->
           let* v = get t ckey in
           let arr = Codecs.Chain.decode chain repr v in
-          List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
+          List.iter (update_ndarray ~arr) pairs;
           set t ckey (Codecs.Chain.encode chain arr)
         | false ->
           let arr = Ndarray.create repr.kind repr.shape fv in
-          List.iter (fun (c, v) -> Ndarray.set arr c v) pairs;
+          List.iter (update_ndarray ~arr) pairs;
           set t ckey (Codecs.Chain.encode chain arr)
       in
       let* meta = metadata t node in
@@ -150,6 +158,8 @@ module Make (Io : Types.IO) = struct
       a Ndarray.dtype ->
       a Ndarray.t Deferred.t
       = fun t node slice kind ->
+      let indexed_fill_value ~fv (i, _) = (i, fv) in
+      let indexed_ndarray_value ~arr (i, c) = (i, Ndarray.get arr c) in
       let add_indexed_coord ~meta acc (i, y) =
         let chunk_idx, c = Metadata.Array.index_coord_pair meta y in
         ArrayMap.add_to_list chunk_idx (i, c) acc
@@ -157,14 +167,14 @@ module Make (Io : Types.IO) = struct
       let read_chunk ~t ~meta ~prefix ~chain ~fv ~repr (idx, pairs) =
         let ckey = prefix ^ Metadata.Array.chunk_key meta idx in
         size t ckey >>= function
-        | 0 -> Deferred.return @@ List.map (fun (i, _) -> i, fv) pairs
+        | 0 -> Deferred.return @@ List.map (indexed_fill_value ~fv) pairs
         | shardsize when Io_chain.is_just_sharding chain ->
           let pget = get_partial_values t ckey in
           Io_chain.partial_decode chain pget shardsize repr pairs fv
         | _ ->
           let+ v = get t ckey in
           let arr = Codecs.Chain.decode chain repr v in
-          List.map (fun (i, c) -> i, Ndarray.get arr c) pairs
+          List.map (indexed_ndarray_value ~arr) pairs
       in
       let* meta = metadata t node in
       if not (Metadata.Array.is_valid_kind meta kind) then raise Invalid_data_type else
@@ -186,11 +196,13 @@ module Make (Io : Types.IO) = struct
       Ndarray.of_array kind slice_shape (Array.of_list vs)
 
     let reshape t node new_shape =
-      let remove ~t ~meta ~prefix v =
-        let key = prefix ^ Metadata.Array.chunk_key meta v in
-        is_member t key >>= function
+      let maybe_erase t key = function
         | false -> Deferred.return_unit
         | true -> erase t key
+      in
+      let remove ~t ~meta ~prefix v =
+        let key = prefix ^ Metadata.Array.chunk_key meta v in
+        is_member t key >>= maybe_erase t key
       in
       let mkey = Node.Array.to_metakey node in
       let* meta = metadata t node in
@@ -204,10 +216,8 @@ module Make (Io : Types.IO) = struct
       set t mkey Metadata.Array.(encode @@ update_shape meta new_shape)
 
     let rename t node str =
-      let key = Node.Array.to_key node in
-      let key' = Node.Array.(rename node str |> to_key) in
-      exists t node >>= function
-      | false -> raise (Key_not_found key)
-      | true -> rename t key key'
+      let key = Node.Array.to_key node
+      and key' = Node.Array.(rename node str |> to_key) in
+      exists t node >>= maybe_rename t key key'
   end
 end

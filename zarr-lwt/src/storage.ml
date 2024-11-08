@@ -16,19 +16,22 @@ module FilesystemStore = struct
     let key_to_fspath t key = Filename.concat t.dirname key
 
     let rec create_parent_dir fn perm =
+      let maybe_create ~perm parent_dir = function
+        | true -> Lwt.return_unit
+        | false ->
+          let* () = create_parent_dir parent_dir perm in
+          Lwt_unix.mkdir parent_dir perm
+      in
       let parent_dir = Filename.dirname fn in
-      Lwt_unix.file_exists parent_dir >>= function
-      | true -> Lwt.return_unit
-      | false ->
-        let* () = create_parent_dir parent_dir perm in
-        Lwt_unix.mkdir parent_dir perm
+      Lwt_unix.file_exists parent_dir >>= maybe_create ~perm parent_dir
 
     let size t key =
-      Lwt.catch
-        (fun () ->
-          let+ length = Lwt_io.file_length (key_to_fspath t key) in
-          Int64.to_int length)
-        (fun _ -> Deferred.return 0)
+      let file_length path () =
+        let+ length = Lwt_io.file_length path in
+        Int64.to_int length
+      in
+      let filepath = key_to_fspath t key in
+      Lwt.catch (file_length filepath) (Fun.const @@ Deferred.return 0)
 
     let get t key =
       let* buf_size = size t key in
@@ -74,9 +77,12 @@ module FilesystemStore = struct
         (write ~value)
 
     let set_partial_values t key ?(append=false) rvs =
-      let write ~oc (ofs, value) =
-        let* () = Lwt_io.set_position oc (Int64.of_int ofs) in
-        Lwt_io.write oc value
+      let write_all rvs oc =
+        let write ~oc (ofs, value) =
+          let* () = Lwt_io.set_position oc (Int64.of_int ofs) in
+          Lwt_io.write oc value
+        in
+        Lwt_list.iter_s (write ~oc) rvs
       in
       let l = List.fold_left (fun a (_, s) -> Int.max a (String.length s)) 0 rvs in
       let flags = match append with
@@ -91,7 +97,7 @@ module FilesystemStore = struct
         ~mode:Lwt_io.Output
         ~flags
         filepath
-        (fun oc -> Lwt_list.iter_s (write ~oc) rvs)
+        (write_all rvs)
 
     let rec walk t acc dir =
       let accumulate ~t x a =

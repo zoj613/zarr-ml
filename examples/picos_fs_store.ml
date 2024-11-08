@@ -14,7 +14,7 @@ module PicosFSStore : sig
   val create : ?perm:Unix.file_perm -> string -> t
 end = struct
   
-  module F = struct
+  module IO = struct
     module Deferred = Zarr_sync.Deferred
 
     type t = {dirname : string; perm : PU.file_perm}
@@ -130,9 +130,9 @@ end = struct
   let create ?(perm=0o700) dirname =
     Zarr.Util.create_parent_dir dirname perm;
     Sys.mkdir dirname perm;
-    F.{dirname = Zarr.Util.sanitize_dir dirname; perm}
+    IO.{dirname = Zarr.Util.sanitize_dir dirname; perm}
 
-  include Zarr.Storage.Make(F)
+  include Zarr.Storage.Make(IO)
 end
 
 let _ =

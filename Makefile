@@ -26,3 +26,8 @@ docs:
 .PHONY: view-docs
 view-docs: docs
 	chromium _build/default/_doc/_html/index.html 
+
+.PHONY: minio
+minio:
+	mkdir -p /tmp/minio/test-bucket-lwt
+	docker run --rm -it -p 9000:9000 -v /tmp/minio:/minio minio/minio:latest server /minio

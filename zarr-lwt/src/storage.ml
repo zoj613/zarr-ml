@@ -163,3 +163,177 @@ module FilesystemStore = struct
 
   include Zarr.Storage.Make(IO)
 end
+
+module AmazonS3Store = struct
+  module Credentials = Aws_s3_lwt.Credentials
+  module S3 = Aws_s3_lwt.S3
+
+  open Deferred.Infix
+  open Deferred.Syntax
+
+  exception Request_failed of S3.error
+
+  let empty_content () = S3.{
+    storage_class = Standard;
+    meta_headers = None;
+    etag = String.empty;
+    key = String.empty;
+    last_modified = 0.;
+    size = 0
+  }
+
+  let fold_or_catch ~not_found res =
+    let return_or_raise r () = match r with
+      | Ok v -> Deferred.return v
+      | Error e -> raise (Request_failed e)
+    and on_exception ~not_found = function
+      | Request_failed S3.Not_found -> Lwt.return (not_found ())
+      | exn -> raise exn
+    in
+    Lwt.catch (return_or_raise res) (on_exception ~not_found)
+
+  let raise_not_found k () = raise (Zarr.Storage.Key_not_found k)
+
+  let empty_Ls = Fun.const ([], S3.Ls.Done)
+
+  let fold_continuation ~return ~more = function
+    | S3.Ls.Done -> Deferred.return return
+    | S3.Ls.More continuation ->
+      continuation () >>= fold_or_catch ~not_found:empty_Ls >>= fun (xs, cont) ->
+      more xs cont
+
+  module IO = struct
+    module Deferred = Deferred
+
+    type t =
+      {retries : int
+      ;bucket : string
+      ;cred : Credentials.t
+      ;endpoint : Aws_s3.Region.endpoint}
+
+    let size t key =
+      let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
+      let f ~endpoint () = S3.head ~bucket ~credentials ~key ~endpoint () in
+      let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
+      let+ c = fold_or_catch ~not_found:empty_content res in
+      c.size
+
+    let is_member t key =
+      let+ size = size t key in
+      if size = 0 then false else true
+
+    let get t key =
+      let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
+      let f ~endpoint () = S3.get ~bucket ~credentials ~endpoint ~key () in
+      let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
+      fold_or_catch ~not_found:(raise_not_found key) res
+
+    let get_partial_values t key ranges =
+      let read_range t key (ofs, len) =
+        let range = match len with
+          | None -> S3.{first = Some ofs; last = None}
+          | Some l -> S3.{first = Some ofs; last = Some (ofs + l - 1)}
+        in
+        let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
+        let f ~endpoint () = S3.get ~bucket ~credentials ~endpoint ~range ~key () in
+        let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
+        let+ data = fold_or_catch ~not_found:(raise_not_found key) res in
+        [data]
+      in
+      Deferred.concat_map (read_range t key) ranges
+
+    let set t key data =
+      let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
+      let f ~endpoint () = S3.put ~bucket ~credentials ~endpoint ~data ~key () in
+      let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
+      let* _ = fold_or_catch ~not_found:(Fun.const String.empty) res in
+      Deferred.return_unit
+
+    let set_partial_values t key ?(append=false) rsv =
+      let* size = size t key in
+      let* ov = match size with
+        | 0 -> Deferred.return String.empty
+        | _ -> get t key
+      in
+      let f = if append || ov = String.empty then
+        fun acc (_, v) -> acc ^ v else
+        fun acc (rs, v) ->
+          let s = Bytes.unsafe_of_string acc in
+          Bytes.blit_string v 0 s rs String.(length v);
+          Bytes.unsafe_to_string s
+      in
+      set t key (List.fold_left f ov rsv)
+
+    let erase t key =
+      let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
+      let f ~endpoint () = S3.delete ~bucket ~credentials ~endpoint ~key () in
+      let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
+      fold_or_catch ~not_found:(Fun.const ()) res
+
+    let rec delete_keys t cont () = 
+      let del t xs c = Deferred.iter (delete_content t) xs >>= delete_keys t c in
+      fold_continuation ~return:() ~more:(del t) cont
+
+    and delete_content t S3.{key; _} = erase t key
+
+    and erase_prefix t prefix =
+      let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
+      let f ~endpoint () = S3.ls ~bucket ~credentials ~endpoint ~prefix () in
+      let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
+      let* xs, rest = fold_or_catch ~not_found:empty_Ls res in
+      Deferred.iter (delete_content t) xs >>= delete_keys t rest
+
+    let rec list t =
+      let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
+      let f ~endpoint () = S3.ls ~bucket ~credentials ~endpoint () in
+      let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
+      let* xs, rest = fold_or_catch ~not_found:empty_Ls res in
+      accumulate_keys (List.map content_key xs) rest
+
+    and content_key S3.{key; _} = key
+
+    and accumulate_keys acc cont =
+      let append acc xs c = accumulate_keys (acc @ List.map content_key xs) c in
+      fold_continuation ~return:acc ~more:(append acc) cont
+
+    module S = Set.Make(String)
+
+    let rec partition_keys prefix ((l, r) as acc) cont =
+      let split ~acc ~prefix xs c = partition_keys prefix (List.fold_left (add prefix) acc xs) c in
+      fold_continuation ~return:(l, S.elements r) ~more:(split ~acc ~prefix) cont
+
+    and add prefix (l, r) (c : S3.content) =
+      let size = String.length prefix in
+      if not (String.contains_from c.key size '/') then c.key :: l, r else
+      l, S.add String.(sub c.key 0 @@ 1 + index_from c.key size '/') r
+
+    and list_dir t prefix =
+      let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
+      let f ~endpoint () = S3.ls ~bucket ~credentials ~endpoint ~prefix () in
+      let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
+      let* xs, rest = fold_or_catch ~not_found:empty_Ls res in
+      let init = List.fold_left (add prefix) ([], S.empty) xs in
+      partition_keys prefix init rest
+
+    let rec rename t prefix new_prefix =
+      let upload t (k, v) = set t k v in
+      let* xs = list t in
+      let to_delete = List.filter (String.starts_with ~prefix) xs in
+      let* data = Deferred.fold_left (rename_and_add ~t ~prefix ~new_prefix) [] to_delete in
+      let* () = Deferred.iter (upload t) data in
+      Deferred.iter (erase t) to_delete
+
+    and rename_and_add ~t ~prefix ~new_prefix acc k =
+      let l = String.length prefix in
+      let k' = new_prefix ^ String.sub k l (String.length k - l) in
+      let+ a = get t k in (k', a) :: acc
+  end
+
+  let with_open ?(scheme=`Http) ?(inet=`V4) ?(retries=3) ~region ~bucket ~profile f =
+    let* res = Credentials.Helper.get_credentials ~profile () in
+    let cred = Result.fold ~ok:Fun.id ~error:raise res in
+    let endpoint = Aws_s3.Region.endpoint ~inet ~scheme region in
+    f IO.{bucket; cred; endpoint; retries}
+
+  include Zarr.Storage.Make(IO)
+end

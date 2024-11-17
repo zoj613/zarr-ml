@@ -3,6 +3,7 @@
  (public_name zarr-lwt)
  (libraries
    zarr
+   aws-s3-lwt
    lwt
    lwt.unix)
  (ocamlopt_flags

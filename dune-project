@@ -63,6 +63,7 @@
      (and (>= 4.14.0)))
    (zarr (= :version))
    (lwt (>= 2.5.1))
+   (aws-s3-lwt (>= 4.8.1))
    (odoc :with-doc)
    (ounit2 :with-test)
    (ppx_deriving :with-test)

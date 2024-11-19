@@ -6,13 +6,15 @@
     dune exec -- examples/zipstore.exe
   in your shell at the root of this project. *)
 
+module D = Zarr_eio.Storage.Deferred
+
 module ZipStore : sig
-  include Zarr.Storage.STORE with module Deferred = Zarr_eio.Deferred
+  include Zarr.Storage.STORE with module Deferred = D
   val with_open : ?clevel:int -> string -> (t -> 'a) -> 'a
 end = struct
 
   module Z = struct
-    module Deferred = Zarr_eio.Deferred
+    module Deferred = D
 
     type t = {path : string; level : int option}
 

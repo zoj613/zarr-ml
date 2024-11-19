@@ -8,14 +8,15 @@
   in your shell at the root of this project. *)
 
 module PU = Picos_io.Unix
+module D = Zarr_sync.Storage.Deferred
 
 module PicosFSStore : sig
-  include Zarr.Storage.STORE with module Deferred = Zarr_sync.Deferred
+  include Zarr.Storage.STORE with module Deferred = D
   val create : ?perm:Unix.file_perm -> string -> t
 end = struct
   
   module IO = struct
-    module Deferred = Zarr_sync.Deferred
+    module Deferred = D
 
     type t = {dirname : string; perm : PU.file_perm}
 

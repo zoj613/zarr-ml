@@ -1,12 +1,14 @@
+module Deferred : Zarr.Types.Deferred with type 'a t = 'a Lwt.t
+
 (** An Lwt-aware in-memory storage backend for Zarr v3 hierarchy. *)
-module MemoryStore : sig include Zarr.Memory.S with type 'a Deferred.t = 'a Lwt.t end
+module MemoryStore : Zarr.Memory.S with module Deferred = Deferred
 
 (** An Lwt-aware Zip file storage backend for a Zarr v3 hierarchy. *)
-module ZipStore : Zarr.Zip.S with type 'a Deferred.t = 'a Lwt.t
+module ZipStore : Zarr.Zip.S with module Deferred = Deferred
 
 (** An Lwt-aware local filesystem storage backend for a Zarr V3 hierarchy. *)
 module FilesystemStore : sig
-  include Zarr.Storage.STORE with type 'a Deferred.t = 'a Lwt.t
+  include Zarr.Storage.STORE with module Deferred = Deferred
 
   val create : ?perm:Unix.file_perm -> string -> t
   (** [create ~perm dir] returns a new filesystem store.

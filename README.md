@@ -14,9 +14,9 @@ arrays, designed for use in parallel computing.
 - Supports storing arrays in-memory or the local filesystem. It is also
   extensible, allowing users to easily create and use their own custom storage
   backends. See the example implementing a [Zip file store][9] for more details.
-- Supports both synchronous and concurrent I/O via [Lwt][4] and [Eio][8]. The user can
-  easily use their own scheduler of choice. See the example implementing
-  a filesystem store that uses the [Picos][10] concurrency library for non-blocking I/O.
+- Supports both synchronous and asynchronous I/O via [Lwt][4] and [Eio][8]. The user can
+  easily use their own scheduler of choice. See the [example][10] implementing
+  a filesystem store that uses the [Picos][11] concurrency library for non-blocking I/O.
 - Leverages the strong type system of Ocaml to create a type-safe API; making
   it impossible to create, read or write malformed arrays.
 - Supports organizing arrays into heirarchies via groups.
@@ -144,3 +144,4 @@ FilesystemStore.Array.rename store anode "new_name";;
 [8]: https://github.com/ocaml-multicore/eio
 [9]: https://github.com/zoj613/zarr-ml/tree/main/examples/zipstore.ml
 [10]: https://github.com/zoj613/zarr-ml/tree/main/examples/picos_fs_store.ml
+[11]: https://ocaml-multicore.github.io/picos/

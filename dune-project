@@ -48,9 +48,11 @@
    (ocaml
      (and (>= 4.14.0)))
    (zarr (= :version))
+   (ezcurl (>= 0.2.4))
    (odoc :with-doc)
    (ounit2 :with-test)
    (ppx_deriving :with-test)
+   (tiny_httpd :with-test)
    (bisect_ppx
      (and :dev (>= 2.5.0) :with-test))))
 

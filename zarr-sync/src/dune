@@ -1,7 +1,9 @@
 (library
  (name zarr_sync)
  (public_name zarr-sync)
- (libraries zarr)
+ (libraries
+   zarr
+   ezcurl)
  (ocamlopt_flags
    (:standard -O3))
  (instrumentation

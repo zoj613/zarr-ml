@@ -20,3 +20,10 @@ module FilesystemStore : sig
 
       @raise Failure if [dir] is not a Zarr store path. *)
 end
+
+module HttpStore : sig
+  exception Not_implemented
+  exception Request_failed of string
+  include Zarr.Storage.STORE with module Deferred = Deferred
+  val with_open : ?redirects:int -> ?tries:int -> string -> (t -> 'a) -> 'a
+end

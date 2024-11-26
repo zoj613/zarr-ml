@@ -110,3 +110,99 @@ module FilesystemStore = struct
 
   include Zarr.Storage.Make(IO)(S)
 end
+
+module HttpStore = struct
+  exception Not_implemented
+  exception Request_failed of string
+
+  let raise_error (_, s) = raise (Request_failed s)
+  let fold_result ~ok res = Result.fold ~error:raise_error ~ok res
+
+  module IO = struct
+    module Deferred = Deferred
+
+    type t =
+      {tries : int
+      ;base_url : string
+      ;client : Ezcurl_core.t
+      ;config : Ezcurl_core.Config.t}
+
+    let get t key =
+      let tries = t.tries and client = t.client and config = t.config in
+      let url = t.base_url ^ key in
+      let res = Ezcurl.get ~tries ~client ~config ~url () in
+      match fold_result ~ok:Fun.id res with
+      | {code; body; _} when code = 200 -> body
+      | {code; _} when code >= 400 -> raise (Zarr.Storage.Key_not_found key)
+      | {code; _} -> raise (Request_failed (string_of_int code))
+
+    let size t key = try String.length (get t key) with
+      | Zarr.Storage.Key_not_found _ -> 0
+      (*let tries = t.tries and client = t.client and config = t.config in
+      let url = t.base_url ^ key in
+      let res = Ezcurl.http ~tries ~client ~config ~url ~meth:HEAD () in
+      let response = fold_result ~ok:Fun.id res in
+      if response.code != 200 then 0 else
+      match List.assoc_opt "content-length" response.headers with
+      | Some l -> int_of_string l
+      | None -> String.length (get t key) *)
+
+    let is_member t key = if (size t key) = 0 then false else true
+
+    let get_partial_values t key ranges =
+      let tries = t.tries and client = t.client and config = t.config and url = t.base_url ^ key in
+      let fetch range = Ezcurl.get ~range ~tries ~client ~config ~url () in
+      let end_index ofs l = Printf.sprintf "%d-%d" ofs (ofs + l - 1) in
+      let read_range (ofs, len) =
+        let none = Printf.sprintf "%d-" ofs in
+        let range = Option.fold ~none ~some:(end_index ofs) len in
+        let response = fold_result ~ok:Fun.id (fetch range) in
+        response.body
+      in
+      List.map read_range ranges
+
+    let set t key data =
+      let tries = t.tries and client = t.client and config = t.config
+      and url = t.base_url ^ key and content = `String data
+      and headers = [("Content-Length", string_of_int (String.length data))] in
+      let res = Ezcurl.put ~tries ~client ~config ~headers ~url ~content () in
+      match fold_result ~ok:Fun.id res with
+      | {code; _} when code = 200 || code = 201 -> ()
+      | {code; _} -> raise (Request_failed (string_of_int code))
+
+    let set_partial_values t key ?(append=false) rsv =
+      let size = size t key in
+      let ov = match size with
+        | 0 -> String.empty
+        | _ -> get t key
+      in
+      let f = if append || ov = String.empty then
+        fun acc (_, v) -> acc ^ v else
+        fun acc (rs, v) ->
+          let s = Bytes.unsafe_of_string acc in
+          Bytes.blit_string v 0 s rs String.(length v);
+          Bytes.unsafe_to_string s
+      in
+      set t key (List.fold_left f ov rsv)
+
+    (*let erase t key =
+      let tries = t.tries and client = t.client and config = t.config in
+      let url = t.base_url ^ key in
+      let res = Ezcurl.http ~tries ~client ~config ~url ~meth:Ezcurl.DELETE () in
+      let _ = fold_result ~ok:Fun.id res in
+      () *)
+
+    let erase _ = raise Not_implemented
+    let erase_prefix _ = raise Not_implemented
+    let list _ = raise Not_implemented
+    let list_dir _ = raise Not_implemented
+    let rename _ = raise Not_implemented
+  end
+
+  let with_open ?(redirects=5) ?(tries=3) url f =
+    let config = Ezcurl_core.Config.(default |> max_redirects redirects |> follow_location true) in
+    let perform client = f IO.{tries; client; config; base_url = url ^ "/"} in
+    Ezcurl_core.with_client perform
+
+  include Zarr.Storage.Make(IO)
+end

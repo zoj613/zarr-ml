@@ -126,5 +126,34 @@ let _ =
       (* test just opening the now exisitant archive created by the previous test. *)
       ZipStore.with_open `Read_only zpath (fun _ -> ());
       test_storage (module MemoryStore) (MemoryStore.create ());
-      test_storage (module FilesystemStore) s)
+      test_storage (module FilesystemStore) s;
+      HttpStore.with_open ~net:env#net (Uri.of_string "http://127.0.0.1:8080") (fun store ->
+        let module S = Tiny_httpd in
+        let dir_behavior = S.Dir.Forbidden and download = true and delete = true and upload = true in
+        let config = S.Dir.config ~dir_behavior ~delete ~upload ~download ()
+        and addr = "127.0.0.1" and port = 8080 in
+        let server = S.create ~max_connections:4 ~addr ~port () in
+        (*let dir = "/home/zoj/dev/zarr-ml/testdata.zarr" in *)
+        let dir = Sys.getenv "HTTPSTORE_DIR" in
+        S.Dir.add_dir_path ~config ~dir ~prefix:"" server;
+        let _ = Thread.create S.run server in
+        let gnode = Node.Group.of_path "/some/group" in
+        let meta = HttpStore.Group.metadata store gnode in
+        assert_equal ~printer:Metadata.Group.show Metadata.Group.default meta;
+        let anode = Node.Array.of_path "/some/group/another" in
+        let slice = [|R [|0; 5|]; I 10; R [|0; 10|]|] in
+        let _ = HttpStore.Array.read store anode slice Complex32 in
+        assert_raises (HttpStore.Not_implemented) (fun () -> HttpStore.hierarchy store);
+        assert_raises (HttpStore.Not_implemented) (fun () -> HttpStore.Group.create store (Node.Group.of_path "/blah"));
+        (*assert_raises (HttpStore.Not_implemented) (fun () -> HttpStore.Group.children store gnode);
+        assert_raises (HttpStore.Not_implemented) (fun () -> HttpStore.Array.rename store anode "newname"); *)
+        (*assert_raises (HttpStore.Not_implemented) (fun () -> HttpStore.Array.reshape store anode [|1;1;1|]); *)
+        assert_raises (HttpStore.Not_implemented) (fun () -> HttpStore.clear store);
+        assert_raises
+          (HttpStore.Not_implemented)
+          (fun () ->
+            let exp = Ndarray.init Complex32 [|6; 1; 11|] (Fun.const Complex.one) in
+            HttpStore.Array.write store anode slice exp);
+        Tiny_httpd.stop server)
+    )
   ])

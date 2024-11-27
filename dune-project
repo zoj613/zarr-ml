@@ -81,6 +81,7 @@
      (and (>= 5.1.0)))
    (zarr (= :version))
    (eio_main (>= 1.0))
+   (cohttp-eio (>= 6.0.0))
    (odoc :with-doc)
    (ounit2 :with-test)
    (ppx_deriving :with-test)

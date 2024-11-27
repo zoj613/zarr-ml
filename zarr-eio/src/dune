@@ -3,6 +3,7 @@
  (public_name zarr-eio)
  (libraries
    zarr
+   cohttp-eio
    eio_main)
  (ocamlopt_flags
    (:standard -O3))

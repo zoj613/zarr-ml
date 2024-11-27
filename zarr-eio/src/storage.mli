@@ -20,3 +20,14 @@ module FilesystemStore : sig
 
       @raise Failure if [dir] is a file and not a Zarr store path. *)
 end
+
+module HttpStore : sig
+  exception Not_implemented
+  exception Request_failed of string
+  include Zarr.Storage.STORE with module Deferred = Deferred
+  val with_open :
+    net:_ Eio.Net.t ->
+    Uri.t ->
+    (t -> 'a) ->
+    'a
+end

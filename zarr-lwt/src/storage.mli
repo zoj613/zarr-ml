@@ -21,6 +21,13 @@ module FilesystemStore : sig
       @raise Failure if [dir] is not a Zarr store path. *)
 end
 
+module HttpStore : sig
+  exception Not_implemented
+  exception Request_failed of string
+  include Zarr.Storage.STORE with module Deferred = Deferred
+  val with_open : string -> (t -> 'a Lwt.t) -> 'a Lwt.t
+end
+
 (** An Lwt-aware Amazon S3 bucket storage backend for a Zarr V3 hierarchy. *)
 module AmazonS3Store : sig
   exception Request_failed of Aws_s3_lwt.S3.error

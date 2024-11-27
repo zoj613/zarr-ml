@@ -219,7 +219,7 @@ let _ =
         assert_equal ~printer:Metadata.Group.show Metadata.Group.default meta;
         let anode = Node.Array.of_path "/some/group/another" in
         let slice = [|R [|0; 5|]; I 10; R [|0; 10|]|] in
-        let _ = HttpStore.Array.read store anode slice Float64 in
+        let _ = HttpStore.Array.read store anode slice Complex32 in
         assert_raises (HttpStore.Not_implemented) (fun () -> HttpStore.hierarchy store);
         assert_raises (HttpStore.Not_implemented) (fun () -> HttpStore.Group.create store (Node.Group.of_path "/blah"));
         assert_raises (HttpStore.Not_implemented) (fun () -> HttpStore.Group.children store Node.Group.root);
@@ -229,9 +229,8 @@ let _ =
         assert_raises
           (HttpStore.Not_implemented)
           (fun () ->
-            let exp = Ndarray.init Float64 [|6; 1; 11|] (Fun.const 10.) in
+            let exp = Ndarray.init Complex32 [|6; 1; 11|] (Fun.const Complex.one) in
             HttpStore.Array.write store anode slice exp);
-        Tiny_httpd.stop server;
-        ())
+        Tiny_httpd.stop server)
     )
   ])

@@ -129,3 +129,95 @@ module FilesystemStore = struct
 
   include Zarr.Storage.Make(IO)(S)
 end
+
+module HttpStore = struct
+  exception Not_implemented
+  exception Request_failed of string
+
+  open Cohttp_eio
+
+  let raise_status_error s =
+    let c = Cohttp.Code.code_of_status s in
+    let msg = Printf.sprintf "%d: %s" c (Cohttp.Code.reason_phrase_of_code c) in
+    raise (Request_failed msg)
+
+  module IO = struct
+    module Deferred = Deferred
+
+    type t = {base_url : Uri.t; client : Client.t}
+
+    let get t key =
+      Eio.Switch.run @@ fun sw ->
+      let url = Uri.with_path t.base_url key in
+      let resp, body = Client.get ~sw t.client url in
+      match Http.Response.status resp with
+      | #Http.Status.success -> Eio.Flow.read_all body
+      | #Http.Status.client_error as e when e = `Not_found ->
+        raise (Zarr.Storage.Key_not_found key)
+      | e -> raise_status_error e
+
+    let size t key =
+      Eio.Switch.run @@ fun sw ->
+      let url = Uri.with_path t.base_url key in
+      let resp = Client.head ~sw t.client url in
+      match Http.Response.status resp with
+      | #Http.Status.success ->
+        begin match Http.Response.content_length resp with
+          | Some l -> l
+          | None -> String.length (get t key)
+        end
+      | #Http.Status.client_error as e when e = `Not_found -> Deferred.return 0
+      | e -> raise_status_error e
+
+    let is_member t key = if (size t key) = 0 then false else true
+
+    let get_partial_values t key ranges =
+      let read_range ~data ~size (ofs, len) = match len with
+        | None -> String.sub data ofs (size - ofs)
+        | Some l -> String.sub data ofs l
+      in
+      let data = get t key in
+      let size = String.length data in
+      List.map (read_range ~data ~size) ranges
+
+    (*let set t key data =
+      Eio.Switch.run @@ fun sw ->
+      let url = Uri.with_path t.base_url key in
+      let headers = Http.Header.of_list [("Content-Length", string_of_int (String.length data))] in
+      let body = Body.of_string data in
+      let resp, _ = Client.put ~sw ~headers ~body t.client url in
+      match Http.Response.status resp with
+      | #Http.Status.success -> Deferred.return_unit
+      | e -> raise_status_error e
+ 
+    let set_partial_values t key ?(append=false) rsv =
+      let* size = size t key in
+      let* ov = match size with
+        | 0 -> Deferred.return String.empty
+        | _ -> get t key
+      in
+      let f = if append || ov = String.empty then
+        fun acc (_, v) -> acc ^ v else
+        fun acc (rs, v) ->
+          let s = Bytes.unsafe_of_string acc in
+          Bytes.blit_string v 0 s rs String.(length v);
+          Bytes.unsafe_to_string s
+      in
+      set t key (List.fold_left f ov rsv)
+    *)
+
+    let set _ = raise Not_implemented
+    let set_partial_values _ = raise Not_implemented
+    let erase _ = raise Not_implemented
+    let erase_prefix _ = raise Not_implemented
+    let list _ = raise Not_implemented
+    let list_dir _ = raise Not_implemented
+    let rename _ = raise Not_implemented
+  end
+
+  let with_open ~net uri f =
+    let client = Client.make ~https:None net in
+    f IO.{client; base_url = uri}
+
+  include Zarr.Storage.Make(IO)
+end

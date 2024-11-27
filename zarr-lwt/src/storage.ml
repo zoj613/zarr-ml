@@ -324,3 +324,94 @@ module AmazonS3Store = struct
 
   include Zarr.Storage.Make(IO)(S)
 end
+
+module HttpStore = struct
+  exception Not_implemented
+  exception Request_failed of string
+
+  let raise_status_error s =
+    let c = Cohttp.Code.code_of_status s in
+    let msg = Printf.sprintf "%d: %s" c (Cohttp.Code.reason_phrase_of_code c) in
+    raise (Request_failed msg)
+
+  module IO = struct
+    module Deferred = Deferred
+    open Deferred.Syntax
+    open Cohttp_lwt_unix
+
+    type t = {base_url : Uri.t}
+
+    let get t key =
+      let url = Uri.with_path t.base_url key in
+      let* resp, body = Client.get url in
+      match Response.status resp with
+      | #Cohttp.Code.success_status -> Cohttp_lwt.Body.to_string body
+      | #Cohttp.Code.client_error_status as e when e = `Not_found ->
+        raise (Zarr.Storage.Key_not_found key)
+      | e -> raise_status_error e
+
+    let size t key =
+      let url = Uri.with_path t.base_url key in
+      let* resp = Client.head url in
+      match Response.status resp with
+      | #Cohttp.Code.success_status ->
+        begin match Cohttp.Header.get (Response.headers resp) "Content-Length" with
+          | Some l -> Deferred.return (int_of_string l)
+          | None ->
+            let+ data = get t key in
+            String.length data
+        end
+      | #Cohttp.Code.client_error_status as e when e = `Not_found  -> Deferred.return 0
+      | e -> raise_status_error e
+
+    let is_member t key =
+      let+ s = size t key in
+      if s = 0 then false else true
+
+    let get_partial_values t key ranges =
+      let read_range ~data ~size (ofs, len) = match len with
+        | None -> String.sub data ofs (size - ofs)
+        | Some l -> String.sub data ofs l
+      in
+      let+ data = get t key in
+      let size = String.length data in
+      List.map (read_range ~data ~size) ranges
+
+    (*let set t key data =
+      let url = Uri.with_path t.base_url key in
+      let body = Cohttp_lwt.Body.of_string data in
+      let headers = Cohttp.Header.of_list [("Content-Length", string_of_int (String.length data))] in
+      let* resp, _ = Client.put ~body ~headers url in
+      match Response.status resp with
+      | #Cohttp.Code.success_status -> Deferred.return_unit
+      | e -> raise_status_error e
+ 
+    let set_partial_values t key ?(append=false) rsv =
+      let* size = size t key in
+      let* ov = match size with
+        | 0 -> Deferred.return String.empty
+        | _ -> get t key
+      in
+      let f = if append || ov = String.empty then
+        fun acc (_, v) -> acc ^ v else
+        fun acc (rs, v) ->
+          let s = Bytes.unsafe_of_string acc in
+          Bytes.blit_string v 0 s rs String.(length v);
+          Bytes.unsafe_to_string s
+      in
+      set t key (List.fold_left f ov rsv)
+    *)
+
+    let set _ = raise Not_implemented
+    let set_partial_values _ = raise Not_implemented
+    let erase _ = raise Not_implemented
+    let erase_prefix _ = raise Not_implemented
+    let list _ = raise Not_implemented
+    let list_dir _ = raise Not_implemented
+    let rename _ = raise Not_implemented
+  end
+
+  let with_open url f = f IO.{base_url = Uri.of_string url}
+
+  include Zarr.Storage.Make(IO)
+end

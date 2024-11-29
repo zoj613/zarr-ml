@@ -23,7 +23,7 @@ end
 
 module HttpStore : sig
   exception Not_implemented
-  exception Request_failed of string
+  exception Request_failed of int * string
   include Zarr.Storage.STORE with module Deferred = Deferred
   val with_open : ?redirects:int -> ?tries:int -> string -> (t -> 'a) -> 'a
 end

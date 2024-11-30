@@ -112,14 +112,15 @@ module Make (Deferred : Types.Deferred) (C : C with type 'a io = 'a Deferred.t) 
       set t key (List.fold_left f ov rsv)
 
     (* make reshaping arrays possible *)
-    let erase t key =
+    (*let erase t key =
       let tries = t.tries and client = t.client and config = t.config in
       let url = t.base_url ^ key in
       let+ res = C.http ~tries ~client ~config ~url ~meth:DELETE () in
       match fold_result res with
-      | {code; _} when code = 200 -> ()
-      | {code; body; _} -> raise (Request_failed (code, body))
+      | {code; _} when code = 200 || code = 404 -> ()
+      | {code; body; _} -> raise (Request_failed (code, body)) *)
 
+    let erase _ = raise Not_implemented
     let erase_prefix _ = raise Not_implemented
     let list _ = raise Not_implemented
     let list_dir _ = raise Not_implemented

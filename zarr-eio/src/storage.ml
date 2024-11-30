@@ -209,14 +209,15 @@ module HttpStore = struct
       in
       set t key (List.fold_left f ov rsv)
     
-    let erase t key =
+    (*let erase t key =
       Eio.Switch.run @@ fun sw ->
       let url = Uri.with_path t.base_url key in
       let resp, _ = Client.delete ~sw t.client url in
       match Http.Response.status resp with
       | #Http.Status.success -> Deferred.return_unit
-      | e -> raise_status_error e
+      | e -> raise_status_error e *)
 
+    let erase _ = raise Not_implemented
     let erase_prefix _ = raise Not_implemented
     let list _ = raise Not_implemented
     let list_dir _ = raise Not_implemented

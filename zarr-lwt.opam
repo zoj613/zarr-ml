@@ -14,8 +14,10 @@ depends: [
   "zarr" {= version}
   "lwt" {>= "2.5.1"}
   "aws-s3-lwt" {>= "4.8.1"}
+  "cohttp-lwt" {>= "6.0.0"}
   "odoc" {with-doc}
   "ounit2" {with-test}
+  "tiny_httpd" {with-test}
   "ppx_deriving" {with-test}
   "bisect_ppx" {dev & >= "2.5.0" & with-test}
 ]

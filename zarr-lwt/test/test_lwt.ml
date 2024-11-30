@@ -160,9 +160,9 @@ let _ =
             let fspath = Filename.concat dir path in
             match In_channel.(with_open_gen [Open_rdonly] 0o700 fspath length) with
             | exception Sys_error e -> S.Response.make_raw ~code:404 e
-            | s ->
+            | l ->
               let headers =
-                [("Content-Length", Int64.to_string s)
+                [("Content-Length", Int64.to_string l)
                 ;("Content-Type",
                   if String.ends_with ~suffix:".json" path
                   then "application/json"
@@ -175,22 +175,41 @@ let _ =
             let fspath = Filename.concat dir path in
             match In_channel.(with_open_gen [Open_rdonly] 0o700 fspath input_all) with
             | exception Sys_error _ -> S.Response.make_raw ~code:404 (Printf.sprintf "%s not found" path)
-            | s -> S.Response.make_raw ~code:200 s
+            | s ->
+              let headers =
+                [("Content-Length", Int.to_string (String.length s))
+                ;("Content-Type",
+                  if String.ends_with ~suffix:".json" path
+                  then "application/json"
+                  else "application/octet-stream")]
+              in
+              S.Response.make_raw ~headers ~code:200 s
           );
-          S.add_route_handler server ~meth:`POST S.Route.rest_of_path_urlencoded (fun path req ->
-            let write oc = Out_channel.(output_string oc req.body; flush oc) in
+          S.add_route_handler_stream server ~meth:`POST S.Route.rest_of_path_urlencoded (fun path req ->
+            let write oc = 
+              let max_size = 1024 * 10 * 1024 in
+              let req' = S.Request.limit_body_size ~bytes:(Bytes.create 4096) ~max_size req in
+              S.IO.Input.iter (Out_channel.output oc) req'.body;
+              Out_channel.flush oc
+            in
             let fspath = Filename.concat dir path in
             Zarr.Util.create_parent_dir fspath 0o700;
             let f = [Open_wronly; Open_trunc; Open_creat] in
             match Out_channel.(with_open_gen f 0o700 fspath write) with
             | exception Sys_error e -> S.Response.make_raw ~code:500 e
-            | () -> S.Response.make_raw ~code:201 req.body
+            | () ->
+              let opt = List.assoc_opt "content-type" req.headers in
+              let content_type = Option.fold ~none:"application/octet-stream" ~some:Fun.id opt in
+              let headers = [("content-type", content_type); ("Connection", "close")] in
+              S.Response.make_raw ~headers ~code:201 (Printf.sprintf "%s created" path)
           );
           S.add_route_handler server ~meth:`DELETE S.Route.rest_of_path_urlencoded (fun path _ ->
             let fspath = Filename.concat dir path in
             match Sys.remove fspath with
             | exception Sys_error e -> S.Response.make_raw ~code:404 e
-            | () -> S.Response.make_raw ~code:200 (Printf.sprintf "%s deleted successfully" path)
+            | () ->
+              let headers = [("Connection", "close")] in
+              S.Response.make_raw ~headers ~code:200 (Printf.sprintf "%s deleted successfully" path)
           );
           let _ = Thread.create S.run server in
 

@@ -25,7 +25,13 @@ module HttpStore : sig
   exception Not_implemented
   exception Request_failed of int * string
   include Zarr.Storage.STORE with module Deferred = Deferred
-  val with_open : string -> (t -> 'a Lwt.t) -> 'a Lwt.t
+  val with_open :
+    ?redirects:int ->
+    ?tries:int ->
+    ?timeout:int ->
+    string ->
+    (t -> 'a Lwt.t) ->
+    'a Lwt.t
 end
 
 (** An Lwt-aware Amazon S3 bucket storage backend for a Zarr V3 hierarchy. *)

@@ -73,7 +73,7 @@ jobs:
         run: |
           opam install --deps-only --with-test --with-doc --yes zarr
           opam install bytesrw conf-zlib conf-zstd ezcurl tiny_httpd --yes
-          opam install lwt aws-s3-lwt cohttp-lwt-unix --yes
+          opam install lwt aws-s3-lwt ezcurl-lwt --yes
           opam exec -- dune build zarr zarr-sync zarr-lwt
       
       - name: setup ocaml-5-specific

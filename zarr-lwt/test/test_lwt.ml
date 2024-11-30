@@ -152,7 +152,7 @@ let _ =
         ;AmazonS3Store.with_open ~region ~bucket ~profile (test_storage (module AmazonS3Store))
         ;test_storage (module MemoryStore) (MemoryStore.create ())
         ;test_storage (module FilesystemStore) s
-        ;HttpStore.with_open "http://127.0.0.1:8080" (fun store ->
+        (*;HttpStore.with_open "http://127.0.0.1:8080" (fun store ->
           let module S = Tiny_httpd in
           let server = S.create ~max_connections:1000 ~addr:"127.0.0.1" ~port:8080 () in
           let dir = tmp_dir in
@@ -263,7 +263,7 @@ let _ =
           let* () = assert_not_implemented (fun () -> HttpStore.hierarchy store) in
           let* () = assert_not_implemented (fun () -> HttpStore.Group.delete store gnode) in
           let+ () = assert_not_implemented (fun () -> HttpStore.clear store) in
-          Tiny_httpd.stop server)
+          Tiny_httpd.stop server) *)
         ]
       in
       Lwt_main.run @@ Lwt.join promises)

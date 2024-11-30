@@ -141,12 +141,11 @@ module HttpStore = struct
     (*let size t key =  
       let tries = t.tries and client = t.client and config = t.config in
       let url = t.base_url ^ key in
-      print_endline @@ "about to HEAD " ^ url;
-      let res = Ezcurl.http ~tries ~client ~config ~url ~meth:HEAD () in
+      let type' = if String.ends_with ~suffix:".json" key then "json" else "octet-stream" in
+      let headers = [("Content-Type", "application/" ^ type')] in
+      let res = Ezcurl.http ~headers ~tries ~client ~config ~url ~meth:HEAD () in
       match fold_result res with
-      | {code; _} when code = 404 ->
-        print_endline "akho head";
-        0
+      | {code; _} when code = 404 -> 0
       | {headers; _} ->
         match List.assoc_opt "content-length" headers with
         | (Some "0" | None) ->
@@ -171,7 +170,11 @@ module HttpStore = struct
     let set t key data =
       let tries = t.tries and client = t.client and config = t.config
       and url = t.base_url ^ key and content = `String data in
-      let res = Ezcurl.post ~params:[] ~tries ~client ~config ~url ~content () in
+      let type' = if String.ends_with ~suffix:".json" key then "json" else "octet-stream" in
+      let headers =
+        [("Content-Length", string_of_int (String.length data))
+        ;("Content-Type", "application/" ^ type')] in
+      let res = Ezcurl.post ~params:[] ~headers ~tries ~client ~config ~url ~content () in
       match fold_result res with
       | {code; _} when code = 200 || code = 201 -> ()
       | {code; body; _} -> raise (Request_failed (code, body))
@@ -206,10 +209,11 @@ module HttpStore = struct
     let rename _ = raise Not_implemented
   end
 
-  let with_open ?(redirects=5) ?(tries=3) url f =
+  let with_open ?(redirects=5) ?(tries=3) ?(timeout=5) url f =
     let config = Ezcurl_core.Config.(default |> max_redirects redirects |> follow_location true) in
     let perform client = f IO.{tries; client; config; base_url = url ^ "/"} in
-    Ezcurl_core.with_client perform
+    let set_opts client = Curl.set_connecttimeout client timeout in
+    Ezcurl_core.with_client ~set_opts perform
 
   include Zarr.Storage.Make(IO)
 end

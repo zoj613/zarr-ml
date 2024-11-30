@@ -6,6 +6,9 @@ module MemoryStore : Zarr.Memory.S with type 'a io := 'a Lwt.t
 (** An Lwt-aware Zip file storage backend for a Zarr v3 hierarchy. *)
 module ZipStore : Zarr.Zip.S with type 'a io := 'a Lwt.t
 
+(** An Lwt-aware Http storage backend for a Zarr v3 hierarchy. *)
+module HttpStore : Zarr.Http.S with module Deferred = Deferred
+
 (** An Lwt-aware local filesystem storage backend for a Zarr V3 hierarchy. *)
 module FilesystemStore : sig
   include Zarr.Storage.S with type 'a io := 'a Lwt.t
@@ -19,19 +22,6 @@ module FilesystemStore : sig
   (** [open_store ~perm dir] returns an existing filesystem Zarr store.
 
       @raise Failure if [dir] is not a Zarr store path. *)
-end
-
-module HttpStore : sig
-  exception Not_implemented
-  exception Request_failed of int * string
-  include Zarr.Storage.STORE with module Deferred = Deferred
-  val with_open :
-    ?redirects:int ->
-    ?tries:int ->
-    ?timeout:int ->
-    string ->
-    (t -> 'a Lwt.t) ->
-    'a Lwt.t
 end
 
 (** An Lwt-aware Amazon S3 bucket storage backend for a Zarr V3 hierarchy. *)

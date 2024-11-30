@@ -6,6 +6,9 @@ module MemoryStore : Zarr.Memory.S with type 'a io := 'a
 (** A blocking I/O Zip file storage backend for a Zarr v3 hierarchy. *)
 module ZipStore : Zarr.Zip.S with type 'a io := 'a
 
+(** A blocking I/O Http storage backend for a Zarr v3 hierarchy. *)
+module HttpStore : Zarr.Http.S with module Deferred = Deferred
+
 (** A blocking I/O local filesystem storage backend for a Zarr v3 hierarchy. *)
 module FilesystemStore : sig
   include Zarr.Storage.S with type 'a io := 'a
@@ -19,11 +22,4 @@ module FilesystemStore : sig
   (** [open_store ~perm dir] returns an existing filesystem Zarr store.
 
       @raise Failure if [dir] is not a Zarr store path. *)
-end
-
-module HttpStore : sig
-  exception Not_implemented
-  exception Request_failed of int * string
-  include Zarr.Storage.STORE with module Deferred = Deferred
-  val with_open : ?redirects:int -> ?tries:int -> ?timeout:int -> string -> (t -> 'a) -> 'a
 end

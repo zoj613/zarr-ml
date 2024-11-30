@@ -6,6 +6,7 @@
    bytesrw.zstd
    bytesrw.zlib
    zipc
+   ezcurl
    stdint
    checkseum)
  (ocamlopt_flags

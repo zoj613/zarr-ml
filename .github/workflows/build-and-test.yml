@@ -24,7 +24,7 @@ jobs:
         os:
           - ubuntu-latest
         ocaml-compiler:
-          - "5.2.0"
+          - "5.2.1"
           - "4.14.2"
         local-packages:
           - zarr.opam
@@ -72,14 +72,14 @@ jobs:
       - name: setup
         run: |
           opam install --deps-only --with-test --with-doc --yes zarr
-          opam install bytesrw conf-zlib conf-zstd --yes
-          opam install lwt aws-s3-lwt --yes
+          opam install bytesrw conf-zlib conf-zstd ezcurl tiny_httpd --yes
+          opam install lwt aws-s3-lwt cohttp-lwt-unix --yes
           opam exec -- dune build zarr zarr-sync zarr-lwt
       
       - name: setup ocaml-5-specific
-        if: ${{ matrix.ocaml-compiler == '5.2.0' }}
+        if: ${{ matrix.ocaml-compiler == '5.2.1' }}
         run: |
-          opam install eio_main --yes
+          opam install eio_main cohttp-eio --yes
           opam exec -- dune build zarr-eio
 
       - name: test
@@ -89,29 +89,29 @@ jobs:
           opam exec -- dune exec --instrument-with bisect_ppx --force -- _build/default/zarr-lwt/test/test_lwt.exe -runner sequential -ci true
 
       - name: test ocaml-5-specific libs
-        if: ${{ matrix.ocaml-compiler == '5.2.0' }}
+        if: ${{ matrix.ocaml-compiler == '5.2.1' }}
         run: |
           opam exec -- dune exec --instrument-with bisect_ppx --force -- _build/default/zarr-eio/test/test_eio.exe -runner sequential -ci true
 
       - name: Upload code coverage report
-        if: ${{ matrix.ocaml-compiler == '5.2.0' }}
+        if: ${{ matrix.ocaml-compiler == '5.2.1' }}
         run: opam exec -- bisect-ppx-report send-to Codecov
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Build Docs
-        if: ${{ matrix.ocaml-compiler == '5.2.0' }}
+        if: ${{ matrix.ocaml-compiler == '5.2.1' }}
         run: opam exec -- dune build @doc
 
       - name: Upload API Docs artifact
-        if: ${{ matrix.ocaml-compiler == '5.2.0' }}
+        if: ${{ matrix.ocaml-compiler == '5.2.1' }}
         uses: actions/upload-artifact@v3.1.3
         with:
           name: docs
           path: ./_build/default/_doc/_html
 
       - name: Deploy API Docs
-        if: ${{ matrix.ocaml-compiler == '5.2.0' }}
+        if: ${{ matrix.ocaml-compiler == '5.2.1' }}
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

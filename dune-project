@@ -32,6 +32,7 @@
    (stdint (>= 0.7.2))
    (zipc (>= 0.2.0))
    (checkseum (>= 0.4.0))
+   (bytesrw (>= 0.1.0))
    (odoc :with-doc)
    (ounit2 :with-test)
    (ppx_deriving :with-test)
@@ -66,8 +67,10 @@
    (zarr (= :version))
    (lwt (>= 2.5.1))
    (aws-s3-lwt (>= 4.8.1))
+   (cohttp-lwt (>= 6.0.0))
    (odoc :with-doc)
    (ounit2 :with-test)
+   (tiny_httpd :with-test)
    (ppx_deriving :with-test)
    (bisect_ppx
      (and :dev (>= 2.5.0) :with-test))))
@@ -84,6 +87,7 @@
    (cohttp-eio (>= 6.0.0))
    (odoc :with-doc)
    (ounit2 :with-test)
+   (tiny_httpd :with-test)
    (ppx_deriving :with-test)
    (bisect_ppx
      (and :dev (>= 2.5.0) :with-test))))

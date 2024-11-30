@@ -67,7 +67,7 @@
    (zarr (= :version))
    (lwt (>= 2.5.1))
    (aws-s3-lwt (>= 4.8.1))
-   (cohttp-lwt (>= 6.0.0))
+   (ezcurl-lwt (>= 0.2.4))
    (odoc :with-doc)
    (ounit2 :with-test)
    (tiny_httpd :with-test)

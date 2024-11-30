@@ -328,69 +328,81 @@ end
 module HttpStore = struct
   exception Not_implemented
   exception Request_failed of int * string
+  open Deferred.Syntax
 
-  let raise_status_error s =
-    let c = Cohttp.Code.code_of_status s in
-    raise (Request_failed (c, Cohttp.Code.reason_phrase_of_code c))
+  let raise_error (code, s) =
+    raise (Request_failed (Curl.int_of_curlCode code, s))
+
+  let fold_result = Result.fold ~error:raise_error ~ok:Fun.id
 
   module IO = struct
     module Deferred = Deferred
-    open Deferred.Syntax
-    open Deferred.Infix
-    open Cohttp_lwt_unix
 
-    type t = {base_url : Uri.t}
+    type t =
+      {tries : int
+      ;base_url : string
+      ;client : Ezcurl_lwt.t
+      ;config : Ezcurl_lwt.Config.t}
 
     let get t key =
-      let url = Uri.with_path t.base_url key in
-      let* resp, body = Client.get url in
-      match Response.status resp with
-      | #Cohttp.Code.success_status -> Cohttp_lwt.Body.to_string body
-      | #Cohttp.Code.client_error_status as e when e = `Not_found ->
-        raise (Zarr.Storage.Key_not_found key)
-      | e -> raise_status_error e
+      let tries = t.tries and client = t.client and config = t.config in
+      let url = t.base_url ^ key in
+      let+ res = Ezcurl_lwt.get ~tries ~client ~config ~url () in
+      match fold_result res with
+      | {code; body; _} when code = 200 -> body
+      | {code; body; _} -> raise (Request_failed (code, body))
 
     let size t key = Lwt.catch
-      (fun () -> get t key >>| String.length)
+      (fun () ->
+        let+ data = get t key in
+        String.length data)
       (function
-        | Zarr.Storage.Key_not_found _ -> Deferred.return 0
+        | Request_failed (404, _) -> Deferred.return 0
         | exn -> raise exn)
-    (*let size t key =
-      let url = Uri.with_path t.base_url key in
-      let* resp = Client.head url in
-      match Response.status resp with
-      | #Cohttp.Code.success_status ->
-        begin match Cohttp.Header.get (Response.headers resp) "Content-Length" with
-          | Some l -> Deferred.return (int_of_string l)
-          | None ->
-            let+ data = get t key in
-            String.length data
-        end
-      | #Cohttp.Code.client_error_status as e when e = `Not_found  -> Deferred.return 0
-      | e -> raise_status_error e *)
+    (*let size t key =  
+      let tries = t.tries and client = t.client and config = t.config in
+      let url = t.base_url ^ key in
+      let type' = if String.ends_with ~suffix:".json" key then "json" else "octet-stream" in
+      let headers = [("Content-Type", "application/" ^ type')] in
+      let res = Ezcurl.http ~headers ~tries ~client ~config ~url ~meth:HEAD () in
+      match fold_result res with
+      | {code; _} when code = 404 -> 0
+      | {headers; _} ->
+        match List.assoc_opt "content-length" headers with
+        | (Some "0" | None) ->
+          begin try print_endline "empty content-length header"; String.length (get t key) with
+          | Request_failed (404, _) -> 0 end
+        | Some l -> int_of_string l *)
 
     let is_member t key =
       let+ s = size t key in
       if s = 0 then false else true
 
     let get_partial_values t key ranges =
-      let read_range ~data ~size (ofs, len) = match len with
-        | None -> String.sub data ofs (size - ofs)
-        | Some l -> String.sub data ofs l
+      let tries = t.tries and client = t.client and config = t.config and url = t.base_url ^ key in
+      let fetch range = Ezcurl_lwt.get ~range ~tries ~client ~config ~url () in
+      let end_index ofs l = Printf.sprintf "%d-%d" ofs (ofs + l - 1) in
+      let read_range acc (ofs, len) =
+        let none = Printf.sprintf "%d-" ofs in
+        let range = Option.fold ~none ~some:(end_index ofs) len in
+        let+ res = fetch range in
+        let response = fold_result res in
+        response.body :: acc
       in
-      let+ data = get t key in
-      let size = String.length data in
-      List.map (read_range ~data ~size) ranges
+      Deferred.fold_left read_range [] (List.rev ranges)
 
     let set t key data =
-      let url = Uri.with_path t.base_url key in
-      let body = Cohttp_lwt.Body.of_string data in
-      let headers = Cohttp.Header.of_list [("Content-Length", string_of_int (String.length data))] in
-      let* resp, _ = Client.post ~body ~headers url in
-      match Response.status resp with
-      | #Cohttp.Code.success_status -> Deferred.return_unit
-      | e -> raise_status_error e
- 
+      let tries = t.tries and client = t.client and config = t.config
+      and url = t.base_url ^ key and content = `String data in
+      let type' = if String.ends_with ~suffix:".json" key then "json" else "octet-stream" in
+      let headers =
+        [("Content-Length", string_of_int (String.length data))
+        ;("Content-Type", "application/" ^ type')] in
+      let+ res = Ezcurl_lwt.post ~params:[] ~headers ~tries ~client ~config ~url ~content () in
+      match fold_result res with
+      | {code; _} when code = 200 || code = 201 -> ()
+      | {code; body; _} -> raise (Request_failed (code, body))
+
     let set_partial_values t key ?(append=false) rsv =
       let* size = size t key in
       let* ov = match size with
@@ -406,12 +418,14 @@ module HttpStore = struct
       in
       set t key (List.fold_left f ov rsv)
 
+    (* make reshaping arrays possible *)
     let erase t key =
-      let url = Uri.with_path t.base_url key in
-      let* resp, _ = Client.delete url in
-      match Response.status resp with
-      | #Cohttp.Code.success_status -> Deferred.return_unit
-      | e -> raise_status_error e
+      let tries = t.tries and client = t.client and config = t.config in
+      let url = t.base_url ^ key in
+      let+ res = Ezcurl_lwt.http ~tries ~client ~config ~url ~meth:DELETE () in
+      match fold_result res with
+      | {code; _} when code = 200 -> ()
+      | {code; body; _} -> raise (Request_failed (code, body))
 
     let erase_prefix _ = raise Not_implemented
     let list _ = raise Not_implemented
@@ -419,7 +433,11 @@ module HttpStore = struct
     let rename _ = raise Not_implemented
   end
 
-  let with_open url f = f IO.{base_url = Uri.of_string url}
+  let with_open ?(redirects=5) ?(tries=3) ?(timeout=5) url f =
+    let config = Ezcurl_lwt.Config.(default |> max_redirects redirects |> follow_location true) in
+    let perform client = f IO.{tries; client; config; base_url = url ^ "/"} in
+    let set_opts client = Curl.set_connecttimeout client timeout in
+    Ezcurl_lwt.with_client ~set_opts perform
 
   include Zarr.Storage.Make(IO)
 end

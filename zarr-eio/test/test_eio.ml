@@ -109,8 +109,8 @@ let test_readable_writable_only
   let attrs = `Assoc [("questions", `String "answer")] in
   Group.create ~attrs store gnode;
   let exists = Group.exists store gnode in
-  let meta = Group.metadata store gnode in
   assert_equal ~printer:string_of_bool true exists;
+  let meta = Group.metadata store gnode in
   assert_equal ~printer:Yojson.Safe.show attrs (Metadata.Group.attributes meta);
   let exists = Array.exists store Node.Array.(gnode / "non-member") in
   assert_equal ~printer:string_of_bool false exists;
@@ -163,19 +163,14 @@ module Dir_http_server = struct
     let server = S.create ~max_connections ~addr:"127.0.0.1" ~port:8080 () in
     (* HEAD request handler *)
     S.add_route_handler server ~meth:`HEAD S.Route.rest_of_path_urlencoded (fun path _ ->
+      let headers = [("Content-Type", if String.ends_with ~suffix:".json" path then "application/json" else "application/octet-stream")] in
       let fspath = Filename.concat dir path in
-      match In_channel.(with_open_gen [Open_rdonly] 0o700 fspath length) with
-      | exception Sys_error e -> S.Response.make_raw ~code:404 e
-      | l ->
-        let headers =
-          [("Content-Length", Int64.to_string l)
-          ;("Content-Type",
-            if String.ends_with ~suffix:".json" path
-            then "application/json"
-            else "application/octet-stream")]
-        in
-        let r = S.Response.make_raw ~code:200 "" in
-        S.Response.update_headers (List.append headers) r
+      let headers = match In_channel.(with_open_gen [Open_rdonly] 0o700 fspath length) with
+        | exception Sys_error _ -> ("Content-Length", "0") :: headers
+        | l -> ("Content-Length", Int64.to_string l) :: headers
+      in
+      let r = S.Response.make_raw ~code:200 "" in
+      S.Response.update_headers (List.append headers) r
     );
     (* GET request handler *)
     S.add_route_handler server ~meth:`GET S.Route.rest_of_path_urlencoded (fun path _ ->
@@ -193,7 +188,7 @@ module Dir_http_server = struct
         S.Response.make_raw ~headers ~code:200 s
     );
     (* POST request handler *)
-    S.add_route_handler_stream server ~meth:`POST S.Route.rest_of_path_urlencoded (fun path req ->
+    S.add_route_handler_stream server ~meth:`PUT S.Route.rest_of_path_urlencoded (fun path req ->
       let write oc = 
         let max_size = 1024 * 10 * 1024 in
         let req' = S.Request.limit_body_size ~bytes:(Bytes.create 4096) ~max_size req in

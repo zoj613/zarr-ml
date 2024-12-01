@@ -136,9 +136,15 @@ module HttpStore = struct
 
   open Cohttp_eio
 
-  let raise_status_error s =
-    let c = Cohttp.Code.code_of_status s in
+  let raise_status_error e =
+    let c = Cohttp.Code.code_of_status e in
     raise (Request_failed (c, Cohttp.Code.reason_phrase_of_code c))
+
+  let fold_response ~success resp key = match Http.Response.status resp with
+    | #Http.Status.success -> success ()
+    | #Http.Status.client_error as e when e = `Not_found ->
+      raise (Zarr.Storage.Key_not_found key)
+    | e -> raise_status_error e
 
   module IO = struct
     module Deferred = Deferred
@@ -149,31 +155,22 @@ module HttpStore = struct
       Eio.Switch.run @@ fun sw ->
       let url = Uri.with_path t.base_url key in
       let resp, body = Client.get ~sw t.client url in
-      match Http.Response.status resp with
-      | #Http.Status.success -> Eio.Flow.read_all body
-      | #Http.Status.client_error as e when e = `Not_found ->
-        raise (Zarr.Storage.Key_not_found key)
-      | e -> raise_status_error e
+      fold_response ~success:(fun () -> Eio.Flow.read_all body) resp key
 
     let size t key = try String.length (get t key) with
       | Zarr.Storage.Key_not_found _ -> 0
       
     (*let size t key =
+      let content_length resp () = match Http.Response.content_length resp with
+        | Some l -> l
+        | None -> String.length (get t key)
+      in
       Eio.Switch.run @@ fun sw ->
       let url = Uri.with_path t.base_url key in
       let resp = Client.head ~sw t.client url in
-      match Http.Response.status resp with
-      | #Http.Status.success ->
-        begin match Http.Response.content_length resp with
-          | Some l -> l
-          | None ->
-            try String.length (get t key) with
-            | Zarr.Storage.Key_not_found _ -> 0
-        end
-      | #Http.Status.client_error as e when e = `Not_found -> Deferred.return 0
-      | e -> raise_status_error e *)
+      fold_response ~success:(content_length resp) resp key *)
 
-    let is_member t key = if (size t key) = 0 then false else true
+    let is_member t key = if (size t key) > 0 then true else false
 
     let get_partial_values t key ranges =
       let read_range ~data ~size (ofs, len) = match len with
@@ -189,16 +186,12 @@ module HttpStore = struct
       let url = Uri.with_path t.base_url key in
       let headers = Http.Header.of_list [("Content-Length", string_of_int (String.length data))] in
       let body = Body.of_string data in
-      let resp, _ = Client.post ~sw ~headers ~body t.client url in
-      match Http.Response.status resp with
-      | #Http.Status.success -> Deferred.return_unit
-      | e -> raise_status_error e
+      let resp, _ = Client.put ~sw ~headers ~body t.client url in
+      fold_response ~success:(fun () -> ()) resp key
  
     let set_partial_values t key ?(append=false) rsv =
-      let size = size t key in
-      let ov = match size with
-        | 0 -> Deferred.return String.empty
-        | _ -> get t key
+      let ov = try get t key with
+        | Zarr.Storage.Key_not_found _ -> String.empty
       in
       let f = if append || ov = String.empty then
         fun acc (_, v) -> acc ^ v else
@@ -215,6 +208,7 @@ module HttpStore = struct
       let resp, _ = Client.delete ~sw t.client url in
       match Http.Response.status resp with
       | #Http.Status.success -> Deferred.return_unit
+      | #Http.Status.client_error as e when e = `Not_found -> Deferred.return_unit
       | e -> raise_status_error e *)
 
     let erase _ = raise Not_implemented

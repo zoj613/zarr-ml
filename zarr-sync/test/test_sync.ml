@@ -222,19 +222,14 @@ module Dir_http_server = struct
     let server = S.create ~max_connections ~addr:"127.0.0.1" ~port:8080 () in
     (* HEAD request handler *)
     S.add_route_handler server ~meth:`HEAD S.Route.rest_of_path_urlencoded (fun path _ ->
+      let headers = [("Content-Type", if String.ends_with ~suffix:".json" path then "application/json" else "application/octet-stream")] in
       let fspath = Filename.concat dir path in
-      match In_channel.(with_open_gen [Open_rdonly] 0o700 fspath length) with
-      | exception Sys_error e -> S.Response.make_raw ~code:404 e
-      | l ->
-        let headers =
-          [("Content-Length", Int64.to_string l)
-          ;("Content-Type",
-            if String.ends_with ~suffix:".json" path
-            then "application/json"
-            else "application/octet-stream")]
-        in
-        let r = S.Response.make_raw ~code:200 "" in
-        S.Response.update_headers (List.append headers) r
+      let headers = match In_channel.(with_open_gen [Open_rdonly] 0o700 fspath length) with
+        | exception Sys_error _ -> ("Content-Length", "0") :: headers
+        | l -> ("Content-Length", Int64.to_string l) :: headers
+      in
+      let r = S.Response.make_raw ~code:200 "" in
+      S.Response.update_headers (List.append headers) r
     );
     (* GET request handler *)
     S.add_route_handler server ~meth:`GET S.Route.rest_of_path_urlencoded (fun path _ ->

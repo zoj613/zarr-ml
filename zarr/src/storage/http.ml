@@ -1,7 +1,6 @@
 module type S = sig
   exception Not_implemented
   exception Request_failed of int * string
-
   include Storage.STORE
 
   val with_open :
@@ -11,6 +10,21 @@ module type S = sig
     string ->
     (t -> 'a Deferred.t) ->
     'a Deferred.t
+  (** [with_open url f] connects to the Zarr store described by the url [url] 
+      and applies function [f] to the store's open handle.
+
+      {ul 
+      {- [redirects] is the maximum number of redirects allowed per http request.
+        Defaults to 5.}
+      {- [tries] is the maximum number of times to retry a failed request.
+        Defaults to 3.}
+      {- [timeout] is the timeout for the connect phase. It sets the maximum
+        time in seconds that you allow the connection phase to take. This
+        timeout only limits the connection phase, it has no impact once the
+        client has connected. The connection phase includes the name resolve
+        (DNS) and all protocol handshakes and negotiations until there is an
+        established connection with the remote side.
+      } *)
 end
 
 module type C = sig
@@ -18,24 +32,24 @@ module type C = sig
   include Ezcurl_core.S
 end
 
-module Make (Deferred : Types.Deferred) (C : C with type 'a io = 'a Deferred.t) : S with module Deferred = Deferred = struct
+module Make
+  (Deferred : Types.Deferred)
+  (C : C with type 'a io = 'a Deferred.t) : S with module Deferred = Deferred = struct
   exception Not_implemented
   exception Request_failed of int * string
-
   open Deferred.Syntax
 
-  let raise_error (code, s) =
-    raise (Request_failed (Curl.int_of_curlCode code, s))
-
+  let raise_error (code, s) = raise (Request_failed (Curl.int_of_curlCode code, s))
   let fold_result = Result.fold ~error:raise_error ~ok:Fun.id
 
   module IO = struct
     module Deferred = Deferred
+    open Deferred.Infix
 
     type t =
       {tries : int
-      ;base_url : string
       ;client : C.t
+      ;base_url : string
       ;config : Ezcurl_core.Config.t}
 
     let get t key =
@@ -46,30 +60,30 @@ module Make (Deferred : Types.Deferred) (C : C with type 'a io = 'a Deferred.t) 
       | {code; body; _} when code = 200 -> body
       | {code; body; _} -> raise (Request_failed (code, body))
 
-    let size t key =
-      try
-        let+ data = get t key in
-        String.length data
-      with
+    let size t key = try get t key >>| String.length with
       | Request_failed (404, _) -> Deferred.return 0
     (*let size t key =  
       let tries = t.tries and client = t.client and config = t.config in
       let url = t.base_url ^ key in
       let type' = if String.ends_with ~suffix:".json" key then "json" else "octet-stream" in
       let headers = [("Content-Type", "application/" ^ type')] in
-      let res = Ezcurl.http ~headers ~tries ~client ~config ~url ~meth:HEAD () in
+      let* res = C.http ~headers ~tries ~client ~config ~url ~meth:HEAD () in
       match fold_result res with
-      | {code; _} when code = 404 -> 0
-      | {headers; _} ->
-        match List.assoc_opt "content-length" headers with
-        | (Some "0" | None) ->
-          begin try print_endline "empty content-length header"; String.length (get t key) with
-          | Request_failed (404, _) -> 0 end
-        | Some l -> int_of_string l *)
+      | {code; _} when code = 404 -> Deferred.return 0
+      | {headers; code; _} when code = 200 ->
+        begin match List.assoc_opt "content-length" headers with
+        | Some "0" -> Deferred.return 0
+        | Some l -> Deferred.return @@ int_of_string l
+        | None ->
+          begin try print_endline "empty content-length header";
+          get t key >>| String.length with
+          | Request_failed (404, _) -> Deferred.return 0 end
+        end
+      | {code; body; _} -> raise (Request_failed (code, body)) *)
 
     let is_member t key =
       let+ s = size t key in
-      if s = 0 then false else true
+      if s > 0 then true else false
 
     let get_partial_values t key ranges =
       let tries = t.tries and client = t.client and config = t.config and url = t.base_url ^ key in
@@ -93,7 +107,7 @@ module Make (Deferred : Types.Deferred) (C : C with type 'a io = 'a Deferred.t) 
         ;("Content-Type", "application/" ^ type')] in
       let+ res = C.post ~params:[] ~headers ~tries ~client ~config ~url ~content () in
       match fold_result res with
-      | {code; _} when code = 200 || code = 201 -> ()
+      | {code; _} when code >= 200 && code < 300 -> ()
       | {code; body; _} -> raise (Request_failed (code, body))
 
     let set_partial_values t key ?(append=false) rsv =

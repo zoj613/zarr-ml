@@ -242,7 +242,7 @@ module Dir_http_server = struct
   let run_with t after_init =
     let perform () =
       let _ = Thread.create S.run_exn t in
-      Lwt.dont_wait after_init (fun exn -> raise exn);
+      Lwt.dont_wait after_init raise;
       Deferred.return_unit
     in
     Fun.protect ~finally:(fun () -> S.stop t) perform

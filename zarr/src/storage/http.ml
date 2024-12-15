@@ -151,7 +151,7 @@ module Make
     let perform client =
       let config = Ezcurl_core.Config.(
         default |> max_redirects redirects |> follow_location true |>
-        username basic_auth.user |> password basic_auth.pwd
+        authmethod [CURLAUTH_ANY] |> username basic_auth.user |> password basic_auth.pwd
       ) in
       f IO.{tries; client; config; base_url = url ^ "/"}
     in

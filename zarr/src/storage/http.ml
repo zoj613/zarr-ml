@@ -1,9 +1,11 @@
 module type S = sig
   exception Not_implemented
   exception Request_failed of int * string
+  type auth = {user : string; pwd : string}
   include Storage.STORE
 
   val with_open :
+    ?basic_auth:auth ->
     ?redirects:int ->
     ?tries:int ->
     ?timeout:int ->
@@ -141,10 +143,18 @@ module Make
     let rename _ = raise Not_implemented
   end
 
-  let with_open ?(redirects=5) ?(tries=3) ?(timeout=5) url f =
-    let config = Ezcurl_core.Config.(default |> max_redirects redirects |> follow_location true) in
-    let perform client = f IO.{tries; client; config; base_url = url ^ "/"} in
+  type auth = {user : string; pwd : string}
+  let noauth = {user = ""; pwd = ""}
+
+  let with_open ?(basic_auth=noauth) ?(redirects=5) ?(tries=3) ?(timeout=5) url f =
     let set_opts client = Curl.set_connecttimeout client timeout in
+    let perform client =
+      let config = Ezcurl_core.Config.(
+        default |> max_redirects redirects |> follow_location true |>
+        username basic_auth.user |> password basic_auth.pwd
+      ) in
+      f IO.{tries; client; config; base_url = url ^ "/"}
+    in
     C.with_client ~set_opts perform
 
   include Storage.Make(IO)

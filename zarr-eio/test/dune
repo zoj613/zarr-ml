@@ -2,6 +2,7 @@
  (name test_eio)
  (libraries
    zarr-eio
+   tiny_httpd
    ounit2)
  (package zarr-eio)
  (preprocess

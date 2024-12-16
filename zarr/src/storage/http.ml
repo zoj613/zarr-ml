@@ -1,8 +1,9 @@
 module type S = sig
   exception Not_implemented
   exception Request_failed of int * string
-  type auth = {user : string; pwd : string}
   include Storage.STORE
+
+  type auth = {user : string; pwd : string}
 
   val with_open :
     ?basic_auth:auth ->
@@ -16,6 +17,8 @@ module type S = sig
       and applies function [f] to the store's open handle.
 
       {ul 
+      {- [basic_auth] is the username and password to use for each request if
+        required by the server.}
       {- [redirects] is the maximum number of redirects allowed per http request.
         Defaults to 5.}
       {- [tries] is the maximum number of times to retry a failed request.
@@ -70,9 +73,10 @@ module Make
       let type' = if String.ends_with ~suffix:".json" key then "json" else "octet-stream" in
       let headers = [("Content-Type", "application/" ^ type')] in
       let* res = C.http ~headers ~tries ~client ~config ~url ~meth:HEAD () in
-      match fold_result res with
-      | {code; _} when code = 404 -> Deferred.return 0
-      | {headers; code; _} when code = 200 ->
+      match res with
+      | Error _ -> Deferred.return 0
+      | Ok {code; _} when code = 404 -> Deferred.return 0
+      | Ok {headers; code; _} when code = 200 ->
         begin match List.assoc_opt "content-length" headers with
         | Some "0" -> Deferred.return 0
         | Some l -> Deferred.return @@ int_of_string l
@@ -81,7 +85,7 @@ module Make
           get t key >>| String.length with
           | Request_failed (404, _) -> Deferred.return 0 end
         end
-      | {code; body; _} -> raise (Request_failed (code, body)) *)
+      | Ok {code; body; _} -> raise (Request_failed (code, body)) *)
 
     let is_member t key =
       let+ s = size t key in
@@ -144,15 +148,16 @@ module Make
   end
 
   type auth = {user : string; pwd : string}
-  let noauth = {user = ""; pwd = ""}
 
-  let with_open ?(basic_auth=noauth) ?(redirects=5) ?(tries=3) ?(timeout=5) url f =
+  let default_cfg = Ezcurl_core.Config.(default |> follow_location true |> authmethod [CURLAUTH_ANY])
+
+  let with_open ?(basic_auth={user=""; pwd =""}) ?(redirects=5) ?(tries=3) ?(timeout=5) url f =
     let set_opts client = Curl.set_connecttimeout client timeout in
     let perform client =
-      let config = Ezcurl_core.Config.(
-        default |> max_redirects redirects |> follow_location true |>
-        authmethod [CURLAUTH_ANY] |> username basic_auth.user |> password basic_auth.pwd
-      ) in
+      let config = Ezcurl_core.Config.max_redirects redirects default_cfg
+        |> Ezcurl_core.Config.username basic_auth.user
+        |> Ezcurl_core.Config.password basic_auth.pwd
+      in
       f IO.{tries; client; config; base_url = url ^ "/"}
     in
     C.with_client ~set_opts perform

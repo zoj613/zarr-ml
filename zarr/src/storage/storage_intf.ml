@@ -49,7 +49,7 @@ module type STORE = sig
       ?sep:[< `Dot | `Slash > `Slash ] ->
       ?dimension_names:string option list ->
       ?attributes:Yojson.Safe.t ->
-      codecs:Codecs.codec_chain ->
+      codecs:Codecs.codec list ->
       shape:int array ->
       chunks:int array ->
       'a Ndarray.dtype ->

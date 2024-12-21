@@ -247,23 +247,18 @@ module Dir_http_server = struct
         S.Response.make_raw ~headers ~code:200 s
     );
     (* POST request handler *)
-    S.add_route_handler_stream server ~meth:`POST S.Route.rest_of_path_urlencoded (fun path req ->
-      let write oc = 
-        let max_size = 1024 * 10 * 1024 in
-        let req' = S.Request.limit_body_size ~bytes:(Bytes.create 4096) ~max_size req in
-        S.IO.Input.iter (Out_channel.output oc) req'.body;
-        Out_channel.flush oc
-      in
+    S.add_route_handler server ~meth:`POST S.Route.rest_of_path_urlencoded (fun path req ->
+      let write oc = Out_channel.(output_string oc req.S.Request.body; flush oc) in
       let fspath = Filename.concat dir path in
       Zarr.Util.create_parent_dir fspath 0o700;
       let f = [Open_wronly; Open_trunc; Open_creat] in
       match Out_channel.(with_open_gen f 0o700 fspath write) with
-      | exception Sys_error e -> S.Response.make_raw ~code:500 e
+      | exception Sys_error e -> S.Response.fail ~code:500 "Upload error: %s" e
       | () ->
         let opt = List.assoc_opt "content-type" req.headers in
         let content_type = Option.fold ~none:"application/octet-stream" ~some:Fun.id opt in
         let headers = [("content-type", content_type); ("Connection", "close")] in
-        S.Response.make_raw ~headers ~code:201 (Printf.sprintf "%s created" path)
+        S.Response.make_string ~headers (Ok (Printf.sprintf "%s created" path))
     );
     (* DELETE request handler *)
     S.add_route_handler server ~meth:`DELETE S.Route.rest_of_path_urlencoded (fun path _ ->

@@ -218,8 +218,8 @@ module HttpStore = struct
     let rename _ = raise Not_implemented
   end
 
-  let with_open ~net uri f =
-    let client = Client.make ~https:None net in
+  let with_open ?https ~net uri f =
+    let client = Client.make ~https net in
     f IO.{client; base_url = uri}
 
   include Zarr.Storage.Make(IO)

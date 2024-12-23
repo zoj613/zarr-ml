@@ -26,6 +26,7 @@ module HttpStore : sig
   exception Request_failed of int * string
   include Zarr.Storage.STORE with module Deferred = Deferred
   val with_open :
+    ?https:(Uri.t -> [ `Generic ] Eio.Net.stream_socket_ty Eio.Std.r -> _ Eio.Flow.two_way) ->
     net:_ Eio.Net.t ->
     Uri.t ->
     (t -> 'a) ->

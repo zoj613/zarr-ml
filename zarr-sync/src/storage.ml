@@ -1,18 +1,20 @@
 module Deferred = struct
   type 'a t = 'a
   let return = Fun.id
+  let bind x f = f x
+  let map f x = f x
   let return_unit = ()
   let iter = List.iter
   let fold_left = List.fold_left
   let concat_map = List.concat_map
 
   module Infix = struct
-    let (>>=) x f = f x
+    let (>>=) = bind
     let (>>|) = (>>=)
   end
 
   module Syntax = struct
-    let (let*) x f = f x
+    let (let*) = bind
     let (let+) = (let*)
   end
 end

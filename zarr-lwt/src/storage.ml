@@ -1,6 +1,8 @@
 module Deferred = struct
   type 'a t = 'a Lwt.t
   let return = Lwt.return
+  let bind = Lwt.bind
+  let map = Lwt.map
   let return_unit = Lwt.return_unit
   let iter = Lwt_list.iter_s
   let fold_left = Lwt_list.fold_left_s
@@ -45,10 +47,7 @@ module FilesystemStore = struct
       Lwt_unix.file_exists parent_dir >>= maybe_create ~perm parent_dir
 
     let size t key =
-      let file_length path () =
-        let+ length = Lwt_io.file_length path in
-        Int64.to_int length
-      in
+      let file_length path () = Lwt.map Int64.to_int (Lwt_io.file_length path) in
       let filepath = key_to_fspath t key in
       Lwt.catch (file_length filepath) (Fun.const @@ Deferred.return 0)
 
@@ -215,12 +214,9 @@ module AmazonS3Store = struct
       let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
       let f ~endpoint () = S3.head ~bucket ~credentials ~key ~endpoint () in
       let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
-      let+ c = fold_or_catch ~not_found:empty_content res in
-      c.size
+      Lwt.map (fun (x : S3.content) -> x.size) (fold_or_catch ~not_found:empty_content res)
 
-    let is_member t key =
-      let+ size = size t key in
-      if size = 0 then false else true
+    let is_member t key = Lwt.map (fun s -> if s = 0 then false else true) (size t key)
 
     let get t key =
       let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
@@ -237,8 +233,7 @@ module AmazonS3Store = struct
         let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
         let f ~endpoint () = S3.get ~bucket ~credentials ~endpoint ~range ~key () in
         let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
-        let+ data = fold_or_catch ~not_found:(raise_not_found key) res in
-        [data]
+        Lwt.map (fun x -> [x]) (fold_or_catch ~not_found:(raise_not_found key) res)
       in
       Deferred.concat_map (read_range t key) ranges
 
@@ -267,8 +262,7 @@ module AmazonS3Store = struct
     let erase t key =
       let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
       let f ~endpoint () = S3.delete ~bucket ~credentials ~endpoint ~key () in
-      let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
-      fold_or_catch ~not_found:(Fun.const ()) res
+      S3.retry ~retries:t.retries ~endpoint ~f () >>= fold_or_catch ~not_found:(Fun.const ())
 
     let rec delete_keys t cont () = 
       let del t xs c = Deferred.iter (delete_content t) xs >>= delete_keys t c in
@@ -326,7 +320,7 @@ module AmazonS3Store = struct
     and rename_and_add ~t ~prefix ~new_prefix acc k =
       let l = String.length prefix in
       let k' = new_prefix ^ String.sub k l (String.length k - l) in
-      let+ a = get t k in (k', a) :: acc
+      Lwt.map (fun a -> (k', a) :: acc) (get t k)
   end
 
   let with_open ?(scheme=`Http) ?(inet=`V4) ?(retries=3) ~region ~bucket ~profile f =

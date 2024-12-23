@@ -49,13 +49,8 @@ module Make
 
   module IO = struct
     module Deferred = Deferred
-    open Deferred.Infix
 
-    type t =
-      {tries : int
-      ;client : C.t
-      ;base_url : string
-      ;config : Ezcurl_core.Config.t}
+    type t = {tries : int; client : C.t; base_url : string; config : Ezcurl_core.Config.t}
 
     let get t key =
       let tries = t.tries and client = t.client and config = t.config in
@@ -65,7 +60,7 @@ module Make
       | {code; body; _} when code = 200 -> body
       | {code; body; _} -> raise (Request_failed (code, body))
 
-    let size t key = try get t key >>| String.length with
+    let size t key = try Deferred.map String.length (get t key) with
       | Request_failed (404, _) -> Deferred.return 0
     (*let size t key =  
       let tries = t.tries and client = t.client and config = t.config in
@@ -82,25 +77,21 @@ module Make
         | Some l -> Deferred.return @@ int_of_string l
         | None ->
           begin try print_endline "empty content-length header";
-          get t key >>| String.length with
+          Deferred.map String.length (get t key) with
           | Request_failed (404, _) -> Deferred.return 0 end
         end
       | Ok {code; body; _} -> raise (Request_failed (code, body)) *)
 
-    let is_member t key =
-      let+ s = size t key in
-      if s > 0 then true else false
+    let is_member t key = Deferred.map (fun s -> if s > 0 then true else false) (size t key)
 
     let get_partial_values t key ranges =
       let tries = t.tries and client = t.client and config = t.config and url = t.base_url ^ key in
-      let fetch range = C.get ~range ~tries ~client ~config ~url () in
-      let end_index ofs l = Printf.sprintf "%d-%d" ofs (ofs + l - 1) in
+      let fetch range = C.get ~range ~tries ~client ~config ~url ()
+      and end_index ofs l = Printf.sprintf "%d-%d" ofs (ofs + l - 1) in
       let read_range acc (ofs, len) =
         let none = Printf.sprintf "%d-" ofs in
         let range = Option.fold ~none ~some:(end_index ofs) len in
-        let+ res = fetch range in
-        let response = fold_result res in
-        response.body :: acc
+        Deferred.map (fun r -> (fold_result r).body :: acc) (fetch range)
       in
       Deferred.fold_left read_range [] (List.rev ranges)
 

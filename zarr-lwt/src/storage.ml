@@ -6,7 +6,7 @@ module Deferred = struct
   let return_unit = Lwt.return_unit
   let iter = Lwt_list.iter_s
   let fold_left = Lwt_list.fold_left_s
-  let concat_map f l = Lwt.map List.concat (Lwt_list.map_s f l)
+  let concat_map f l = Lwt.map List.concat (Lwt_list.map_p f l)
 
   module Infix = struct
     let (>>=) = Lwt.Infix.(>>=)
@@ -47,8 +47,8 @@ module FilesystemStore = struct
       Lwt_unix.file_exists parent_dir >>= maybe_create ~perm parent_dir
 
     let size t key =
-      let file_length path () = Lwt.map Int64.to_int (Lwt_io.file_length path) in
-      let filepath = key_to_fspath t key in
+      let file_length path () = Lwt.map Int64.to_int (Lwt_io.file_length path)
+      and filepath = key_to_fspath t key in
       Lwt.catch (file_length filepath) (Fun.const @@ Deferred.return 0)
 
     let get t key =
@@ -126,16 +126,6 @@ module FilesystemStore = struct
       in
       Lwt_stream.fold_s (accumulate ~t) (Lwt_unix.files_of_directory dir) acc
 
-    let list t = walk t [] (key_to_fspath t "")
-
-    let list_prefix t prefix = walk t [] (key_to_fspath t prefix)
-
-    let is_member t key = Lwt_unix.file_exists (key_to_fspath t key)
-
-    let erase t key = Lwt_unix.unlink (key_to_fspath t key)
-
-    let erase_prefix t pre = list_prefix t pre >>= Lwt_list.iter_s (erase t)
-
     let list_dir t prefix =
       let choose ~t ~dir x = match Filename.concat dir x with
         | p when Sys.is_directory p -> Either.right @@ (fspath_to_key t p) ^ "/"
@@ -147,6 +137,11 @@ module FilesystemStore = struct
       let+ dir_contents = Lwt_stream.to_list relevant in
       List.partition_map (choose ~t ~dir) dir_contents
 
+    let list t = walk t [] (key_to_fspath t "")
+    let list_prefix t prefix = walk t [] (key_to_fspath t prefix)
+    let is_member t key = Lwt_unix.file_exists (key_to_fspath t key)
+    let erase t key = Lwt_unix.unlink (key_to_fspath t key)
+    let erase_prefix t pre = list_prefix t pre >>= Lwt_list.iter_s (erase t)
     let rename t k k' = Lwt_unix.rename (key_to_fspath t k) (key_to_fspath t k')
   end
 
@@ -192,7 +187,6 @@ module AmazonS3Store = struct
     Lwt.catch (return_or_raise res) (on_exception ~not_found)
 
   let raise_not_found k () = raise (Zarr.Storage.Key_not_found k)
-
   let empty_Ls = Fun.const ([], S3.Ls.Done)
 
   let fold_continuation ~return ~more = function

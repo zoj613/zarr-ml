@@ -4,20 +4,16 @@ module RegularGrid = struct
   type t = int array
 
   let chunk_shape : t -> int array = Fun.id
+  let ceildiv x y = Float.(to_int @@ ceil (of_int x /. of_int y))
+  let floordiv x y = Float.(to_int @@ floor (of_int x /. of_int y))
+  let grid_shape t array_shape = Array.map2 ceildiv array_shape t
+  let index_coord_pair t coord = (Array.map2 floordiv coord t, Array.map2 Int.rem coord t)
+  let ( = ) x y = x = y
 
   let create : array_shape:int array -> int array -> t
     = fun ~array_shape chunk_shape ->
     if Array.(length chunk_shape <> length array_shape) || Util.(max chunk_shape > max array_shape)
     then raise Grid_shape_mismatch else chunk_shape
-
-  let ceildiv x y = Float.(to_int @@ ceil (of_int x /. of_int y))
-
-  let floordiv x y = Float.(to_int @@ floor (of_int x /. of_int y))
-
-  let grid_shape t array_shape = Array.map2 ceildiv array_shape t
-
-  let index_coord_pair t coord =
-    (Array.map2 floordiv coord t, Array.map2 Int.rem coord t)
 
   (* returns all chunk indices in this regular grid *)
   let indices t array_shape =
@@ -26,8 +22,6 @@ module RegularGrid = struct
     |> List.map (fun x -> List.init x Fun.id)
     |> Ndarray.Indexing.cartesian_prod
     |> List.map Array.of_list
-
-  let ( = ) x y = x = y
 
   let to_yojson : t -> Yojson.Safe.t = fun t ->
     let chunk_shape = `List (List.map (fun x -> `Int x) @@ Array.to_list t) in

@@ -26,7 +26,7 @@ module FilesystemStore = struct
   module IO = struct
     module Deferred = Deferred
 
-    type t = {dirname : string; perm : Unix.file_perm}
+    type t = {dirname : string; perm : int}
 
     let fspath_to_key t path =
       let pos = String.length t.dirname + 1 in
@@ -72,7 +72,6 @@ module FilesystemStore = struct
       Out_channel.flush oc
 
     let is_member t key = Sys.file_exists (key_to_fspath t key)
-
     let erase t key = Sys.remove (key_to_fspath t key)
 
     let size t key =
@@ -88,12 +87,6 @@ module FilesystemStore = struct
       let dir_contents = Array.to_list (Sys.readdir dir) in
       List.fold_left (accumulate ~t) acc dir_contents
     
-    let list t = walk t [] (key_to_fspath t "")
-
-    let list_prefix t prefix = walk t [] (key_to_fspath t prefix)
-
-    let erase_prefix t pre = List.iter (erase t) (list_prefix t pre)
-
     let list_dir t prefix =
       let choose ~t ~dir x = match Filename.concat dir x with
         | p when Sys.is_directory p -> Either.right @@ (fspath_to_key t p) ^ "/"
@@ -103,6 +96,9 @@ module FilesystemStore = struct
       let dir_contents = Array.to_list (Sys.readdir dir) in
       List.partition_map (choose ~t ~dir) dir_contents
 
+    let list t = walk t [] (key_to_fspath t "")
+    let list_prefix t prefix = walk t [] (key_to_fspath t prefix)
+    let erase_prefix t pre = List.iter (erase t) (list_prefix t pre)
     let rename t k k' = Sys.rename (key_to_fspath t k) (key_to_fspath t k')
   end
 

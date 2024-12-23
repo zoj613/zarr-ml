@@ -236,30 +236,20 @@ module Array = struct
     && x.storage_transformers = y.storage_transformers
 
   let shape t = t.shape
-
   let codecs t = t.codecs
-
   let dimension_names t = t.dimension_names
-
   let attributes t = t.attributes
-
   let chunk_shape t = RegularGrid.chunk_shape t.chunk_grid
-
   let index_coord_pair t coord = RegularGrid.index_coord_pair t.chunk_grid coord
-
   let chunk_key t index = ChunkKeyEncoding.encode t.chunk_key_encoding index
-
   let chunk_indices t shape = RegularGrid.indices t.chunk_grid shape
-
   let encode t = Yojson.Safe.to_string (to_yojson t)
+  let update_attributes t attrs = {t with attributes = attrs}
+  let update_shape t shape = {t with shape}
 
   let decode s = match of_yojson (Yojson.Safe.from_string s) with
     | Error e -> raise (Parse_error e)
     | Ok m -> m
-
-  let update_attributes t attrs = {t with attributes = attrs}
-
-  let update_shape t shape = {t with shape}
 
   let is_valid_kind
     : type a. t -> a Ndarray.dtype -> bool
@@ -317,13 +307,16 @@ end
 module Group = struct
   type t = {zarr_format : int; node_type : string; attributes : Yojson.Safe.t}
 
-  let default = {zarr_format = 3; node_type = "group"; attributes = `Null}
-
   let to_yojson : t -> Yojson.Safe.t = fun t ->
     let l = [("zarr_format", `Int t.zarr_format); ("node_type", `String t.node_type)] in
     match t.attributes with
     | `Null -> `Assoc l
     | x -> `Assoc (l @ [("attributes", x)])
+
+  let default = {zarr_format = 3; node_type = "group"; attributes = `Null}
+  let encode t = Yojson.Safe.to_string (to_yojson t)
+  let update_attributes t attrs = {t with attributes = attrs}
+  let attributes t = t.attributes
 
   let of_yojson x =
     let open Yojson.Safe.Util in
@@ -347,12 +340,6 @@ module Group = struct
   let decode s = match of_yojson (Yojson.Safe.from_string s) with
     | Error e -> raise (Parse_error e)
     | Ok m -> m
-
-  let encode t = Yojson.Safe.to_string (to_yojson t)
-
-  let update_attributes t attrs = {t with attributes = attrs}
-
-  let attributes t = t.attributes
 
   let show t =
     Format.sprintf

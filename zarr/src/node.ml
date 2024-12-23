@@ -11,12 +11,7 @@ let rep_ok name =
 module Group = struct
   type t = Root | Cons of t * string
 
-  let create parent name =
-    if rep_ok name then Cons (parent, name) else raise Node_invariant
-
-  let ( / ) = create
-
-  let root = Root 
+  let create parent name = if rep_ok name then Cons (parent, name) else raise Node_invariant
 
   let of_path = function
     | "/" -> Root
@@ -54,8 +49,6 @@ module Group = struct
     | Root -> acc
     | Cons (p, _) -> p :: acc
 
-  let ancestors p = fold prepend_node [] p
-
   let to_key p =
     let str = to_path p in
     String.sub str 1 (String.length str - 1)
@@ -64,45 +57,31 @@ module Group = struct
     | Root -> ""
     | p -> to_key p ^ "/"
 
-  let to_metakey p = to_prefix p ^ "zarr.json"
-
   let is_child_group x y = match x, y with
     | _, Root -> false
     | v, Cons (parent, _) -> parent = v
-
-  let show = to_path
-
-  let pp fmt t = Format.fprintf fmt "%s" (show t)
 
   let rename t str = match t with
     | Cons (parent, _) when rep_ok str -> Cons (parent, str)
     | Cons _ -> raise Node_invariant
     | Root -> raise Cannot_rename_root
+
+  let root = Root 
+  let ( / ) = create
+  let show = to_path
+  let ancestors p = fold prepend_node [] p
+  let pp fmt t = Format.fprintf fmt "%s" (show t)
+  let to_metakey p = to_prefix p ^ "zarr.json"
 end
 
 module Array = struct
   type t = {parent : Group.t option; name : string}
-
-  let create g name =
-    if rep_ok name then {parent = Some g; name} else raise Node_invariant
-
-  let ( / ) = create
-
-  let root = {parent = None; name = ""}
 
   let of_path p =
     let g = Group.of_path p in
     match Group.parent g with
     | Some _ as parent -> {parent; name = Group.name g}
     | None -> raise Node_invariant
-      
-  let ( = )
-    {parent = p; name = n}
-    {parent = q; name = m} = p = q && n = m
-
-  let name {parent = _; name = n} = n
-
-  let parent {parent = p; _} = p
 
   let to_path {parent = p; name} = match p with
     | None -> "/"
@@ -124,13 +103,18 @@ module Array = struct
   let to_metakey = function
     | {parent = None; _} -> "zarr.json"
     | p -> to_key p ^ "/zarr.json"
-  
-  let show = to_path
-
-  let pp fmt t = Format.fprintf fmt "%s" (show t)
 
   let rename t name = match t.parent with
     | Some _ when rep_ok name -> {t with name}
     | Some _ -> raise Node_invariant
     | None -> raise Cannot_rename_root
+      
+  let create g name = if rep_ok name then {parent = Some g; name} else raise Node_invariant
+  let ( / ) = create
+  let show = to_path
+  let root = {parent = None; name = ""}
+  let ( = ) {parent = p; name = n} {parent = q; name = m} = p = q && n = m
+  let parent {parent = p; _} = p
+  let name {parent = _; name = n} = n
+  let pp fmt t = Format.fprintf fmt "%s" (show t)
 end

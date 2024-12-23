@@ -37,8 +37,7 @@ module Make (Io : Types.IO) = struct
     let add ~t ((left, right) as acc) k =
       if not (String.ends_with ~suffix:"zarr.json" k) then Deferred.return acc else
       let path = if k = "zarr.json" then "/" else "/" ^ String.(sub k 0 (length k - 10)) in
-      let+ kind = node_kind t k in
-      choose path left right kind
+      Deferred.map (choose path left right) (node_kind t k)
     in
     list t >>= Deferred.fold_left (add ~t) ([], [])
 
@@ -61,15 +60,12 @@ module Make (Io : Types.IO) = struct
       in
       exists t node >>= maybe_create ~attrs t node
 
-    let metadata t node =
-      let+ data = get t (Node.Group.to_metakey node) in
-      Metadata.Group.decode data
+    let metadata t node = Deferred.map Metadata.Group.decode (get t @@ Node.Group.to_metakey node)
 
     let children t node =
       let add ~t (left, right) prefix =
         let path = "/" ^ String.sub prefix 0 (String.length prefix - 1) in
-        let+ kind = node_kind t (prefix ^ "zarr.json") in
-        choose path left right kind
+        Deferred.map (choose path left right) (node_kind t @@ prefix ^ "zarr.json")
       in
       let maybe_enumerate t node = function
         | false -> Deferred.return ([], [])
@@ -96,16 +92,13 @@ module Make (Io : Types.IO) = struct
       ~codecs ~shape ~chunks
       kind fv node t =
       let c = Codecs.Chain.create chunks codecs in
-      let m = Metadata.Array.create
-        ~sep ~codecs:c ~dimension_names ~attributes ~shape kind fv chunks in
+      let m = Metadata.Array.create ~sep ~codecs:c ~dimension_names ~attributes ~shape kind fv chunks in
       let key = Node.Array.to_metakey node in
       let value = Metadata.Array.encode m in 
       let* () = set t key value in
       Option.fold ~none:Deferred.return_unit ~some:(Group.create t) (Node.Array.parent node)
 
-    let metadata t node =
-      let+ data = get t (Node.Array.to_metakey node) in
-      Metadata.Array.decode data
+    let metadata t node = Deferred.map Metadata.Array.decode (get t @@ Node.Array.to_metakey node)
 
     let delete t node = erase_prefix t (Node.Array.to_key node ^ "/")
 
@@ -151,13 +144,7 @@ module Make (Io : Types.IO) = struct
       let bindings = ArrayMap.bindings m in
       Deferred.iter (update_chunk ~t ~meta ~prefix ~chain ~fv ~repr) bindings
 
-    let read :
-      type a. t ->
-      Node.Array.t ->
-      Indexing.index array ->
-      a Ndarray.dtype ->
-      a Ndarray.t Deferred.t
-      = fun t node slice kind ->
+    let read (type a) t node slice (kind : a Ndarray.dtype) =
       let indexed_fill_value ~fv (i, _) = (i, fv) in
       let indexed_ndarray_value ~arr (i, c) = (i, Ndarray.get arr c) in
       let add_indexed_coord ~meta acc (i, y) =

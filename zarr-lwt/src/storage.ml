@@ -21,6 +21,7 @@ end
 
 module ZipStore = Zarr.Zip.Make(Deferred)
 module MemoryStore = Zarr.Memory.Make(Deferred)
+module HttpStore = Zarr.Http.Make(Deferred)(Ezcurl_lwt)
 
 module FilesystemStore = struct
   module IO = struct

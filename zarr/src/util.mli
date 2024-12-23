@@ -23,7 +23,7 @@ val prod : int array -> int
 val max : int array -> int
 (** [max x] returns the maximum element of an integer array [x]. *)
 
-val create_parent_dir : string -> Unix.file_perm -> unit
+val create_parent_dir : string -> int -> unit
 (** [create_parent_dir f p] creates all the parent directories of file name
     [f] if they don't exist given file permissions [p]. *)
 

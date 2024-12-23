@@ -29,8 +29,7 @@ module FilesystemStore = struct
     type t = {root : Eio.Fs.dir_ty Eio.Path.t; perm : Eio.File.Unix_perm.t}
 
     let fspath_to_key t (path : Eio.Fs.dir_ty Eio.Path.t) =
-      let s = snd path in
-      let pos = String.length (snd t.root) + 1 in
+      let s = snd path and pos = String.length (snd t.root) + 1 in
       String.sub s pos (String.length s - pos)
 
     let key_to_fspath t key = Eio.Path.(t.root / key)
@@ -98,12 +97,10 @@ module FilesystemStore = struct
       List.fold_left (add ~t ~dir) acc (Eio.Path.read_dir dir)
 
     let list t = walk t [] t.root
-
     let list_prefix t prefix = walk t [] (key_to_fspath t prefix)
-
     let is_member t key = Eio.Path.is_file (key_to_fspath t key)
-
     let erase t key = Eio.Path.unlink (key_to_fspath t key)
+    let rename t k k' = Eio.Path.rename (key_to_fspath t k) (key_to_fspath t k')
 
     let erase_prefix t pre =
       (* if prefix points to the root of the store, only delete sub-dirs and files.*)
@@ -119,8 +116,6 @@ module FilesystemStore = struct
       in
       let dir = key_to_fspath t prefix in
       List.partition_map (choose ~t ~dir) (Eio.Path.read_dir dir)
-
-    let rename t k k' = Eio.Path.rename (key_to_fspath t k) (key_to_fspath t k')
   end
 
   let create ?(perm=0o700) ~env dirname =

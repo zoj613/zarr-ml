@@ -99,7 +99,7 @@ let test_storage
 
 module type SYNC_PARTIAL_STORE = sig
   exception Not_implemented
-  include Zarr.Storage.STORE with type 'a Deferred.t = 'a
+  include Zarr.Storage.S with type 'a io := 'a
 end
 
 let test_readable_writable_only 

@@ -115,18 +115,18 @@ let test_storage
 
 module type SYNC_PARTIAL_STORE = sig
   exception Not_implemented
-  include Zarr.Storage.STORE with type 'a Deferred.t = 'a Lwt.t
+  include Zarr.Storage.S with type 'a io := 'a Lwt.t
 end
 
 let test_readable_writable_only 
   (type a) (module M : SYNC_PARTIAL_STORE with type t = a) (store : a) =
   let open M in
-  let open Deferred.Syntax in
+  let open IO.Syntax in
   let assert_not_implemented f =
     Lwt.catch
-      (fun () -> let* _ = f () in Deferred.return_unit)
+      (fun () -> let* _ = f () in IO.return_unit)
       (function
-        | Not_implemented -> Deferred.return_unit
+        | Not_implemented -> IO.return_unit
         | _ -> failwith "Supposed to raise Not_implemented")
   in
   let gnode = Node.Group.root in
@@ -171,7 +171,7 @@ let test_readable_writable_only
   let* () = assert_not_implemented (fun () -> hierarchy store) in
   let* () = assert_not_implemented (fun () -> Group.delete store gnode) in
   let* () = assert_not_implemented (fun () -> clear store) in
-  Deferred.return_unit
+  IO.return_unit
 
 module Dir_http_server = struct
   module S = Tiny_httpd
@@ -243,7 +243,7 @@ module Dir_http_server = struct
     let perform () =
       let _ = Thread.create S.run_exn t in
       Lwt.dont_wait after_init raise;
-      Deferred.return_unit
+      IO.return_unit
     in
     Fun.protect ~finally:(fun () -> S.stop t) perform
 end

@@ -2,6 +2,7 @@
  (name test_sync)
  (libraries
    zarr-sync
+   tiny_httpd
    ounit2)
  (package zarr-sync)
  (preprocess

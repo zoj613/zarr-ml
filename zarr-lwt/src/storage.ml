@@ -21,6 +21,7 @@ end
 
 module ZipStore = Zarr.Zip.Make(IO)
 module MemoryStore = Zarr.Memory.Make(IO)
+module HttpStore = Zarr.Http.Make(IO)(Ezcurl_lwt)
 
 module FilesystemStore = struct
   module S = struct

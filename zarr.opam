@@ -20,6 +20,7 @@ depends: [
   "stdint" {>= "0.7.2"}
   "zipc" {>= "0.2.0"}
   "checkseum" {>= "0.4.0"}
+  "bytesrw" {>= "0.1.0"}
   "odoc" {with-doc}
   "ounit2" {with-test}
   "ppx_deriving" {with-test}
@@ -40,6 +41,3 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/zoj613/zarr-ml.git"
-pin-depends: [
-  ["bytesrw.dev" "git+https://erratique.ch/repos/bytesrw.git"]
-]

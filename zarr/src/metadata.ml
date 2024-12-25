@@ -18,9 +18,7 @@ module FillValue = struct
 
   let ( = ) x y = x = y
 
-  let of_kind
-  : type a. a Ndarray.dtype -> a -> t
-  = fun kind a -> match kind with
+  let of_kind (type a) (kind : a Ndarray.dtype) (a : a) = match kind with
     | Ndarray.Char -> Char a
     | Ndarray.Bool -> Bool a
     | Ndarray.Int8 -> Int (Stdint.Uint64.of_int a)
@@ -37,7 +35,7 @@ module FillValue = struct
     | Ndarray.Int -> Int (Stdint.Uint64.of_int a)
     | Ndarray.Nativeint -> Int (Stdint.Uint64.of_nativeint a)
 
-  let rec of_yojson x = match x with
+  let rec of_yojson : Yojson.Safe.t -> (t, string) result  = fun x -> match x with
     | `Bool b -> Ok (Bool b)
     | `Int i -> Result.ok @@ Int (Stdint.Uint64.of_int i)
     | `String "Infinity" -> Ok (Float Float.infinity)
@@ -61,7 +59,7 @@ module FillValue = struct
         | _ -> Error "Unsupported fill value.")
     | _ -> Error "Unsupported fill value."
 
-  let rec to_yojson = function
+  let rec to_yojson : t -> Yojson.Safe.t = function
     | Bool b -> `Bool b
     | Int i -> `Int (Stdint.Uint64.to_int i)
     | Char c -> `String (Printf.sprintf "%c" c)
@@ -97,11 +95,7 @@ module Array = struct
     ;dimension_names : string option list
     ;storage_transformers : Yojson.Safe.t list}
 
-  let create
-    ?(sep=`Slash) ?(dimension_names=[]) ?(attributes=`Null)
-    ~codecs ~shape
-    kind fv chunks
-    =
+  let create ?(sep=`Slash) ?(dimension_names=[]) ?(attributes=`Null) ~codecs ~shape kind fv chunks =
     {shape
     ;codecs
     ;attributes
@@ -251,9 +245,7 @@ module Array = struct
     | Error e -> raise (Parse_error e)
     | Ok m -> m
 
-  let is_valid_kind
-    : type a. t -> a Ndarray.dtype -> bool
-    = fun t kind -> match kind, t.data_type with
+  let is_valid_kind (type a) t (kind : a Ndarray.dtype) = match kind, t.data_type with
     | Ndarray.Char, Datatype.Char
     | Ndarray.Bool, Datatype.Bool
     | Ndarray.Int8, Datatype.Int8
@@ -271,9 +263,7 @@ module Array = struct
     | Ndarray.Nativeint, Datatype.Nativeint -> true
     | _ -> false
 
-  let fillvalue_of_kind
-    : type a. t -> a Ndarray.dtype -> a
-    = fun t kind -> match kind, t.fill_value with
+  let fillvalue_of_kind (type a) t (kind : a Ndarray.dtype) : a = match kind, t.fill_value with
     | Ndarray.Char, FillValue.Char c -> c
     | Ndarray.Bool, FillValue.Bool b -> b
     | Ndarray.Int8, FillValue.Int i -> Stdint.Uint64.to_int i
@@ -317,6 +307,7 @@ module Group = struct
   let encode t = Yojson.Safe.to_string (to_yojson t)
   let update_attributes t attrs = {t with attributes = attrs}
   let attributes t = t.attributes
+  let show t = Format.sprintf {|"{zarr_format=%d; node_type=%s; attributes=%s}"|} t.zarr_format t.node_type (Yojson.Safe.show t.attributes)
 
   let of_yojson x =
     let open Yojson.Safe.Util in
@@ -340,9 +331,4 @@ module Group = struct
   let decode s = match of_yojson (Yojson.Safe.from_string s) with
     | Error e -> raise (Parse_error e)
     | Ok m -> m
-
-  let show t =
-    Format.sprintf
-      {|"{zarr_format=%d; node_type=%s; attributes=%s}"|}
-      t.zarr_format t.node_type (Yojson.Safe.show t.attributes)
 end

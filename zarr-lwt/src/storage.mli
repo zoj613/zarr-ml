@@ -7,7 +7,7 @@ module MemoryStore : Zarr.Memory.S with type 'a io := 'a Lwt.t
 module ZipStore : Zarr.Zip.S with type 'a io := 'a Lwt.t
 
 (** An Lwt-aware Http storage backend for a Zarr v3 hierarchy. *)
-module HttpStore : Zarr.Http.S with module Deferred = Deferred
+module HttpStore : Zarr.Http.S with type 'a io := 'a Lwt.t
 
 (** An Lwt-aware local filesystem storage backend for a Zarr V3 hierarchy. *)
 module FilesystemStore : sig

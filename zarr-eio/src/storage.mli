@@ -24,7 +24,7 @@ end
 module HttpStore : sig
   exception Not_implemented
   exception Request_failed of int * string
-  include Zarr.Storage.STORE with module Deferred = Deferred
+  include Zarr.Storage.S with type 'a io := 'a
   val with_open :
     ?https:(Uri.t -> [ `Generic ] Eio.Net.stream_socket_ty Eio.Std.r -> _ Eio.Flow.two_way) ->
     net:_ Eio.Net.t ->

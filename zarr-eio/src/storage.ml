@@ -146,10 +146,9 @@ module HttpStore = struct
       raise (Zarr.Storage.Key_not_found key)
     | e -> raise_status_error e
 
-  module IO = struct
-    module Deferred = Deferred
-
+  module S = struct
     type t = {base_url : Uri.t; client : Client.t}
+    type 'a io = 'a IO.t
 
     let get t key =
       Eio.Switch.run @@ fun sw ->
@@ -220,7 +219,7 @@ module HttpStore = struct
 
   let with_open ?https ~net uri f =
     let client = Client.make ~https net in
-    f IO.{client; base_url = uri}
+    f S.{client; base_url = uri}
 
-  include Zarr.Storage.Make(IO)
+  include Zarr.Storage.Make(IO)(S)
 end

@@ -1,4 +1,4 @@
-module type Deferred = sig
+module type IO = sig
   type 'a t
   val return : 'a -> 'a t
   val bind : 'a t -> ('a -> 'b t) -> 'b t
@@ -23,7 +23,7 @@ type value = string
 type range_start = int
 type prefix = string
 
-module type IO = sig
+module type Store = sig
   (** The abstract store interface that stores should implement.
 
       The store interface defines a set of operations involving keys and values.
@@ -39,20 +39,17 @@ module type IO = sig
       operations involving prefixes. In the context of this interface,
       a prefix is a string containing only characters that are valid for use
       in keys and ending with a trailing / character. *)
-
-  module Deferred : Deferred
-
   type t
-  val size : t -> key -> int Deferred.t
-  val get : t -> key -> value Deferred.t
-  val get_partial_values : t -> string -> range list -> value list Deferred.t
-  val set : t -> key -> value -> unit Deferred.t
-  val set_partial_values :
-    t -> key -> ?append:bool -> (range_start * value) list -> unit Deferred.t
-  val erase : t -> key -> unit Deferred.t
-  val erase_prefix : t -> key -> unit Deferred.t
-  val list : t -> key list Deferred.t
-  val list_dir : t -> key -> (key list * prefix list) Deferred.t
-  val is_member : t -> key -> bool Deferred.t
-  val rename : t -> key -> key -> unit Deferred.t
+  type 'a io
+  val size : t -> key -> int io
+  val get : t -> key -> value io
+  val get_partial_values : t -> string -> range list -> value list io
+  val set : t -> key -> value -> unit io
+  val set_partial_values : t -> key -> ?append:bool -> (range_start * value) list -> unit io
+  val erase : t -> key -> unit io
+  val erase_prefix : t -> key -> unit io
+  val list : t -> key list io
+  val list_dir : t -> key -> (key list * prefix list) io
+  val is_member : t -> key -> bool io
+  val rename : t -> key -> key -> unit io
 end

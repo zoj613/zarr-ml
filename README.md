@@ -55,7 +55,7 @@ open Zarr
 open Zarr.Codecs
 open Zarr.Indexing
 open Zarr_sync.Storage
-open Deferred.Infix  (* opens infix operators >>= and >>| for monadic bind & map *)
+open IO.Infix  (* opens infix operators >>= and >>| for monadic bind & map *)
 
 let store = FilesystemStore.create "testdata.zarr";;
 ```

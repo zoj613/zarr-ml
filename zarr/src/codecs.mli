@@ -107,8 +107,7 @@ end
 
 (** A functor for generating a Sharding Indexed codec that supports partial
     (en/de)coding via IO operations. *)
-module Make (Io : Types.IO) : sig
-  open Io
+module Make (IO : Types.IO) : sig
 
   (** [is_just_sharding t] is [true] if the codec chain [t] contains only
       the [sharding_indexed] codec. *)
@@ -116,20 +115,20 @@ module Make (Io : Types.IO) : sig
 
   val partial_encode :
     Chain.t ->
-    ((int * int option) list -> string list Deferred.t) ->
-    (?append:bool -> (int * string) list -> unit Deferred.t) ->
+    (Types.range list -> string list IO.t) ->
+    (?append:bool -> (int * string) list -> unit IO.t) ->
     int ->
     'a array_repr ->
     (int array * 'a) list ->
     'a ->
-    unit Deferred.t
+    unit IO.t
 
   val partial_decode :
     Chain.t ->
-    ((int * int option) list -> string list Deferred.t) ->
+    (Types.range list -> string list IO.t) ->
     int ->
     'a array_repr ->
     (int * int array) list ->
     'a ->
-    (int * 'a) list Deferred.t
+    (int * 'a) list IO.t
 end

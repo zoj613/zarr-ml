@@ -1,4 +1,4 @@
-module Deferred = struct
+module IO = struct
   type 'a t = 'a
   let return = Fun.id
   let bind x f = f x
@@ -19,14 +19,13 @@ module Deferred = struct
   end
 end
 
-module ZipStore = Zarr.Zip.Make(Deferred)
-module MemoryStore = Zarr.Memory.Make(Deferred)
+module ZipStore = Zarr.Zip.Make(IO)
+module MemoryStore = Zarr.Memory.Make(IO)
 
 module FilesystemStore = struct
-  module IO = struct
-    module Deferred = Deferred
-
+  module S = struct
     type t = {dirname : string; perm : int}
+    type 'a io = 'a IO.t
 
     let fspath_to_key t path =
       let pos = String.length t.dirname + 1 in
@@ -35,8 +34,7 @@ module FilesystemStore = struct
     let key_to_fspath t key = Filename.concat t.dirname key
 
     let get t key =
-      let p = key_to_fspath t key in
-      try In_channel.(with_open_gen [Open_rdonly] t.perm p input_all) with
+      try In_channel.(with_open_gen [Open_rdonly] t.perm (key_to_fspath t key) input_all) with
       | Sys_error _ -> raise (Zarr.Storage.Key_not_found key)
 
     let get_partial_values t key ranges =
@@ -71,13 +69,9 @@ module FilesystemStore = struct
       List.iter (write ~oc) rvs;
       Out_channel.flush oc
 
-    let is_member t key = Sys.file_exists (key_to_fspath t key)
-    let erase t key = Sys.remove (key_to_fspath t key)
-
-    let size t key =
-      match In_channel.(with_open_gen [Open_rdonly] t.perm (key_to_fspath t key) length) with
-      | exception Sys_error _ -> 0
-      | s -> Int64.to_int s
+    let size t key = 
+      try In_channel.(with_open_gen [Open_rdonly] t.perm (key_to_fspath t key) length) |> Int64.to_int with
+      | Sys_error _ -> 0
 
     let rec walk t acc dir =
       let accumulate ~t a x = match Filename.concat dir x with
@@ -98,19 +92,21 @@ module FilesystemStore = struct
 
     let list t = walk t [] (key_to_fspath t "")
     let list_prefix t prefix = walk t [] (key_to_fspath t prefix)
+    let erase t key = Sys.remove (key_to_fspath t key)
     let erase_prefix t pre = List.iter (erase t) (list_prefix t pre)
     let rename t k k' = Sys.rename (key_to_fspath t k) (key_to_fspath t k')
+    let is_member t key = Sys.file_exists (key_to_fspath t key)
   end
 
   let create ?(perm=0o700) dirname =
     Zarr.Util.create_parent_dir dirname perm;
     Sys.mkdir dirname perm;
-    IO.{dirname = Zarr.Util.sanitize_dir dirname; perm}
+    S.{dirname = Zarr.Util.sanitize_dir dirname; perm}
 
   let open_store ?(perm=0o700) dirname =
     if Sys.is_directory dirname
-    then IO.{dirname = Zarr.Util.sanitize_dir dirname; perm}
+    then S.{dirname = Zarr.Util.sanitize_dir dirname; perm}
     else raise (Zarr.Storage.Not_a_filesystem_store dirname)
 
-  include Zarr.Storage.Make(IO)
+  include Zarr.Storage.Make(IO)(S)
 end

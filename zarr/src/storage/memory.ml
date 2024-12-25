@@ -1,58 +1,55 @@
 module type S = sig
-  include Storage.STORE
+  include Storage.S
   val create : unit -> t
   (** [create ()] returns a new In-memory Zarr store type.*)
 end
 
-module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferred.t = struct
-  open Deferred.Syntax
+module Make (IO : Types.IO) : S with type 'a io := 'a IO.t = struct
+  open IO.Syntax
 
   module M = Map.Make(String)
 
-  module IO = struct
-    module Deferred = Deferred
-
+  module Store = struct
     type t = string M.t Atomic.t
+    type 'a io = 'a IO.t
 
-    let get : t -> string -> string Deferred.t = fun t key ->
+    let get : t -> string -> string io = fun t key ->
       match M.find_opt key (Atomic.get t) with
       | None -> raise (Storage.Key_not_found key)
-      | Some v -> Deferred.return v
+      | Some v -> IO.return v
 
-    let rec set : t -> string -> string -> unit Deferred.t = fun t key value ->
+    let rec set : t -> string -> string -> unit io = fun t key value ->
       let m = Atomic.get t in
       if Atomic.compare_and_set t m (M.add key value m)
-      then Deferred.return_unit else set t key value 
+      then IO.return_unit else set t key value 
 
-    let list : t -> string list Deferred.t = fun t ->
+    let list : t -> string list io = fun t ->
       let m = Atomic.get t in
-      Deferred.return @@ M.fold (fun k _ acc -> k :: acc) m []
+      IO.return @@ M.fold (fun k _ acc -> k :: acc) m []
 
-    let is_member : t -> string -> bool Deferred.t = fun t key ->
+    let is_member : t -> string -> bool io = fun t key ->
       let m = Atomic.get t in
-      Deferred.return (M.mem key m)
+      IO.return (M.mem key m)
 
-    let rec erase : t -> string -> unit Deferred.t = fun t key ->
+    let rec erase : t -> string -> unit io = fun t key ->
       let m = Atomic.get t in
       let m' = M.update key (Fun.const None) m in
       if Atomic.compare_and_set t m m'
-      then Deferred.return_unit else erase t key
+      then IO.return_unit else erase t key
 
-    let size : t -> string -> int Deferred.t = fun t key ->
+    let size : t -> string -> int io = fun t key ->
       match M.find_opt key (Atomic.get t) with
-      | None -> Deferred.return 0
-      | Some e -> Deferred.return (String.length e)
+      | None -> IO.return 0
+      | Some e -> IO.return (String.length e)
 
-    let rec erase_prefix : t -> string -> unit Deferred.t = fun t prefix ->
+    let rec erase_prefix : t -> string -> unit io = fun t prefix ->
       let pred ~prefix k v = if String.starts_with ~prefix k then None else Some v in
       let m = Atomic.get t in
       let m' = M.filter_map (pred ~prefix) m in
       if Atomic.compare_and_set t m m'
-      then Deferred.return_unit else erase_prefix t prefix
+      then IO.return_unit else erase_prefix t prefix
 
-    let get_partial_values :
-      t -> string -> (int * int option) list -> string list Deferred.t
-      = fun t key ranges ->
+    let get_partial_values t key (ranges : Types.range list) =
       let read_range ~data ~size (ofs, len) = match len with
         | Some l -> String.sub data ofs l
         | None -> String.sub data ofs (size - ofs)
@@ -61,9 +58,7 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
       let size = String.length data in
       List.map (read_range ~data ~size) ranges
 
-    let rec set_partial_values :
-      t -> string -> ?append:bool -> (int * string) list -> unit Deferred.t
-      = fun t key ?(append=false) rv ->
+    let rec set_partial_values t key ?(append=false) (rv : (int * string) list) =
       let m = Atomic.get t in
       let ov = Option.fold ~none:String.empty ~some:Fun.id (M.find_opt key m) in
       let f = if append || ov = String.empty then
@@ -75,9 +70,9 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
       in
       let m' = M.add key (List.fold_left f ov rv) m in
       if Atomic.compare_and_set t m m'
-      then Deferred.return_unit else set_partial_values t key ~append rv
+      then IO.return_unit else set_partial_values t key ~append rv
 
-    let list_dir : t -> string -> (string list * string list) Deferred.t = fun t prefix ->
+    let list_dir : t -> string -> (string list * string list) io = fun t prefix ->
       let module S = Set.Make(String) in
       let add ~size ~prefix key _ ((l, r) as acc) =
         if not (String.starts_with ~prefix key) then acc else
@@ -87,11 +82,9 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
       let size = String.length prefix in
       let m = Atomic.get t in
       let keys, prefixes = M.fold (add ~prefix ~size) m ([], S.empty) in
-      Deferred.return (keys, S.elements prefixes)
+      IO.return (keys, S.elements prefixes)
 
-    let rec rename :
-      t -> string -> string -> unit Deferred.t
-      = fun t prefix new_prefix ->
+    let rec rename : t -> string -> string -> unit io = fun t prefix new_prefix ->
       let add ~prefix ~new_prefix k v acc =
         if not (String.starts_with ~prefix k) then M.add k v acc else
         let l = String.length prefix in
@@ -101,10 +94,10 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
       let m = Atomic.get t in
       let m' = M.fold (add ~prefix ~new_prefix) m M.empty in
       if Atomic.compare_and_set t m m'
-      then Deferred.return_unit else rename t prefix new_prefix
+      then IO.return_unit else rename t prefix new_prefix
   end
 
-  let create : unit -> IO.t = fun () -> Atomic.make M.empty
+  let create : unit -> Store.t = fun () -> Atomic.make M.empty
 
-  include Storage.Make(IO)
+  include Storage.Make(IO)(Store)
 end

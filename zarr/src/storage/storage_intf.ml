@@ -4,39 +4,41 @@ exception Invalid_array_slice
 exception Key_not_found of string
 exception Not_a_filesystem_store of string
 
-module type STORE = sig
-  module Deferred : Types.Deferred
+module type S = sig
   type t
   (** The storage type. *)
 
+  type 'a io
+  (** The I/O monad type.*)
+
   module Group : sig
-    val create : ?attrs:Yojson.Safe.t -> t -> Node.Group.t -> unit Deferred.t
+    val create : ?attrs:Yojson.Safe.t -> t -> Node.Group.t -> unit io
     (** [create ?attrs t node] creates a group node in store [t]
         containing attributes [attrs]. This is a no-op if [node]
         is already a member of this store. *)
 
-    val metadata : t -> Node.Group.t -> Metadata.Group.t Deferred.t
+    val metadata : t -> Node.Group.t -> Metadata.Group.t io
     (** [metadata node t] returns the metadata of group node [node].
 
         @raise Key_not_found if node is not a member of store [t].*)
 
-    val children : t -> Node.Group.t -> (Node.Array.t list * Node.Group.t list) Deferred.t
+    val children : t -> Node.Group.t -> (Node.Array.t list * Node.Group.t list) io
     (** [children t n] returns a tuple of child nodes of group node [n].
         This operation returns a pair of empty lists if node [n] has no
         children or is not a member of store [t].
         
         @raise Parse_error if any child node has invalid [node_type] metadata.*)
 
-    val delete : t -> Node.Group.t -> unit Deferred.t
+    val delete : t -> Node.Group.t -> unit io
     (** [delete t n] erases group node [n] from store [t]. This also
         erases all child nodes of [n]. If node [n] is not a member
         of store [t] then this is a no-op. *)
 
-    val exists : t -> Node.Group.t -> bool Deferred.t
+    val exists : t -> Node.Group.t -> bool io
     (** [exists t n] returns [true] if group node [n] is a member
         of store [t] and [false] otherwise. *)
 
-    val rename : t -> Node.Group.t -> string -> unit Deferred.t
+    val rename : t -> Node.Group.t -> string -> unit io
     (** [rename t g name] changes the name of group node [g] in store [t] to [name].
 
         @raise Key_not_found if [g] is not a member of store [t].
@@ -56,7 +58,7 @@ module type STORE = sig
       'a ->
       Node.Array.t ->
       t ->
-      unit Deferred.t
+      unit io
     (** [create ~sep ~dimension_names ~attributes ~codecs ~shape ~chunks kind fill node t]
         creates an array node in store [t] where:
         - Separator [sep] is used in the array's chunk key encoding.
@@ -74,20 +76,20 @@ module type STORE = sig
           if [codecs] contains a shardingindexed codec with an
           incorrect inner chunk shape. *)
 
-    val metadata : t -> Node.Array.t -> Metadata.Array.t Deferred.t
+    val metadata : t -> Node.Array.t -> Metadata.Array.t io
     (** [metadata node t] returns the metadata of array node [node].
 
         @raise Key_not_found if node is not a member of store [t]. *)
 
-    val delete : t -> Node.Array.t -> unit Deferred.t
+    val delete : t -> Node.Array.t -> unit io
     (** [delete t n] erases array node [n] from store [t]. If node [n]
         is not a member of store [t] then this is a no-op. *)
     
-    val exists : t -> Node.Array.t -> bool Deferred.t
+    val exists : t -> Node.Array.t -> bool io
     (** [exists t n] returns [true] if array node [n] is a member
         of store [t] and [false] otherwise. *)
 
-    val write : t -> Node.Array.t -> Ndarray.Indexing.index array -> 'a Ndarray.t -> unit Deferred.t
+    val write : t -> Node.Array.t -> Ndarray.Indexing.index array -> 'a Ndarray.t -> unit io
     (** [write t n s x] writes n-dimensional array [x] to the slice [s]
         of array node [n] in store [t].
 
@@ -97,12 +99,7 @@ module type STORE = sig
           if the kind of [x] is not compatible with node [n]'s data type as
             described in its metadata document. *)
 
-    val read :
-      t ->
-      Node.Array.t ->
-      Ndarray.Indexing.index array ->
-      'a Ndarray.dtype ->
-      'a Ndarray.t Deferred.t
+    val read : t -> Node.Array.t -> Ndarray.Indexing.index array -> 'a Ndarray.dtype -> 'a Ndarray.t io
     (** [read t n s k] reads an n-dimensional array of size determined
         by slice [s] from array node [n].
 
@@ -112,7 +109,7 @@ module type STORE = sig
         @raise Invalid_array_slice
           if the slice [s] is not a valid slice of array node [n].*)
 
-    val reshape : t -> Node.Array.t -> int array -> unit Deferred.t
+    val reshape : t -> Node.Array.t -> int array -> unit io
     (** [reshape t n shape] resizes array node [n] of store [t] into new
         size [shape]. Note that when the resizing involves shrinking an array
         along any dimensions, any old unreachable chunks that fall outside of
@@ -123,7 +120,7 @@ module type STORE = sig
         @raise Key_not_found
           if node [n] is not a member of store [t]. *)
 
-    val rename : t -> Node.Array.t -> string -> unit Deferred.t
+    val rename : t -> Node.Array.t -> string -> unit io
     (** [rename t n name] changes the name of array node [n] in store [t] to [name].
 
         @raise Key_not_found if [g] is not a member of store [t].
@@ -131,7 +128,7 @@ module type STORE = sig
         @raise Node_invariant if [name] is an invalid node name.*)
   end
 
-  val hierarchy : t -> (Node.Array.t list * Node.Group.t list) Deferred.t
+  val hierarchy : t -> (Node.Array.t list * Node.Group.t list) io
   (** [hierarchy t] returns [p] where [p] is a pair of lists
       representing all nodes in store [t]. The first element of the pair
       is a list of all array nodes, and the second element is a list of
@@ -140,7 +137,7 @@ module type STORE = sig
 
       @raise Parse_error if any node has invalid [node_type] metadata.*)
 
-  val clear : t -> unit Deferred.t
+  val clear : t -> unit io
   (** [clear t] clears the store [t] by deleting all nodes.
       If the store is already empty, this is a no-op. *)
 end
@@ -167,11 +164,11 @@ module type Interface = sig
   exception Not_a_filesystem_store of string
   (** raised when opening a file that as if it was a Filesystem Zarr store. *)
 
-  module type STORE = STORE
+  module type S = S
   (** The module interface that all supported stores must implement. *)
 
-  module Make : functor (Io : Types.IO) -> STORE
-    with type t = Io.t and module Deferred = Io.Deferred
+  module Make : functor (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) -> S
+    with type t = Store.t and type 'a io = 'a IO.t
   (** A functor for minting a new storage type as long as it's argument
-      module implements the {!STORE} interface. *)
+      module implements the {!Store} interface. *)
 end

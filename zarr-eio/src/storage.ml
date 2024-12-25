@@ -1,4 +1,4 @@
-module Deferred = struct
+module IO = struct
   type 'a t = 'a
   let return = Fun.id
   let bind x f = f x
@@ -19,14 +19,13 @@ module Deferred = struct
   end
 end
 
-module ZipStore = Zarr.Zip.Make(Deferred)
-module MemoryStore = Zarr.Memory.Make(Deferred)
+module ZipStore = Zarr.Zip.Make(IO)
+module MemoryStore = Zarr.Memory.Make(IO)
 
 module FilesystemStore = struct
-  module IO = struct
-    module Deferred = Deferred
-
+  module S = struct
     type t = {root : Eio.Fs.dir_ty Eio.Path.t; perm : Eio.File.Unix_perm.t}
+    type 'a io = 'a IO.t
 
     let fspath_to_key t (path : Eio.Fs.dir_ty Eio.Path.t) =
       let s = snd path and pos = String.length (snd t.root) + 1 in
@@ -121,12 +120,12 @@ module FilesystemStore = struct
   let create ?(perm=0o700) ~env dirname =
     Zarr.Util.create_parent_dir dirname perm;
     Sys.mkdir dirname perm;
-    IO.{root = Eio.Path.(Eio.Stdenv.fs env / Zarr.Util.sanitize_dir dirname); perm}
+    S.{root = Eio.Path.(Eio.Stdenv.fs env / Zarr.Util.sanitize_dir dirname); perm}
 
   let open_store ?(perm=0o700) ~env dirname =
     if Sys.is_directory dirname
-    then IO.{root = Eio.Path.(Eio.Stdenv.fs env / Zarr.Util.sanitize_dir dirname); perm}
+    then S.{root = Eio.Path.(Eio.Stdenv.fs env / Zarr.Util.sanitize_dir dirname); perm}
     else raise (Zarr.Storage.Not_a_filesystem_store dirname)
 
-  include Zarr.Storage.Make(IO)
+  include Zarr.Storage.Make(IO)(S)
 end

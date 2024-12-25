@@ -1,13 +1,13 @@
 module type S = sig
-  include Storage.STORE
+  include Storage.S
 
   val with_open :
     ?level:[ `None | `Fast | `Default | `Best ] ->
     ?perm:int ->
     [< `Read_only | `Read_write ] ->
     string ->
-    (t -> 'a Deferred.t) ->
-    'a Deferred.t
+    (t -> 'a io) ->
+    'a io
   (** [with_open mode p f] opens the zip archive at path [p] and applies
       function [f] to its open handle and writes any changes back to the zip
       archive if [mode] is [`Read_write], otherwise discards them at exit.
@@ -28,8 +28,8 @@ module type S = sig
       } *)
 end
 
-module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferred.t = struct
-  open Deferred.Syntax
+module Make (IO : Types.IO) : S with type 'a io := 'a IO.t = struct
+  open IO.Syntax
 
   let fold_kind ~dir ~file = function
     | Zipc.Member.Dir -> dir
@@ -37,14 +37,13 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
 
   let fold_result ~ok res = Result.fold ~error:failwith ~ok res
 
-  module IO = struct
-    module Deferred = Deferred
-
+  module Store = struct
     type t = {ic : Zipc.t Atomic.t; level : Zipc_deflate.level}
+    type 'a io = 'a IO.t
 
     let is_member t key =
       let z = Atomic.get t.ic in
-      Deferred.return (Zipc.mem key z)
+      IO.return (Zipc.mem key z)
 
     let size t key =
       let decompressed_size = function
@@ -54,7 +53,7 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
           fold_kind ~dir:0 ~file:Zipc.File.decompressed_size entry_kind
       in
       let z = Atomic.get t.ic in
-      Deferred.return (decompressed_size @@ Zipc.find key z)
+      IO.return (decompressed_size @@ Zipc.find key z)
 
     let get t key =
       let to_string f = fold_result ~ok:Fun.id (Zipc.File.to_binary_string f) in
@@ -65,7 +64,7 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
           fold_kind ~dir:String.empty ~file:to_string entry_kind
       in
       let z = Atomic.get t.ic in
-      Deferred.return (decompressed_value @@ Zipc.find key z)
+      IO.return (decompressed_value @@ Zipc.find key z)
 
     let get_partial_values t key ranges =
       let read_range ~data ~size (ofs, len) = match len with
@@ -79,7 +78,7 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
     let list t =
       let accumulate_path m acc = Zipc.Member.path m :: acc in
       let z = Atomic.get t.ic in
-      Deferred.return (Zipc.fold accumulate_path z [])
+      IO.return (Zipc.fold accumulate_path z [])
 
     let list_dir t prefix =
       let module S = Set.Make(String) in
@@ -92,7 +91,7 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
       in
       let z = Atomic.get t.ic in 
       let ks, ps = Zipc.fold (accumulate ~prefix) z ([], S.empty) in
-      Deferred.return (ks, S.elements ps)
+      IO.return (ks, S.elements ps)
 
     let rec set t key value =
       let res = Zipc.File.deflate_of_binary_string ~level:t.level value in
@@ -100,7 +99,7 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
       let m = fold_result ~ok:Fun.id Zipc.Member.(make ~path:key f) in
       let z = Atomic.get t.ic in
       if Atomic.compare_and_set t.ic z (Zipc.add m z)
-      then Deferred.return_unit else set t key value
+      then IO.return_unit else set t key value
 
     let rec set_partial_values t key ?(append=false) rv =
       let to_string f = fold_result ~ok:Fun.id (Zipc.File.to_binary_string f) in
@@ -124,12 +123,12 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
       let file = Zipc.Member.File (fold_result ~ok:Fun.id res) in
       let m = fold_result ~ok:Fun.id Zipc.Member.(make ~path:key file) in
       if Atomic.compare_and_set t.ic z (Zipc.add m z)
-      then Deferred.return_unit else set_partial_values t key ~append rv
+      then IO.return_unit else set_partial_values t key ~append rv
 
     let rec erase t key =
       let z = Atomic.get t.ic in
       if Atomic.compare_and_set t.ic z (Zipc.remove key z)
-      then Deferred.return_unit else erase t key
+      then IO.return_unit else erase t key
 
     let rec erase_prefix t prefix =
       let accumulate ~prefix m acc =
@@ -139,7 +138,7 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
       let z = Atomic.get t.ic in
       let z' = Zipc.fold (accumulate ~prefix) z Zipc.empty in
       if Atomic.compare_and_set t.ic z z'
-      then Deferred.return_unit else erase_prefix t prefix
+      then IO.return_unit else erase_prefix t prefix
 
     (* Adapted from: https://github.com/dbuenzli/zipc/issues/8#issuecomment-2392417890 *)
     let rec rename t prefix new_prefix =
@@ -157,7 +156,7 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
       let z = Atomic.get t.ic in
       let z' = Zipc.fold (accumulate ~prefix ~new_prefix) z Zipc.empty in
       if Atomic.compare_and_set t.ic z z'
-      then Deferred.return_unit else rename t prefix new_prefix
+      then IO.return_unit else rename t prefix new_prefix
   end
 
   let with_open ?(level=`Default) ?(perm=0o700) mode path f =
@@ -166,7 +165,7 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
       let flags = [Open_wronly; Open_trunc; Open_creat] in
       Out_channel.with_open_gen flags perm path (write ~str)
     in
-    let make z = IO.{ic = Atomic.make z; level} in
+    let make z = Store.{ic = Atomic.make z; level} in
     let x = if not (Sys.file_exists path) then make Zipc.empty else
       let s = In_channel.(with_open_bin path input_all) in
       fold_result ~ok:make (Zipc.of_binary_string s)
@@ -179,5 +178,5 @@ module Make (Deferred : Types.Deferred) : S with type 'a Deferred.t = 'a Deferre
       fold_result ~ok:(write_to_disk ~perm ~path) str;
       out
 
-  include Storage.Make(IO)
+  include Storage.Make(IO)(Store)
 end

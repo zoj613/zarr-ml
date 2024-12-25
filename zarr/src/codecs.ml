@@ -191,13 +191,12 @@ module ArrayMap = Util.ArrayMap
 module RegularGrid = Extensions.RegularGrid
 
 module rec ArrayToBytes : sig
-  module Make (Io : Types.IO) : sig
-    open Io
+  module Make (IO : Types.IO) : sig
     type t = internal_shard_config
-    type get_partial_values = Types.range list -> string list Deferred.t
-    type set_fn = ?append:bool -> (int * string) list -> unit Deferred.t
-    val partial_encode : t -> get_partial_values -> set_fn -> int -> 'a array_repr -> (int array * 'a) list -> 'a -> unit Deferred.t
-    val partial_decode : t -> get_partial_values -> int -> 'a array_repr -> (int * int array) list -> 'a -> (int * 'a) list Deferred.t
+    type get_partial_values = Types.range list -> string list IO.t
+    type set_fn = ?append:bool -> (int * string) list -> unit IO.t
+    val partial_encode : t -> get_partial_values -> set_fn -> int -> 'a array_repr -> (int array * 'a) list -> 'a -> unit IO.t
+    val partial_decode : t -> get_partial_values -> int -> 'a array_repr -> (int * int array) list -> 'a -> (int * 'a) list IO.t
   end
   val parse : arraytobytes -> int array -> unit
   val encoded_size : int -> fixed_arraytobytes -> int
@@ -207,14 +206,13 @@ module rec ArrayToBytes : sig
   val to_yojson : arraytobytes -> Yojson.Safe.t
 end = struct
 
-  module Make (Io : Types.IO) = struct
-    open Io
-    open Deferred.Syntax
+  module Make (IO : Types.IO) = struct
+    open IO.Syntax
     open ShardingIndexed
 
     type t = ShardingIndexed.t
-    type get_partial_values = (int * int option) list -> string list Deferred.t
-    type set_fn = ?append:bool -> (int * string) list -> unit Deferred.t
+    type get_partial_values = (int * int option) list -> string list IO.t
+    type set_fn = ?append:bool -> (int * string) list -> unit IO.t
 
     let add_binding ~grid acc (c, v) =
       let id, co = RegularGrid.index_coord_pair grid c in
@@ -314,11 +312,11 @@ end = struct
         List.fold_left2 (accumulate_nonempty ~repr' ~idx_arr) (shardsize, [], []) xs nonempty'
       in
       let* () = match inplace with
-        | [] -> Deferred.return_unit
+        | [] -> IO.return_unit
         | rs -> set_partial rs
       in
       let* () = match nonempty_append with
-        | [] -> Deferred.return_unit
+        | [] -> IO.return_unit
         | rs -> set_partial ~append:true (List.rev rs)
       in
       (* new values that need to be written to previously empty inner chunks will
@@ -328,7 +326,7 @@ end = struct
         List.fold_left (accumulate_empty ~repr' ~idx_arr ~fv) (bsize, []) empty
       in
       let* () = match empty_append with
-        | [] -> Deferred.return_unit
+        | [] -> IO.return_unit
         | rs -> set_partial ~append:true (List.rev rs)
       in
       let ib = encode_index_chain t.index_codecs idx_arr in
@@ -813,8 +811,8 @@ module Chain = struct
       Error (Printf.sprintf "%s codec is unsupported or has invalid configuration." codec)
 end
 
-module Make (Io : Types.IO) = struct
-  module M = ArrayToBytes.Make(Io)
+module Make (IO : Types.IO) = struct
+  module M = ArrayToBytes.Make(IO)
 
   let is_just_sharding : Chain.t -> bool = function
     | {a2a = []; a2b = `ShardingIndexed _; b2b = []} -> true

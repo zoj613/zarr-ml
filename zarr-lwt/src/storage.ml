@@ -1,4 +1,4 @@
-module Deferred = struct
+module IO = struct
   type 'a t = 'a Lwt.t
   let return = Lwt.return
   let bind = Lwt.bind
@@ -19,16 +19,16 @@ module Deferred = struct
   end
 end
 
-module ZipStore = Zarr.Zip.Make(Deferred)
-module MemoryStore = Zarr.Memory.Make(Deferred)
+module ZipStore = Zarr.Zip.Make(IO)
+module MemoryStore = Zarr.Memory.Make(IO)
 
 module FilesystemStore = struct
-  module IO = struct
-    module Deferred = Deferred
-    open Deferred.Infix
-    open Deferred.Syntax
+  module S = struct
+    open IO.Infix
+    open IO.Syntax
 
     type t = {dirname : string; perm : Lwt_unix.file_perm}
+    type 'a io = 'a IO.t
 
     let fspath_to_key t path =
       let pos = String.length t.dirname + 1 in
@@ -49,7 +49,7 @@ module FilesystemStore = struct
     let size t key =
       let file_length path () = Lwt.map Int64.to_int (Lwt_io.file_length path)
       and filepath = key_to_fspath t key in
-      Lwt.catch (file_length filepath) (Fun.const @@ Deferred.return 0)
+      Lwt.catch (file_length filepath) (Fun.const @@ IO.return 0)
 
     let get t key =
       let* buf_size = size t key in
@@ -148,22 +148,22 @@ module FilesystemStore = struct
   let create ?(perm=0o700) dirname =
     Zarr.Util.create_parent_dir dirname perm;
     Sys.mkdir dirname perm;
-    IO.{dirname = Zarr.Util.sanitize_dir dirname; perm}
+    S.{dirname = Zarr.Util.sanitize_dir dirname; perm}
 
   let open_store ?(perm=0o700) dirname =
     if Sys.is_directory dirname
-    then IO.{dirname = Zarr.Util.sanitize_dir dirname; perm}
+    then S.{dirname = Zarr.Util.sanitize_dir dirname; perm}
     else raise (Zarr.Storage.Not_a_filesystem_store dirname)
 
-  include Zarr.Storage.Make(IO)
+  include Zarr.Storage.Make(IO)(S)
 end
 
 module AmazonS3Store = struct
   module Credentials = Aws_s3_lwt.Credentials
   module S3 = Aws_s3_lwt.S3
 
-  open Deferred.Infix
-  open Deferred.Syntax
+  open IO.Infix
+  open IO.Syntax
 
   exception Request_failed of S3.error
 
@@ -178,7 +178,7 @@ module AmazonS3Store = struct
 
   let fold_or_catch ~not_found res =
     let return_or_raise r () = match r with
-      | Ok v -> Deferred.return v
+      | Ok v -> IO.return v
       | Error e -> raise (Request_failed e)
     and on_exception ~not_found = function
       | Request_failed S3.Not_found -> Lwt.return (not_found ())
@@ -190,19 +190,18 @@ module AmazonS3Store = struct
   let empty_Ls = Fun.const ([], S3.Ls.Done)
 
   let fold_continuation ~return ~more = function
-    | S3.Ls.Done -> Deferred.return return
+    | S3.Ls.Done -> IO.return return
     | S3.Ls.More continuation ->
       continuation () >>= fold_or_catch ~not_found:empty_Ls >>= fun (xs, cont) ->
       more xs cont
 
-  module IO = struct
-    module Deferred = Deferred
-
+  module S = struct
     type t =
       {retries : int
       ;bucket : string
       ;cred : Credentials.t
       ;endpoint : Aws_s3.Region.endpoint}
+    type 'a io = 'a IO.t
 
     let size t key =
       let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
@@ -229,19 +228,19 @@ module AmazonS3Store = struct
         let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
         Lwt.map (fun x -> [x]) (fold_or_catch ~not_found:(raise_not_found key) res)
       in
-      Deferred.concat_map (read_range t key) ranges
+      IO.concat_map (read_range t key) ranges
 
     let set t key data =
       let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
       let f ~endpoint () = S3.put ~bucket ~credentials ~endpoint ~data ~key () in
       let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
       let* _ = fold_or_catch ~not_found:(Fun.const String.empty) res in
-      Deferred.return_unit
+      IO.return_unit
 
     let set_partial_values t key ?(append=false) rsv =
       let* size = size t key in
       let* ov = match size with
-        | 0 -> Deferred.return String.empty
+        | 0 -> IO.return String.empty
         | _ -> get t key
       in
       let f = if append || ov = String.empty then
@@ -259,7 +258,7 @@ module AmazonS3Store = struct
       S3.retry ~retries:t.retries ~endpoint ~f () >>= fold_or_catch ~not_found:(Fun.const ())
 
     let rec delete_keys t cont () = 
-      let del t xs c = Deferred.iter (delete_content t) xs >>= delete_keys t c in
+      let del t xs c = IO.iter (delete_content t) xs >>= delete_keys t c in
       fold_continuation ~return:() ~more:(del t) cont
 
     and delete_content t S3.{key; _} = erase t key
@@ -269,7 +268,7 @@ module AmazonS3Store = struct
       let f ~endpoint () = S3.ls ~bucket ~credentials ~endpoint ~prefix () in
       let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
       let* xs, rest = fold_or_catch ~not_found:empty_Ls res in
-      Deferred.iter (delete_content t) xs >>= delete_keys t rest
+      IO.iter (delete_content t) xs >>= delete_keys t rest
 
     let rec list t =
       let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
@@ -284,32 +283,32 @@ module AmazonS3Store = struct
       let append acc xs c = accumulate_keys (acc @ List.map content_key xs) c in
       fold_continuation ~return:acc ~more:(append acc) cont
 
-    module S = Set.Make(String)
+    module M = Set.Make(String)
 
     let rec partition_keys prefix ((l, r) as acc) cont =
       let split ~acc ~prefix xs c = partition_keys prefix (List.fold_left (add prefix) acc xs) c in
-      fold_continuation ~return:(l, S.elements r) ~more:(split ~acc ~prefix) cont
+      fold_continuation ~return:(l, M.elements r) ~more:(split ~acc ~prefix) cont
 
     and add prefix (l, r) (c : S3.content) =
       let size = String.length prefix in
       if not (String.contains_from c.key size '/') then c.key :: l, r else
-      l, S.add String.(sub c.key 0 @@ 1 + index_from c.key size '/') r
+      l, M.add String.(sub c.key 0 @@ 1 + index_from c.key size '/') r
 
     and list_dir t prefix =
       let bucket = t.bucket and credentials = t.cred and endpoint = t.endpoint in
       let f ~endpoint () = S3.ls ~bucket ~credentials ~endpoint ~prefix () in
       let* res = S3.retry ~retries:t.retries ~endpoint ~f () in
       let* xs, rest = fold_or_catch ~not_found:empty_Ls res in
-      let init = List.fold_left (add prefix) ([], S.empty) xs in
+      let init = List.fold_left (add prefix) ([], M.empty) xs in
       partition_keys prefix init rest
 
     let rec rename t prefix new_prefix =
       let upload t (k, v) = set t k v in
       let* xs = list t in
       let to_delete = List.filter (String.starts_with ~prefix) xs in
-      let* data = Deferred.fold_left (rename_and_add ~t ~prefix ~new_prefix) [] to_delete in
-      let* () = Deferred.iter (upload t) data in
-      Deferred.iter (erase t) to_delete
+      let* data = IO.fold_left (rename_and_add ~t ~prefix ~new_prefix) [] to_delete in
+      let* () = IO.iter (upload t) data in
+      IO.iter (erase t) to_delete
 
     and rename_and_add ~t ~prefix ~new_prefix acc k =
       let l = String.length prefix in
@@ -321,7 +320,7 @@ module AmazonS3Store = struct
     let* res = Credentials.Helper.get_credentials ~profile () in
     let cred = Result.fold ~ok:Fun.id ~error:raise res in
     let endpoint = Aws_s3.Region.endpoint ~inet ~scheme region in
-    f IO.{bucket; cred; endpoint; retries}
+    f S.{bucket; cred; endpoint; retries}
 
-  include Zarr.Storage.Make(IO)
+  include Zarr.Storage.Make(IO)(S)
 end

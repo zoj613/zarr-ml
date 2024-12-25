@@ -8,14 +8,12 @@ let string_of_list = [%show: string list]
 let print_node_pair = [%show: Node.Array.t list * Node.Group.t list]
 let print_int_array = [%show : int array]
 
-module type LWT_STORE = sig
-  include Zarr.Storage.STORE with type 'a Deferred.t = 'a Lwt.t
-end
+module type LWT_STORE = Zarr.Storage.S with type 'a io := 'a Lwt.t
 
 let test_storage
   (type a) (module M : LWT_STORE with type t = a) (store : a) =
   let open M in
-  let open M.Deferred.Infix in
+  let open IO.Infix in
   let gnode = Node.Group.root in
 
   hierarchy store >>= fun nodes ->
@@ -69,7 +67,7 @@ let test_storage
       assert_equal exp got;
       match codecs with
       | [`ShardingIndexed _] -> Array.delete store anode
-      | _ -> Deferred.return_unit)
+      | _ -> IO.return_unit)
     [[`ShardingIndexed cfg]; [`Bytes BE]] >>= fun () ->
 
   let child = Node.Group.of_path "/some/child/group" in
@@ -114,7 +112,7 @@ let test_storage
   clear store >>= fun () ->
   hierarchy store >>= fun got ->
   assert_equal ~printer:print_node_pair ([], []) got;
-  Deferred.return_unit
+  IO.return_unit
 
 let _ = 
   run_test_tt_main @@ ("Run Zarr Lwt API tests" >::: [
@@ -151,7 +149,7 @@ let _ =
       Lwt_main.run @@ Lwt.join 
         [ZipStore.with_open `Read_write zpath (fun z -> test_storage (module ZipStore) z)
          (* test just opening the now exisitant archive created by the previous test. *)
-        ;ZipStore.with_open `Read_only zpath (fun _ -> ZipStore.Deferred.return_unit)
+        ;ZipStore.with_open `Read_only zpath (fun _ -> Lwt.return_unit)
         ;AmazonS3Store.with_open ~region ~bucket ~profile (test_storage (module AmazonS3Store))
         ;test_storage (module MemoryStore) @@ MemoryStore.create ()
         ;test_storage (module FilesystemStore) s])

@@ -1,14 +1,14 @@
-module Deferred : Zarr.Types.Deferred with type 'a t = 'a Lwt.t
+module IO : Zarr.Types.IO with type 'a t = 'a Lwt.t
 
 (** An Lwt-aware in-memory storage backend for Zarr v3 hierarchy. *)
-module MemoryStore : Zarr.Memory.S with module Deferred = Deferred
+module MemoryStore : Zarr.Memory.S with type 'a io := 'a Lwt.t
 
 (** An Lwt-aware Zip file storage backend for a Zarr v3 hierarchy. *)
-module ZipStore : Zarr.Zip.S with module Deferred = Deferred
+module ZipStore : Zarr.Zip.S with type 'a io := 'a Lwt.t
 
 (** An Lwt-aware local filesystem storage backend for a Zarr V3 hierarchy. *)
 module FilesystemStore : sig
-  include Zarr.Storage.STORE with module Deferred = Deferred
+  include Zarr.Storage.S with type 'a io := 'a Lwt.t
 
   val create : ?perm:Unix.file_perm -> string -> t
   (** [create ~perm dir] returns a new filesystem store.
@@ -25,7 +25,7 @@ end
 module AmazonS3Store : sig
   exception Request_failed of Aws_s3_lwt.S3.error
 
-  include Zarr.Storage.STORE with module Deferred = Deferred
+  include Zarr.Storage.S with type 'a io := 'a Lwt.t
 
   val with_open :
     ?scheme:[ `Http | `Https ] ->

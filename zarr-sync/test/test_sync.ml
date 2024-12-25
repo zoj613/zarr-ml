@@ -8,9 +8,7 @@ let string_of_list = [%show: string list]
 let print_node_pair = [%show: Node.Array.t list * Node.Group.t list]
 let print_int_array = [%show : int array]
 
-module type SYNC_STORE = sig
-  include Zarr.Storage.STORE with type 'a Deferred.t = 'a
-end
+module type SYNC_STORE = Zarr.Storage.S with type 'a io := 'a
 
 let test_storage
   (type a) (module M : SYNC_STORE with type t = a) (store : a) =
@@ -207,7 +205,7 @@ let _ =
       let zpath = tmp_dir ^ ".zip" in
       ZipStore.with_open `Read_write zpath (fun z -> test_storage (module ZipStore) z);
       (* test just opening the now exisitant archive created by the previous test. *)
-      ZipStore.with_open `Read_only zpath (fun _ -> ZipStore.Deferred.return_unit);
+      ZipStore.with_open `Read_only zpath (fun _ -> ());
       test_storage (module MemoryStore) @@ MemoryStore.create ();
       test_storage (module FilesystemStore) s)
   ])

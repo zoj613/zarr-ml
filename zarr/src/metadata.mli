@@ -8,23 +8,6 @@
 exception Parse_error of string
 (** raised when parsing a metadata JSON document fails. *)
 
-module FillValue : sig
-  type t =
-    | Char of char  (** A single character string. *)
-    | Bool of bool  (** Must be a JSON boolean. *)
-    | Int of Stdint.uint64  (** Value must be a JSON number with no fractional or exponent part that is within the representable range of the corresponding integer data type. *)
-    | Float of float  (** Value representing a JSON float. *)
-    | FloatBits of float  (** A JSON string specifying a byte representation of the float a hexstring. *)
-    | IntComplex of Complex.t  (** A JSON 2-element array of integers representing a complex number. *)
-    | FloatComplex of Complex.t  (** A JSON 2-element array of floats representing a complex number. *)
-    | FFComplex of Complex.t 
-    | FBComplex of Complex.t
-    | BFComplex of Complex.t
-    | BBComplex of Complex.t
-  (** Provides an element value to use for uninitialised portions of
-      a Zarr array. The permitted values depend on the data type. *)
-end
-
 module Array : sig
   (** A module which contains functionality to work with a parsed JSON
       Zarr array metadata document. *)
@@ -37,10 +20,10 @@ module Array : sig
     ?dimension_names:string option list ->
     ?attributes:Yojson.Safe.t ->
     codecs:Codecs.Chain.t ->
-    shape:int array ->
+    shape:int list ->
     'a Ndarray.dtype ->
     'a ->
-    int array ->
+    int list ->
     t
   (** [create ~codecs ~shape kind fv cshp] Creates a new array metadata
       document with codec chain [codecs], shape [shape], fill value [fv],
@@ -56,10 +39,10 @@ module Array : sig
 
       @raise Parse_error if metadata string is invalid. *)
 
-  val shape : t -> int array
+  val shape : t -> int list
   (** [shape t] returns the shape of the zarr array represented by metadata type [t]. *)
 
-  val chunk_shape : t -> int array
+  val chunk_shape : t -> int list
   (** [chunk_shape t] returns the shape a chunk in this zarr array. *)
 
   val is_valid_kind : t -> 'a Ndarray.dtype -> bool
@@ -83,23 +66,23 @@ module Array : sig
   (** [codecs t] Returns a type representing the chain of codecs applied
       when decoding/encoding a Zarr array chunk. *)
 
-  val index_coord_pair : t -> int array -> int array * int array
+  val index_coord_pair : t -> int list -> int list * int list
   (** [index_coord_pair t coord] maps a coordinate of this Zarr array to
       a pair of chunk index and coordinate {i within} that chunk. *)
 
-  val chunk_indices : t -> int array -> int array list
+  val chunk_indices : t -> int list -> int list list
   (** [chunk_indices t shp] returns a list of all chunk indices that would
       be contained in a zarr array of shape [shp] given the regular grid
       defined in array metadata [t]. *)
 
-  val chunk_key : t -> int array -> string
+  val chunk_key : t -> int list -> string
   (** [chunk_key t idx] returns a key encoding of a the chunk index [idx]. *)
 
   val update_attributes : t -> Yojson.Safe.t -> t
   (** [update_attributes t json] returns a new metadata type with an updated
       attribute field containing contents in [json] *)
 
-  val update_shape : t -> int array -> t
+  val update_shape : t -> int list -> t
   (** [update_shape t new_shp] returns a new metadata type containing
       shape [new_shp]. *)
 
@@ -136,4 +119,8 @@ module Group : sig
   val attributes : t -> Yojson.Safe.t
   (** [attributes t] Returns a Yojson type containing user attributes assigned
       to the zarr group represented by [t]. *)
+
+  val ( = ) : t -> t -> bool
+  (** [a = b] returns true if [a] [b] are equal array metadata documents
+      and false otherwise. *)
 end

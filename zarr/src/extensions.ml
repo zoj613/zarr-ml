@@ -1,33 +1,37 @@
 module RegularGrid = struct
   exception Grid_shape_mismatch
-
-  type t = int array
-
-  let chunk_shape : t -> int array = Fun.id
+  type t = int list
+  let chunk_shape : t -> int list = Fun.id
   let ceildiv x y = Float.(to_int @@ ceil (of_int x /. of_int y))
   let floordiv x y = Float.(to_int @@ floor (of_int x /. of_int y))
-  let grid_shape t array_shape = Array.map2 ceildiv array_shape t
-  let index_coord_pair t coord = (Array.map2 floordiv coord t, Array.map2 Int.rem coord t)
-  let ( = ) x y = x = y
+  let grid_shape t array_shape = List.map2 ceildiv array_shape t
+  let index_coord_pair t coord = (List.map2 floordiv coord t, List.map2 Int.rem coord t)
+  let ( = ) x y = List.equal Int.equal x y
+  let max = List.fold_left Int.max Int.min_int
 
-  let create : array_shape:int array -> int array -> t
-    = fun ~array_shape chunk_shape ->
-    if Array.(length chunk_shape <> length array_shape) || Util.(max chunk_shape > max array_shape)
+  let create ~array_shape chunk_shape =
+    if List.(length chunk_shape <> length array_shape) || (max chunk_shape > max array_shape)
     then raise Grid_shape_mismatch else chunk_shape
 
   (* returns all chunk indices in this regular grid *)
   let indices t array_shape =
-    grid_shape t array_shape
-    |> Array.to_list
-    |> List.map (fun x -> List.init x Fun.id)
-    |> Ndarray.Indexing.cartesian_prod
-    |> List.map Array.of_list
+    let lol = List.map (fun x -> List.init x Fun.id) (grid_shape t array_shape) in
+    Ndarray.Indexing.cartesian_prod lol
 
-  let to_yojson : t -> Yojson.Safe.t = fun t ->
-    let chunk_shape = `List (List.map (fun x -> `Int x) @@ Array.to_list t) in
-    `Assoc
-    [("name", `String "regular")
-    ;("configuration", `Assoc [("chunk_shape", chunk_shape)])]
+  let to_yojson (g : t) : Yojson.Safe.t =
+    let name = ("name", `String "regular") in
+    `Assoc [name; ("configuration", `Assoc [("chunk_shape", `List (List.map (fun x -> `Int x) g))])]
+
+  let add (x : Yojson.Safe.t) acc = match x with
+    | `Int i when i > 0 -> Result.map (List.cons i) acc
+    | _ -> Error "chunk_shape must only contain positive ints."
+
+  let of_yojson (array_shape: int list) (x : Yojson.Safe.t) = match x with
+    | `Assoc ["name", `String "regular"; "configuration", `Assoc ["chunk_shape", `List l]] ->
+      begin try Result.map (create ~array_shape) (List.fold_right add l (Ok []))
+      with Grid_shape_mismatch -> Error "grid shape mismatch." end
+    | `Null -> Error "array metadata must contain a chunk_grid field." 
+    | _ -> Error "Invalid Chunk grid name or configuration."
 end
 
 module ChunkKeyEncoding = struct
@@ -40,13 +44,12 @@ module ChunkKeyEncoding = struct
 
   (* map a chunk coordinate index to a key. E.g, (2,3,1) maps to c/2/3/1 *)
   let encode {name; sep; _} index =
-    let xs = Array.fold_right (fun i acc -> string_of_int i :: acc) index [] in
+    let xs = List.fold_right (fun i acc -> string_of_int i :: acc) index [] in
     match name with
     | Default -> String.concat sep ("c" :: xs)
-    | V2 -> if Array.length index = 0 then "0" else String.concat sep xs
+    | V2 -> if List.length index = 0 then "0" else String.concat sep xs
 
-  let ( = ) x y =
-    x.name = y.name && x.sep = y.sep && x.is_default = y.is_default
+  let ( = ) x y = Bool.equal x.is_default y.is_default && String.equal x.sep y.sep && x.name = y.name
 
   let to_yojson : t -> Yojson.Safe.t = fun {name; sep; is_default} ->
     let str = match name with
@@ -54,23 +57,20 @@ module ChunkKeyEncoding = struct
       | V2 -> "v2"
     in
     if is_default then `Assoc [("name", `String str)] else
-    `Assoc
-    [("name", `String str)
-    ;("configuration", `Assoc [("separator", `String sep)])]
+    `Assoc [("name", `String str); ("configuration", `Assoc [("separator", `String sep)])]
 
-  let of_yojson x = match Util.get_name x, Yojson.Safe.Util.member "configuration" x with
-    | "default", `Null ->
-      Ok {name = Default; sep = "/"; is_default = true}
-    | "default", `Assoc [("separator", `String "/")] ->
-      Ok {name = Default; sep = "/"; is_default = false}
-    | "default", `Assoc [("separator", `String ".")] ->
-      Ok {name = Default; sep = "."; is_default = false}
-    | "v2", `Null ->
-      Ok {name = V2; sep = "."; is_default = true}
-    | "v2", `Assoc [("separator", `String "/")] ->
-      Ok {name = V2; sep = "/"; is_default = false}
-    | "v2", `Assoc [("separator", `String ".")] ->
-      Ok {name = V2; sep = "."; is_default = false}
+  let of_yojson : Yojson.Safe.t -> (t, string) result = function
+    | `Assoc [("name", `String "v2")] -> Ok {name = V2; sep = "."; is_default = true}
+    | `Assoc [("name", `String "v2"); ("configuration", `Assoc [("separator", `String ("/" as slash))])] ->
+      Ok {name = V2; sep = slash; is_default = false}
+    | `Assoc [("name", `String "v2"); ("configuration", `Assoc [("separator", `String ("." as dot))])] ->
+      Ok {name = V2; sep = dot; is_default = false}
+    | `Assoc [("name", `String "default")] -> Ok {name = Default; sep = "/"; is_default = true}
+    | `Assoc [("name", `String "default"); ("configuration", `Assoc [("separator", `String ("/" as slash))])] ->
+      Ok {name = Default; sep = slash; is_default = false}
+    | `Assoc [("name", `String "default"); ("configuration", `Assoc [("separator", `String ("." as dot))])] ->
+      Ok {name = Default; sep = dot; is_default = false}
+    | `Null -> Error "array metadata must contain a chunk_key_encoding field."
     | _ -> Error "Invalid chunk key encoding configuration."
 end
 
@@ -144,5 +144,6 @@ module Datatype = struct
     | `String "complex64" -> Ok Complex64
     | `String "int" -> Ok Int
     | `String "nativeint" -> Ok Nativeint
-    | _ -> Error ("Unsupported metadata data_type")
+    | `Null -> Error "array metadata must contain a data_type field."
+    | _ -> Error "Unsupported metadata data_type"
 end

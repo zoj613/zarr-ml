@@ -1,6 +1,6 @@
-module ArrayMap = struct
+module CoordMap = struct
   include Map.Make (struct
-    type t = int array
+    type t = int list
     let compare : t -> t -> int = Stdlib.compare
   end)
 
@@ -18,7 +18,6 @@ module Result_syntax = struct
 end
 
 let get_name j = Yojson.Safe.Util.(member "name" j |> to_string)
-let prod x = Array.fold_left Int.mul 1 x
 let max = Array.fold_left Int.max Int.min_int
 
 (* Obtained from: https://discuss.ocaml.org/t/how-to-create-a-new-file-while-automatically-creating-any-intermediate-directories/14837/5?u=zoj613 *)

@@ -69,9 +69,9 @@ FilesystemStore.Group.create store group_node;;
 let array_node = Node.Array.(group_node / "name");;
 (* creates an array with char data type and fill value '?' *)
 FilesystemStore.Array.create
-  ~codecs:[`Transpose [|2; 0; 1|]; `Bytes BE; `Gzip L2]
-  ~shape:[|100; 100; 50|]
-  ~chunks:[|10; 15; 20|]
+  ~codecs:[`Transpose [2; 0; 1]; `Bytes BE; `Gzip L2]
+  ~shape:[100; 100; 50]
+  ~chunks:[10; 15; 20]
   Ndarray.Char 
   '?'
   array_node
@@ -79,7 +79,7 @@ FilesystemStore.Array.create
 ```
 ### read/write from/to an array
 ```ocaml
-let slice = [|R [|0; 20|]; I 10; R [||]|];;
+let slice = [R (0, 20); I 10; F];;
 let x = FilesystemStore.Array.read store array_node slice Ndarray.Char;;
 (* Do some computation on the array slice *)
 let x' = Zarr.Ndarray.map (fun _ -> Random.int 256 |> Char.chr) x;;
@@ -90,8 +90,8 @@ assert (Ndarray.equal x' y);;
 ### create an array with sharding
 ```ocaml
 let config =
-  {chunk_shape = [|5; 3; 5|]
-  ;codecs = [`Transpose [|2; 0; 1|]; `Bytes LE; `Zstd (0, true)]
+  {chunk_shape = [5; 3; 5]
+  ;codecs = [`Transpose [2; 0; 1]; `Bytes LE; `Zstd (0, true)]
   ;index_codecs = [`Bytes BE; `Crc32c]
   ;index_location = Start};;
 
@@ -99,8 +99,8 @@ let shard_node = Node.Array.(group_node / "another");;
 
 FilesystemStore.Array.create
   ~codecs:[`ShardingIndexed config]
-  ~shape:[|100; 100; 50|]
-  ~chunks:[|10; 15; 20|]
+  ~shape:[100; 100; 50]
+  ~chunks:[10; 15; 20]
   Ndarray.Complex32
   Complex.zero
   shard_node
@@ -114,7 +114,7 @@ List.map Node.Array.to_path a;;
 List.map Node.Group.to_path g;;
 (*- : string list = ["/"; "/some"; "/some/group"] *)
 
-FilesystemStore.Array.reshape store array_node [|25; 32; 10|];;
+FilesystemStore.Array.reshape store array_node [25; 32; 10];;
 
 let meta = FilesystemStore.Group.metadata store group_node;;
 Metadata.Group.show meta;; (* pretty prints the contents of the metadata *)

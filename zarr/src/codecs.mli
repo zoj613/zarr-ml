@@ -20,7 +20,7 @@ exception Invalid_zstd_level
 (** raised when a codec chain contains a Zstd codec with an incorrect compression value.*)
 
 (** The type of [array -> array] codecs. *)
-type arraytoarray = [ `Transpose of int array ]
+type arraytoarray = [ `Transpose of int list ]
 
 (** A type representing valid Gzip codec compression levels. *)
 type compression_level = L0 | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9
@@ -55,14 +55,14 @@ and index_codec = [ arraytoarray | fixed_arraytobytes | fixed_bytestobytes ]
 
 (** A type representing the Sharding indexed codec's configuration parameters. *)
 and shard_config =
-  {chunk_shape : int array
+  {chunk_shape : int list
   ;codecs : codec list
   ;index_codecs : index_codec list
   ;index_location : loc}
 
 (** The type summarizing the decoded/encoded representation of a Zarr array
     or chunk. *)
-type 'a array_repr = {kind : 'a Ndarray.dtype; shape : int array}
+type 'a array_repr = {kind : 'a Ndarray.dtype; shape : int list}
 
 (** A module containing functions to encode/decode an array chunk using a
     predefined set of codecs. *)
@@ -83,7 +83,7 @@ module Chain : sig
       @raise Invalid_sharding_chunk_shape
         if [c] contains a shardingindexed codec with an
         incorrect inner chunk shape. *)
-  val create : int array -> codec list -> t
+  val create : int list -> codec list -> t
 
   (** [encode t x] computes the encoded byte string representation of
       array chunk [x]. *)
@@ -99,7 +99,7 @@ module Chain : sig
 
   (** [of_yojson x] returns a code chain of type {!t} from its json object
       representation. *)
-  val of_yojson : int array -> Yojson.Safe.t -> (t, string) result
+  val of_yojson : int list -> Yojson.Safe.t -> (t, string) result
 
   (** [to_yojson x] returns a json object representation of codec chain [x]. *)
   val to_yojson : t -> Yojson.Safe.t
@@ -119,7 +119,7 @@ module Make (IO : Types.IO) : sig
     (?append:bool -> (int * string) list -> unit IO.t) ->
     int ->
     'a array_repr ->
-    (int array * 'a) list ->
+    (int list * 'a) list ->
     'a ->
     unit IO.t
 
@@ -128,7 +128,7 @@ module Make (IO : Types.IO) : sig
     (Types.range list -> string list IO.t) ->
     int ->
     'a array_repr ->
-    (int * int array) list ->
+    (int * int list) list ->
     'a ->
     (int * 'a) list IO.t
 end

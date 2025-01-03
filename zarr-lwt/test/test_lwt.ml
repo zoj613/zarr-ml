@@ -6,7 +6,6 @@ open Zarr_lwt.Storage
 
 let string_of_list = [%show: string list]
 let print_node_pair = [%show: Node.Array.t list * Node.Group.t list]
-let print_int_array = [%show : int array]
 
 module type LWT_STORE = Zarr.Storage.S with type 'a io := 'a Lwt.t
 
@@ -41,18 +40,18 @@ let test_storage
   assert_equal ~printer:string_of_bool false exists;
 
   let cfg =
-    {chunk_shape = [|2; 5; 5|]
+    {chunk_shape = [2; 5; 5]
     ;index_location = End
     ;index_codecs = [`Bytes BE]
     ;codecs = [`Bytes LE]} in
   let anode = Node.Array.(gnode / "arrnode") in
-  let slice = [|R [|0; 20|]; I 10; R [|0; 29|]|] in
-  let exp = Ndarray.init Ndarray.Complex32 [|21; 1; 30|] (Fun.const Complex.one) in
+  let slice = [R (0, 20); I 10; R (0, 29)] in
+  let exp = Ndarray.init Ndarray.Complex32 [21; 1; 30] (Fun.const Complex.one) in
 
   Lwt_list.iter_s
     (fun codecs ->
       Array.create
-        ~codecs ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
+        ~codecs ~shape:[100; 100; 50] ~chunks:[10; 15; 20]
         Ndarray.Complex32 Complex.one anode store >>= fun () ->
       Array.write store anode slice exp >>= fun () ->
       Array.read store anode slice Complex32 >>= fun got ->
@@ -103,10 +102,10 @@ let test_storage
   (* restore old array node name. *)
   Array.rename store (Node.Array.of_path "/ARRAYNODE") "arrnode" >>= fun () ->
 
-  let nshape = [|25; 32; 10|] in
+  let nshape = [25; 32; 10] in
   Array.reshape store anode nshape >>= fun () ->
   Array.metadata store anode >>= fun meta ->
-  assert_equal ~printer:print_int_array nshape @@ Metadata.Array.shape meta;
+  assert_equal ~printer:[%show : int list] nshape @@ Metadata.Array.shape meta;
 
   Array.delete store anode >>= fun () ->
   clear store >>= fun () ->

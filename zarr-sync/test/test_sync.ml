@@ -6,7 +6,6 @@ open Zarr_sync.Storage
 
 let string_of_list = [%show: string list]
 let print_node_pair = [%show: Node.Array.t list * Node.Group.t list]
-let print_int_array = [%show : int array]
 
 module type SYNC_STORE = Zarr.Storage.S with type 'a io := 'a
 
@@ -40,25 +39,23 @@ let test_storage
   assert_equal ~printer:string_of_bool false exists;
 
   let cfg =
-    {chunk_shape = [|2; 5; 5|]
+    {chunk_shape = [2; 5; 5]
     ;index_location = End
     ;index_codecs = [`Bytes LE; `Crc32c]
-    ;codecs = [`Transpose [|2; 0; 1|]; `Bytes BE; `Zstd (0, false)]} in
+    ;codecs = [`Transpose [2; 0; 1]; `Bytes BE; `Zstd (0, false)]} in
   let cfg2 =
-    {chunk_shape = [|2; 5; 5|]
+    {chunk_shape = [2; 5; 5]
     ;index_location = Start
     ;index_codecs = [`Bytes BE]
     ;codecs = [`Bytes LE]} in
   let anode = Node.Array.(gnode / "arrnode") in
-  let slice = [|R [|0; 20|]; I 10; R [|0; 29|]|] in
-  let bigger_slice =  [|R [|0; 21|]; L [|9; 10|] ; R [|0; 30|]|] in
+  let slice = [R (0, 20); I 10; R (0, 29)] in
+  let bigger_slice =  [R (0, 21); L [9; 10] ; R (0, 30)] in
 
   List.iter
     (fun codecs ->
-      Array.create
-        ~codecs ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
-        Complex32 Complex.one anode store;
-      let exp = Ndarray.init Complex32 [|21; 1; 30|] (Fun.const Complex.one) in
+      Array.create ~codecs ~shape:[100; 100; 50] ~chunks:[10; 15; 20] Complex32 Complex.one anode store;
+      let exp = Ndarray.init Complex32 [21; 1; 30] (Fun.const Complex.one) in
       let got = Array.read store anode slice Complex32 in
       assert_equal exp got;
       Ndarray.fill exp Complex.{re=2.0; im=0.};
@@ -68,7 +65,7 @@ let test_storage
       let _ = Array.read store anode bigger_slice Complex32 in
       assert_equal exp got;
       (* test writing a bigger slice to store *)
-      Array.write store anode bigger_slice @@ Ndarray.init Complex32 [|22; 2; 31|] (Fun.const Complex.{re=0.; im=3.0});
+      Array.write store anode bigger_slice @@ Ndarray.init Complex32 [22; 2; 31] (Fun.const Complex.{re=0.; im=3.0});
       let got = Array.read store anode slice Complex32 in
       Ndarray.fill exp Complex.{re=0.; im=3.0};
       assert_equal exp got;
@@ -76,12 +73,9 @@ let test_storage
     [[`ShardingIndexed cfg]; [`ShardingIndexed cfg2]];
 
   (* repeat tests for non-sharding codec chain *)
-  Array.create
-    ~sep:`Dot ~codecs:[`Bytes BE]
-    ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
-    Ndarray.Int Int.max_int anode store;
+  Array.create ~sep:`Dot ~codecs:[`Bytes BE] ~shape:[100; 100; 50] ~chunks:[10; 15; 20] Ndarray.Int Int.max_int anode store;
   (* test path where there is no chunk key present in store *)
-  let exp = Ndarray.init Int [|21; 1; 30|] (Fun.const Int.max_int) in
+  let exp = Ndarray.init Int [21; 1; 30] (Fun.const Int.max_int) in
   Array.write store anode slice exp;
   let got = Array.read store anode slice Int in
   assert_equal exp got;
@@ -93,7 +87,7 @@ let test_storage
   assert_raises
     (Zarr.Storage.Invalid_data_type)
     (fun () -> Array.read store anode slice Ndarray.Char);
-  let badslice = [|R [|0; 20|]; I 10; R [||]; R [||] |] in
+  let badslice = [R (0, 20); I 10; F; F] in
   assert_raises
     (Zarr.Storage.Invalid_array_slice)
     (fun () -> Array.read store anode badslice Ndarray.Int);
@@ -102,8 +96,8 @@ let test_storage
     (fun () -> Array.write store anode badslice exp);
   assert_raises
     (Zarr.Storage.Invalid_array_slice)
-    (fun () -> Array.write store anode [|R [|0; 20|]; R [||]; R [||]|] exp);
-  let badarray = Ndarray.init Float64 [|21; 1; 30|] (Fun.const 0.) in
+    (fun () -> Array.write store anode [R (0, 20); F; F] exp);
+  let badarray = Ndarray.init Float64 [21; 1; 30] (Fun.const 0.) in
   assert_raises
     (Zarr.Storage.Invalid_data_type)
     (fun () -> Array.write store anode slice badarray);
@@ -147,13 +141,13 @@ let test_storage
 
   (* restore old array node name. *)
   Array.rename store (Node.Array.of_path "/ARRAYNODE") "arrnode";
-  let nshape = [|25; 32; 10|] in
+  let nshape = [25; 32; 10] in
   Array.reshape store anode nshape;
   let meta = Array.metadata store anode in
-  assert_equal ~printer:print_int_array nshape @@ Metadata.Array.shape meta;
+  assert_equal ~printer:[%show : int list] nshape @@ Metadata.Array.shape meta;
   assert_raises
     (Zarr.Storage.Invalid_resize_shape)
-    (fun () -> Array.reshape store anode [|25; 10|]);
+    (fun () -> Array.reshape store anode [25; 10]);
   assert_raises
     (Zarr.Storage.Key_not_found "fakegroup/zarr.json")
     (fun () -> Array.metadata store Node.Array.(gnode / "fakegroup"));

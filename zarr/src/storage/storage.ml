@@ -74,7 +74,7 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
   end
   
   module Array = struct
-    module ArrayMap = Util.ArrayMap
+    module CoordMap = Util.CoordMap
     module Indexing = Ndarray.Indexing
     let exists t node = is_member t (Node.Array.to_metakey node)
     let delete t node = erase_prefix t (Node.Array.to_key node ^ "/")
@@ -91,9 +91,9 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
 
     let write t node slice x =
       let update_ndarray ~arr (c, v) = Ndarray.set arr c v in
-      let add_coord_value ~meta acc (co, y) =
+      let add_coord_value ~meta acc co y =
         let chunk_idx, c = Metadata.Array.index_coord_pair meta co in
-        ArrayMap.add_to_list chunk_idx (c, y) acc
+        CoordMap.add_to_list chunk_idx (c, y) acc
       in
       let update_chunk ~t ~meta ~prefix ~chain ~fv ~repr (idx, pairs) =
         let ckey = prefix ^ Metadata.Array.chunk_key meta idx in
@@ -121,19 +121,17 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
       let kind = Ndarray.data_type x in
       if not (Metadata.Array.is_valid_kind meta kind) then raise Invalid_data_type else
       let coords = Indexing.coords_of_slice slice shape in
-      let coord_value_pair = Array.combine coords (Ndarray.to_array x) in
-      let m = Array.fold_left (add_coord_value ~meta) ArrayMap.empty coord_value_pair in
+      let m = List.fold_left2 (add_coord_value ~meta) CoordMap.empty coords (Ndarray.to_array x |> Array.to_list) in
       let fv = Metadata.Array.fillvalue_of_kind meta kind
       and repr = Codecs.{kind; shape = Metadata.Array.chunk_shape meta}
       and prefix = Node.Array.to_key node ^ "/"
-      and chain = Metadata.Array.codecs meta
-      and bindings = ArrayMap.bindings m in
-      IO.iter (update_chunk ~t ~meta ~prefix ~chain ~fv ~repr) bindings
+      and chain = Metadata.Array.codecs meta in
+      IO.iter (update_chunk ~t ~meta ~prefix ~chain ~fv ~repr) (CoordMap.bindings m)
 
     let read (type a) t node slice (kind : a Ndarray.dtype) =
-      let add_indexed_coord ~meta acc (i, y) =
+      let add_indexed_coord ~meta acc i y =
         let chunk_idx, c = Metadata.Array.index_coord_pair meta y in
-        ArrayMap.add_to_list chunk_idx (i, c) acc
+        CoordMap.add_to_list chunk_idx (i, c) acc
       in
       let read_chunk ~t ~meta ~prefix ~chain ~fv ~repr (idx, pairs) =
         let ckey = prefix ^ Metadata.Array.chunk_key meta idx in
@@ -153,13 +151,14 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
       let slice_shape = try Indexing.slice_shape slice shape with
         | Assert_failure _ -> raise Invalid_array_slice
       in
-      let icoords = Array.mapi (fun i v -> i, v) (Indexing.coords_of_slice slice shape) in
-      let m = Array.fold_left (add_indexed_coord ~meta) ArrayMap.empty icoords
+      let numel = List.fold_left Int.mul 1 slice_shape in
+      let coords = Indexing.coords_of_slice slice shape in
+      let m = List.fold_left2 (add_indexed_coord ~meta) CoordMap.empty List.(init numel Fun.id) coords
       and chain = Metadata.Array.codecs meta
       and prefix = Node.Array.to_key node ^ "/"
       and fv = Metadata.Array.fillvalue_of_kind meta kind
       and repr = Codecs.{kind; shape = Metadata.Array.chunk_shape meta} in
-      let+ ps = IO.concat_map (read_chunk ~t ~meta ~prefix ~chain ~fv ~repr) (ArrayMap.bindings m) in
+      let+ ps = IO.concat_map (read_chunk ~t ~meta ~prefix ~chain ~fv ~repr) (CoordMap.bindings m) in
       (* sorting restores the C-order of the decoded array coordinates.*)
       let sorted_pairs = List.fast_sort (fun (x, _) (y, _) -> Int.compare x y) ps in
       let vs = List.map snd sorted_pairs in
@@ -167,7 +166,7 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
 
     let reshape t node new_shape =
       let module S = Set.Make (struct
-        type t = int array
+        type t = int list
         let compare : t -> t -> int = Stdlib.compare
       end)
       in
@@ -181,7 +180,7 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
       in
       let* meta = metadata t node in
       let old_shape = Metadata.Array.shape meta in
-      if Array.(length new_shape <> length old_shape) then raise Invalid_resize_shape else
+      if List.(length new_shape <> length old_shape) then raise Invalid_resize_shape else
       let s = S.of_list (Metadata.Array.chunk_indices meta old_shape)
       and s' = S.of_list (Metadata.Array.chunk_indices meta new_shape) in
       let unreachable_chunks = S.elements (S.diff s s')

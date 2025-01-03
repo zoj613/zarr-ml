@@ -7,24 +7,24 @@ let run_test :
   let x = M.create repr.kind repr.shape fv in
 
   assert_equal repr.shape (M.shape x);
-  let num_elt = Array.fold_left Int.mul 1 repr.shape in
+  let num_elt = List.fold_left Int.mul 1 repr.shape in
   assert_equal (num_elt * is) (M.byte_size x);
   assert_equal num_elt (M.size x);
   assert_equal is (M.dtype_size @@ M.data_type x);
-  assert_equal (Array.length repr.shape) (M.ndims x);
+  assert_equal (List.length repr.shape) (M.ndims x);
 
   let y = M.init repr.kind repr.shape (Fun.const fv) in
   assert_equal x y;
   M.fill y fv;
   assert_equal x y;
-  assert_equal fv (M.get x [|0; 0; 0|]);
-  M.set x [|0; 0; 0|] fv;
+  assert_equal fv (M.get x [0; 0; 0]);
+  M.set x [0; 0; 0] fv;
   assert_bool "" @@ M.equal x y;
   M.iteri (fun _ v -> ignore v) x
 
 let tests = [
 "test char ndarray" >:: (fun _ ->
-  let shape = [|2; 5; 3|] in
+  let shape = [2; 5; 3] in
   run_test {shape; kind = M.Char} '?' 1;
 
   run_test {shape; kind = M.Bool} false 1;
@@ -55,31 +55,31 @@ let tests = [
 )
 ;
 "test map, iter and fold" >:: (fun _ ->
-  let shape = [|2; 5; 3|] in
+  let shape = [2; 5; 3] in
   let x = M.create Int32 shape 0l in
   let x' = M.map (Int32.add 1l) x in
-  assert_equal 1l (M.get x' [|0;0;0|]);
+  assert_equal 1l (M.get x' [0;0;0]);
 
-  let x = M.create Char [|4|] '?' in
+  let x = M.create Char [4] '?' in
   let buf = Buffer.create @@ M.byte_size x in
   M.iter (Buffer.add_char buf) x;
   assert_equal ~printer:Fun.id "????" (Buffer.contents buf);
 )
 ;
 "test transpose functionality" >:: (fun _ ->
-  let shape = [|2; 1; 3|]
-  and axes = [|2; 0; 1|] 
+  let shape = [2; 1; 3]
+  and axes = [2; 0; 1] 
   and a = [|0.15458236; 0.94363903; 0.63893012; 0.29207497; 0.31390295; 0.42341309|] in
   let x = M.of_array Float32 shape a in
   let x' = M.transpose ~axes x in
-  assert_equal ~printer:[%show: int array] [|3; 2; 1|] (M.shape x');
+  assert_equal ~printer:[%show: int list] [3; 2; 1] (M.shape x');
   (* test if a particular value is transposed correctly. *)
-  assert_equal ~printer:string_of_float (M.get x [|1; 0; 2|]) (M.get x' [|2; 1; 0|]);
+  assert_equal ~printer:string_of_float (M.get x [1; 0; 2]) (M.get x' [2; 1; 0]);
   let flat_exp = [|0.15458236; 0.29207497; 0.94363903; 0.31390295; 0.63893012; 0.42341309|] in
   assert_equal ~printer:[%show: float array] flat_exp (M.to_array x');
-  let inv_order = Array.(make (length axes) 0) in
-  Array.iteri (fun i x -> inv_order.(x) <- i) axes;
-  assert_equal true @@ M.equal x (M.transpose ~axes:inv_order x')
+  let inv_order = Array.(make (List.length axes) 0) in
+  List.iteri (fun i x -> inv_order.(x) <- i) axes;
+  assert_equal true @@ M.equal x (M.transpose ~axes:(Array.to_list inv_order) x')
 )
 ;
 "test interop with bigarrays" >:: (fun _ ->
@@ -89,7 +89,7 @@ let tests = [
   let convert_to :
     type a b. a M.dtype -> (a, b) B.kind -> a -> unit
     = fun fromdtype todtype fv ->
-    let x = M.create fromdtype s fv in
+    let x = M.create fromdtype (Array.to_list s) fv in
     let y = M.to_bigarray x todtype in
     assert_equal s (B.Genarray.dims y);
     assert_equal fv (B.Genarray.get y [|0; 0; 0|]);  
@@ -109,17 +109,15 @@ let tests = [
   convert_to M.Int B.Int Int.max_int;
   convert_to M.Nativeint B.Nativeint Nativeint.max_int;
 
-  let showarray = [%show: int array] in
-
   let convert_from :
     type a b c. (a, b, c) B.Genarray.t -> a M.dtype -> unit = fun x dtype ->
     let y = M.of_bigarray x in
     assert_equal dtype (M.data_type y);
     assert_equal
-      ~printer:showarray
-      (Array.of_list @@ List.rev @@ Array.to_list @@ B.Genarray.dims x)
+      ~printer:[%show: int list]
+      (List.rev @@ Array.to_list @@ B.Genarray.dims x)
       (M.shape y);
-    assert_equal (B.Genarray.get x [|1; 1; 1|]) (M.get y [|0; 0; 0|])
+    assert_equal (B.Genarray.get x [|1; 1; 1|]) (M.get y [0; 0; 0])
   in
   convert_from (B.Genarray.create Char Fortran_layout s) M.Char;
   convert_from (B.Genarray.create Int8_signed Fortran_layout s) M.Int8;

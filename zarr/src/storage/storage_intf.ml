@@ -52,8 +52,8 @@ module type S = sig
       ?dimension_names:string option list ->
       ?attributes:Yojson.Safe.t ->
       codecs:Codecs.codec list ->
-      shape:int array ->
-      chunks:int array ->
+      shape:int list ->
+      chunks:int list ->
       'a Ndarray.dtype ->
       'a ->
       Node.Array.t ->
@@ -89,7 +89,7 @@ module type S = sig
     (** [exists t n] returns [true] if array node [n] is a member
         of store [t] and [false] otherwise. *)
 
-    val write : t -> Node.Array.t -> Ndarray.Indexing.index array -> 'a Ndarray.t -> unit io
+    val write : t -> Node.Array.t -> Ndarray.Indexing.index list -> 'a Ndarray.t -> unit io
     (** [write t n s x] writes n-dimensional array [x] to the slice [s]
         of array node [n] in store [t].
 
@@ -99,7 +99,7 @@ module type S = sig
           if the kind of [x] is not compatible with node [n]'s data type as
             described in its metadata document. *)
 
-    val read : t -> Node.Array.t -> Ndarray.Indexing.index array -> 'a Ndarray.dtype -> 'a Ndarray.t io
+    val read : t -> Node.Array.t -> Ndarray.Indexing.index list -> 'a Ndarray.dtype -> 'a Ndarray.t io
     (** [read t n s k] reads an n-dimensional array of size determined
         by slice [s] from array node [n].
 
@@ -109,7 +109,7 @@ module type S = sig
         @raise Invalid_array_slice
           if the slice [s] is not a valid slice of array node [n].*)
 
-    val reshape : t -> Node.Array.t -> int array -> unit io
+    val reshape : t -> Node.Array.t -> int list -> unit io
     (** [reshape t n shape] resizes array node [n] of store [t] into new
         size [shape]. Note that when the resizing involves shrinking an array
         along any dimensions, any old unreachable chunks that fall outside of

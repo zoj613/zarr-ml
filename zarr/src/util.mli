@@ -1,7 +1,7 @@
-(** A finite map over integer array keys. *)
-module ArrayMap : sig
-  include Map.S with type key = int array
-  val add_to_list : int array -> 'a -> 'a list t -> 'a list t
+(** A finite map over Zarr array coordinate keys. *)
+module CoordMap : sig
+  include Map.S with type key = int list
+  val add_to_list : int list -> 'a -> 'a list t -> 'a list t
   (** [add_to_list k v map] is [map] with [k] mapped to [l] such that [l]
       is [v :: ArrayMap.find k map] if [k] was bound in [map] and [v] otherwise.*)
 end
@@ -16,9 +16,6 @@ val get_name : Yojson.Safe.t -> string
 (** [get_name c] returns the name value of a JSON metadata extension point
     configuration of the form [{"name": value, "configuration": ...}],
     as defined in the Zarr V3 specification. *)
-
-val prod : int array -> int
-(** [prod x] returns the product of the elements of [x]. *)
 
 val max : int array -> int
 (** [max x] returns the maximum element of an integer array [x]. *)

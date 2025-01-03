@@ -22,11 +22,11 @@ type 'a t
 val dtype_size : 'a dtype -> int
 (** [dtype_size kind] returns the size in bytes of data type [kind].*)
 
-val create : 'a dtype -> int array -> 'a -> 'a t
+val create : 'a dtype -> int list -> 'a -> 'a t
 (** [create k s v] creates an N-dimensional array with data_type [k],
     shape [s] and fill value [v].*)
 
-val init : 'a dtype -> int array -> (int -> 'a) -> 'a t
+val init : 'a dtype -> int list -> (int -> 'a) -> 'a t
 (** [init k s f] creates an N-dimensional array with data_type [k],
     shape [s] and every element value is assigned using function [f].*)
 
@@ -39,7 +39,7 @@ val size : 'a t -> int
 val ndims : 'a t -> int
 (** [ndims x] is the number of dimensions of [x].*)
 
-val shape : 'a t -> int array
+val shape : 'a t -> int list
 (** [shape x] returns an array with the size of each dimension of [x].*)
 
 val byte_size : 'a t -> int
@@ -51,15 +51,15 @@ val to_array : 'a t -> 'a array
     {!data_type}. Note that data is not copied, so if the caller modifies the
     returned array, the changes will be reflected in [x].*)
 
-val of_array : 'a dtype -> int array -> 'a array -> 'a t
+val of_array : 'a dtype -> int list -> 'a array -> 'a t
 (** [of_array k s x] creates an n-dimensional array of shape [s] and data_type
     [k] using elements of [x]. Note that the data is not copied, so the
     caller must ensure not to modify [x] afterwards.*)
 
-val get : 'a t -> int array -> 'a
+val get : 'a t -> int list -> 'a
 (** [get x c] returns element of [x] at coordinate [c].*)
 
-val set : 'a t -> int array -> 'a -> unit
+val set : 'a t -> int list -> 'a -> unit
 (** [set x c v] sets coordinate [c] of [x] to value [v].*)
 
 val iteri : (int -> 'a -> unit) -> 'a t -> unit
@@ -79,7 +79,7 @@ val iter : ('a -> unit) -> 'a t -> unit
 val equal : 'a t -> 'a t -> bool
 (** [equal x y] is [true] iff [x] and [y] are equal, else [false].*)
 
-val transpose : ?axes:int array -> 'a t -> 'a t
+val transpose : ?axes:int list -> 'a t -> 'a t
 (** [transpose o x] permutes the axes of [x] according to [o].*)
 
 val to_bigarray : 'a t -> ('a, 'b) Bigarray.kind -> ('a, 'b, Bigarray.c_layout) Bigarray.Genarray.t
@@ -93,16 +93,19 @@ module Indexing : sig
       slices for working with Zarr arrays. *)
 
   type index =
+    | F
     | I of int
-    | L of int array
-    | R of int array
+    | T of int
+    | L of int list
+    | R of int * int
+    | R' of int * int * int
 
-  val slice_of_coords : int array list -> index array
+  val slice_of_coords : int list list -> index list
   (** [slice_of_coords c] takes a list of array coordinates and returns
       a slice corresponding to the coordinates. Elements of each slice
       variant are sorted in increasing order.*)
       
-  val coords_of_slice : index array -> int array -> int array array
+  val coords_of_slice : index list -> int list -> int list list
   (** [coords_of_slice s shp] returns an array of coordinates given
       a slice [s] and array shape [shp]. *)
 
@@ -111,7 +114,7 @@ module Indexing : sig
       list [ll]. It is mainly used to generate a C-order of chunk indices
       in a regular Zarr array grid. *)
 
-  val slice_shape : index array -> int array -> int array
+  val slice_shape : index list -> int list -> int list
   (** [slice_shape s shp] returns the shape of slice [s] within an array
       of shape [shp]. *)
 end

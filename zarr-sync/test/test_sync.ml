@@ -20,6 +20,7 @@ let test_storage
   Group.create store gnode;
   let exists = Group.exists store gnode in
   assert_equal ~printer:string_of_bool true exists;
+  assert_equal ~printer:print_node_pair ([], [gnode]) (hierarchy store);
 
   let meta = Group.metadata store gnode in
   assert_equal ~printer:Metadata.Group.show Metadata.Group.default meta;
@@ -74,6 +75,7 @@ let test_storage
 
   (* repeat tests for non-sharding codec chain *)
   Array.create ~sep:`Dot ~codecs:[`Bytes BE] ~shape:[100; 100; 50] ~chunks:[10; 15; 20] Ndarray.Int Int.max_int anode store;
+  assert_equal ~printer:print_node_pair ([anode], [gnode]) (hierarchy store);
   (* test path where there is no chunk key present in store *)
   let exp = Ndarray.init Int [21; 1; 30] (Fun.const Int.max_int) in
   Array.write store anode slice exp;

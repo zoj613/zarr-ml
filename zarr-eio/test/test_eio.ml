@@ -116,17 +116,17 @@ let test_readable_writable_only
   assert_equal ~printer:string_of_bool false exists;
 
   let cfg =
-    {chunk_shape = [|2; 5; 5|]
+    {chunk_shape = [2; 5; 5]
     ;index_location = End
     ;index_codecs = [`Bytes LE]
-    ;codecs = [`Transpose [|2; 0; 1|]; `Bytes BE]} in
+    ;codecs = [`Transpose [2; 0; 1]; `Bytes BE]} in
     let anode = Node.Array.(gnode / "arrnode") in
-    let slice = [|R [|0; 5|]; I 10; R [|0; 10|]|] in
-    let bigger_slice =  [|R [|0; 6|]; L [|9; 10|] ; R [|0; 11|]|] in
+    let slice = [R (0, 5); I 10; R (0, 10)] in
+    let bigger_slice =  [R (0, 6); L [9; 10] ; R (0, 11)] in
   Array.create
-    ~codecs:[`ShardingIndexed cfg] ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
+    ~codecs:[`ShardingIndexed cfg] ~shape:[100; 100; 50] ~chunks:[10; 15; 20]
     Complex32 Complex.one anode store;
-  let exp = Ndarray.init Complex32 [|6; 1; 11|] (Fun.const Complex.one) in
+  let exp = Ndarray.init Complex32 [6; 1; 11] (Fun.const Complex.one) in
   let got = Array.read store anode slice Complex32 in
   assert_equal exp got;
   Ndarray.fill exp Complex.{re=2.0; im=0.};
@@ -136,17 +136,17 @@ let test_readable_writable_only
   let _ = Array.read store anode bigger_slice Complex32 in
   assert_equal exp got;
   (* test writing a bigger slice to store *)
-  Array.write store anode bigger_slice @@ Ndarray.init Complex32 [|7; 2; 12|] (Fun.const Complex.{re=0.; im=3.0});
+  Array.write store anode bigger_slice @@ Ndarray.init Complex32 [7; 2; 12] (Fun.const Complex.{re=0.; im=3.0});
   let got = Array.read store anode slice Complex32 in
   Ndarray.fill exp Complex.{re=0.; im=3.0};
   assert_equal exp got;
-  let nshape = [|25; 28; 10|] in
+  let nshape = [25; 28; 10] in
   Array.reshape store anode nshape;
   let meta = Array.metadata store anode in
-  assert_equal ~printer:print_int_array nshape (Metadata.Array.shape meta);
+  assert_equal ~printer:[%show: int list] nshape (Metadata.Array.shape meta);
   assert_raises
     (Zarr.Storage.Invalid_resize_shape)
-    (fun () -> Array.reshape store anode [|25; 10|]);
+    (fun () -> Array.reshape store anode [25; 10]);
   assert_raises
     (Zarr.Storage.Key_not_found "fakegroup/zarr.json")
     (fun () -> Array.metadata store Node.Array.(gnode / "fakegroup"));

@@ -139,16 +139,16 @@ let test_readable_writable_only
   let* exists = Array.exists store Node.Array.(gnode / "non-member") in
   assert_equal ~printer:string_of_bool false exists;
   let cfg =
-    {chunk_shape = [|2; 5; 5|]
+    {chunk_shape = [2; 5; 5]
     ;index_location = End
     ;index_codecs = [`Bytes LE]
-    ;codecs = [`Transpose [|2; 0; 1|]; `Bytes BE]} in
+    ;codecs = [`Transpose [2; 0; 1]; `Bytes BE]} in
   let anode = Node.Array.(gnode / "arrnode")
-  and slice = [|R [|0; 5|]; I 10; R [|0; 10|]|]
-  and bigger_slice = [|R [|0; 6|]; L [|9; 10|] ; R [|0; 11|]|]
-  and codecs = [`ShardingIndexed cfg] and shape = [|100; 100; 50|] and chunks = [|10; 15; 20|] in
+  and slice = [R (0, 5); I 10; R (0, 10)]
+  and bigger_slice = [R (0, 6); L [9; 10] ; R (0, 11)]
+  and codecs = [`ShardingIndexed cfg] and shape = [100; 100; 50] and chunks = [10; 15; 20] in
   let* () = Array.create ~codecs ~shape ~chunks Complex32 Complex.one anode store in
-  let exp = Ndarray.init Complex32 [|6; 1; 11|] (Fun.const Complex.one) in
+  let exp = Ndarray.init Complex32 [6; 1; 11] (Fun.const Complex.one) in
   let* got = Array.read store anode slice Complex32 in
   assert_equal exp got;
   Ndarray.fill exp Complex.{re=2.0; im=0.};
@@ -158,14 +158,14 @@ let test_readable_writable_only
   let* _ = Array.read store anode bigger_slice Complex32 in
   assert_equal exp got;
   (* test writing a bigger slice to store *)
-  let* () = Array.write store anode bigger_slice @@ Ndarray.init Complex32 [|7; 2; 12|] (Fun.const Complex.{re=0.; im=3.0}) in
+  let* () = Array.write store anode bigger_slice @@ Ndarray.init Complex32 [7; 2; 12] (Fun.const Complex.{re=0.; im=3.0}) in
   let* got = Array.read store anode slice Complex32 in
   Ndarray.fill exp Complex.{re=0.; im=3.0};
   assert_equal exp got;
-  let nshape = [|25; 28; 10|] in
+  let nshape = [25; 28; 10] in
   let* () = Array.reshape store anode nshape in
   let* meta = Array.metadata store anode in
-  assert_equal ~printer:print_int_array nshape (Metadata.Array.shape meta);
+  assert_equal ~printer:[%show: int list] nshape (Metadata.Array.shape meta);
   let* () = assert_not_implemented (fun () -> Array.rename store anode "newname") in
   let* () = assert_not_implemented (fun () -> Group.children store gnode) in
   let* () = assert_not_implemented (fun () -> hierarchy store) in

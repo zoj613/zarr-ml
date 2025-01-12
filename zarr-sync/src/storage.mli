@@ -6,6 +6,9 @@ module MemoryStore : Zarr.Memory.S with type 'a io := 'a
 (** A blocking I/O Zip file storage backend for a Zarr v3 hierarchy. *)
 module ZipStore : Zarr.Zip.S with type 'a io := 'a
 
+(** A blocking I/O Http storage backend for a Zarr v3 hierarchy. *)
+module HttpStore : Zarr.Http.S with type 'a io := 'a
+
 (** A blocking I/O local filesystem storage backend for a Zarr v3 hierarchy. *)
 module FilesystemStore : sig
   include Zarr.Storage.S with type 'a io := 'a

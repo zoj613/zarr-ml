@@ -4,6 +4,7 @@
  (libraries
    zarr
    aws-s3-lwt
+   ezcurl-lwt
    lwt
    lwt.unix)
  (ocamlopt_flags

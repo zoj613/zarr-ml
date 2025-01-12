@@ -6,5 +6,6 @@ module Storage = Storage
 module Codecs = Codecs
 module Memory = Memory
 module Zip = Zip
+module Http = Http
 module Types = Types
 module Ndarray = Ndarray

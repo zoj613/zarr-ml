@@ -1,3 +1,0 @@
-pin-depends: [
-  ["bytesrw.dev" "git+https://erratique.ch/repos/bytesrw.git"]
-]

@@ -20,3 +20,15 @@ module FilesystemStore : sig
 
       @raise Failure if [dir] is a file and not a Zarr store path. *)
 end
+
+module HttpStore : sig
+  exception Not_implemented
+  exception Request_failed of int * string
+  include Zarr.Storage.S with type 'a io := 'a
+  val with_open :
+    ?https:(Uri.t -> [ `Generic ] Eio.Net.stream_socket_ty Eio.Std.r -> _ Eio.Flow.two_way) ->
+    net:_ Eio.Net.t ->
+    Uri.t ->
+    (t -> 'a) ->
+    'a
+end

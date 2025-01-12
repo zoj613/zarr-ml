@@ -2,6 +2,7 @@
  (name test_lwt)
  (libraries
    zarr-lwt
+   tiny_httpd
    ounit2)
  (package zarr-lwt)
  (preprocess

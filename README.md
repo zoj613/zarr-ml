@@ -11,9 +11,10 @@ arrays, designed for use in parallel computing.
 - Supports creating n-dimensional Zarr arrays and chunking them along any dimension.
 - Compresses chunks using a variety of supported compression codecs.
 - Supports indexing operations to read/write views of a Zarr array.
-- Supports storing arrays in-memory or the local filesystem. It is also
-  extensible, allowing users to easily create and use their own custom storage
-  backends. See the example implementing a [Zip file store][9] for more details.
+- Supports many storage backends, including in-memory store, the local filesystem,
+  Amazon S3 and others. It is also extensible, allowing users to easily create and
+  use their own custom storage backends. See the example implementing a
+  [Zip archive store][9] for more details.
 - Supports both synchronous and asynchronous I/O via [Lwt][4] and [Eio][8]. The user can
   easily use their own scheduler of choice. See the [example][10] implementing
   a filesystem store that uses the [Picos][11] concurrency library for non-blocking I/O.

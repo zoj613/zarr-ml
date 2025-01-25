@@ -139,16 +139,16 @@ let _ =
         (fun () -> FilesystemStore.open_store fn);
 
       (* ZipStore configuration *)
-      let zpath = tmp_dir ^ ".zip" in
+      let zpath = tmp_dir ^ ".zip"
+      and levels = [L0; L1; L2; L3; L4; L5; L6; L7; L8; L9]
       (* AmazonS3Store configuration *)
-      let region = Aws_s3.Region.minio ~port:9000 ~host:"localhost" ()
+      and region = Aws_s3.Region.minio ~port:9000 ~host:"localhost" ()
       and bucket = "test-bucket-lwt"
       and profile = "default" in
 
       Lwt_main.run @@ Lwt.join 
-        [ZipStore.with_open `Read_write zpath (fun z -> test_storage (module ZipStore) z)
-         (* test just opening the now exisitant archive created by the previous test. *)
-        ;ZipStore.with_open `Read_only zpath (fun _ -> Lwt.return_unit)
+        [Lwt.bind (ZipStore.create zpath) (test_storage (module ZipStore))
+        ;IO.iter (fun level -> ignore (ZipStore.open_store ~level zpath); Lwt.return_unit) levels
         ;AmazonS3Store.with_open ~region ~bucket ~profile (test_storage (module AmazonS3Store))
         ;test_storage (module MemoryStore) @@ MemoryStore.create ()
         ;test_storage (module FilesystemStore) s])

@@ -22,8 +22,8 @@ exception Invalid_zstd_level
 (** The type of [array -> array] codecs. *)
 type arraytoarray = [ `Transpose of int list ]
 
-(** A type representing valid Gzip codec compression levels. *)
-type compression_level = L0 | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9
+(** A type representing valid compression levels of the DEFLATE algorithm. *)
+type deflate_level = L0 | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9
 
 (** A type representing [bytes -> bytes] codecs that produce
     fixed sized encoded strings. *)
@@ -31,7 +31,7 @@ type fixed_bytestobytes = [ `Crc32c ]
 
 (** A type representing [bytes -> bytes] codecs that produce
     variable sized encoded strings. *)
-type variable_bytestobytes = [ `Gzip of compression_level | `Zstd of int * bool ]
+type variable_bytestobytes = [ `Gzip of deflate_level | `Zstd of int * bool ]
 
 (** The type of [bytes -> bytes] codecs. *)
 type bytestobytes = [ fixed_bytestobytes | variable_bytestobytes ]

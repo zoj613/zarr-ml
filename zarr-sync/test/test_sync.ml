@@ -199,9 +199,12 @@ let _ =
 
       (* test with non-existant archive *)
       let zpath = tmp_dir ^ ".zip" in
-      ZipStore.with_open `Read_write zpath (fun z -> test_storage (module ZipStore) z);
-      (* test just opening the now exisitant archive created by the previous test. *)
-      ZipStore.with_open `Read_only zpath (fun _ -> ());
+      test_storage (module ZipStore) (ZipStore.create zpath);
+      (* test just opening the now existant archive created by the previous test. *)
+      ignore (ZipStore.open_store zpath);
+      assert_raises (ZipStore.Path_already_exists zpath) (fun () -> ZipStore.create zpath);
+      let levels = [L0; L1; L2; L3; L4; L5; L7; L8; L9] in
+      List.iter (fun level -> ZipStore.open_store ~level zpath |> ignore) levels;
       test_storage (module MemoryStore) @@ MemoryStore.create ();
       test_storage (module FilesystemStore) s)
   ])

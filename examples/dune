@@ -2,7 +2,7 @@
  (name zipstore)
  (modules zipstore)
  (ocamlopt_flags (:standard -O3))
- (libraries zarr-eio camlzip))
+ (libraries zarr-eio zipc))
 
 (executable
  (name picos_fs_store)

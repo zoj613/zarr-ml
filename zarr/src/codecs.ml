@@ -5,9 +5,9 @@ exception Invalid_codec_ordering
 exception Invalid_zstd_level
 
 type arraytoarray = [ `Transpose of int list ]
-type compression_level = L0 | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9
+type deflate_level = L0 | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9
 type fixed_bytestobytes = [ `Crc32c ]
-type variable_bytestobytes = [ `Gzip of compression_level | `Zstd of int * bool ]
+type variable_bytestobytes = [ `Gzip of deflate_level | `Zstd of int * bool ]
 type bytestobytes = [ fixed_bytestobytes | variable_bytestobytes ]
 type loc = Start | End
 type endianness = LE | BE
@@ -97,7 +97,7 @@ module BytesToBytes = struct
       let r = Bytes.Reader.of_string x in
       Bytes.Reader.to_string (Bytesrw_zlib.Gzip.decompress_reads () r)
 
-    let to_yojson : compression_level -> Yojson.Safe.t = fun l ->
+    let to_yojson : deflate_level -> Yojson.Safe.t = fun l ->
       `Assoc [("name", `String "gzip"); ("configuration", `Assoc ["level", `Int (to_int l)])]
 
     let of_int = function

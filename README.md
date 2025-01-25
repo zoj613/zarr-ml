@@ -13,7 +13,7 @@ arrays, designed for use in parallel computing.
 - Supports indexing operations to read/write views of a Zarr array.
 - Supports storing arrays in-memory or the local filesystem. It is also
   extensible, allowing users to easily create and use their own custom storage
-  backends. See the example implementing a [Zip file store][9] for more details.
+  backends. See the example implementing an [In-memory Zip archive store][9] for more details.
 - Supports both synchronous and asynchronous I/O via [Lwt][4] and [Eio][8]. The user can
   easily use their own scheduler of choice. See the [example][10] implementing
   a filesystem store that uses the [Picos][11] concurrency library for non-blocking I/O.

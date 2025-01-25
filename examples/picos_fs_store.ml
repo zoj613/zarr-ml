@@ -1,24 +1,22 @@
 (* this module implements a local filesystem zarr store that is backed by
    the Picos library for concurrent reads/writes. The main requirements
-   is to implement the signature of Zarr.Types.IO. Here we use
-   Zarr_sync's Deferred module to implement Zarr.Types.Deferred.
+   is to implement the signature of Zarr.Types.Store.
 
   To compile & run this example execute the command
     dune exec -- examples/picos_fs_store.exe
   in your shell at the root of this project. *)
 
 module PU = Picos_io.Unix
-module D = Zarr_sync.Storage.Deferred
+module IO = Zarr_sync.Storage.IO
 
 module PicosFSStore : sig
-  include Zarr.Storage.STORE with module Deferred = D
+  include Zarr.Storage.S with type 'a io := 'a
   val create : ?perm:Unix.file_perm -> string -> t
 end = struct
   
-  module IO = struct
-    module Deferred = D
-
+  module Store = struct
     type t = {dirname : string; perm : PU.file_perm}
+    type 'a io = 'a IO.t
 
     let fspath_to_key t path =
       let pos = String.length t.dirname + 1 in
@@ -128,12 +126,12 @@ end = struct
     let rename t k k' = PU.rename (key_to_fspath t k) (key_to_fspath t k')
   end
 
+  include Zarr.Storage.Make(IO)(Store)
+
   let create ?(perm=0o700) dirname =
     Zarr.Util.create_parent_dir dirname perm;
     Sys.mkdir dirname perm;
-    IO.{dirname = Zarr.Util.sanitize_dir dirname; perm}
-
-  include Zarr.Storage.Make(IO)
+    Store.{dirname = Zarr.Util.sanitize_dir dirname; perm}
 end
 
 let _ =
@@ -148,16 +146,16 @@ let _ =
   PicosFSStore.Group.create store gnode;
   let anode = Node.Array.(gnode / "name") in
   let config =
-    {chunk_shape = [|5; 3; 5|]
+    {chunk_shape = [5; 3; 5]
     ;codecs = [`Bytes LE; `Gzip L5]
     ;index_codecs = [`Bytes BE; `Crc32c]
     ;index_location = Start} in
   PicosFSStore.Array.create
     ~codecs:[`ShardingIndexed config]
-    ~shape:[|100; 100; 50|]
-    ~chunks:[|10; 15; 20|]
+    ~shape:[100; 100; 50]
+    ~chunks:[10; 15; 20]
     Char '?' anode store;
-  let slice = [|R [|0; 20|]; I 10; R [||]|] in
+  let slice = [R (0, 20); I 10; F] in
   let x = PicosFSStore.Array.read store anode slice Char in
   let x' = Zarr.Ndarray.map (fun _ -> Random.int 256 |> Char.chr) x in
   PicosFSStore.Array.write store anode slice x';

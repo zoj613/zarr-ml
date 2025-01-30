@@ -1,5 +1,6 @@
-exception Node_invariant
-exception Cannot_rename_root
+type error = [ `Node_invariant | `Cannot_rename_root | `Invalid_path ]
+type 'a result = ('a, error) Stdlib.result
+let open_error = function Ok _ as v -> v | Error #error as v -> v
 
 (* Check if the path's name satisfies path invariants *)
 let rep_ok name =
@@ -11,15 +12,18 @@ let rep_ok name =
 module Group = struct
   type t = Root | Cons of t * string
 
-  let create parent name = if rep_ok name then Cons (parent, name) else raise Node_invariant
+  let create parent name : t result = match rep_ok name with
+    | false -> Error `Node_invariant
+    | true -> Ok (Cons (parent, name))
 
-  let of_path = function
-    | "/" -> Root
-    | s ->
-      if not (String.starts_with ~prefix:"/" s) || String.ends_with ~suffix:"/" s
-      then raise Node_invariant
-      else List.fold_left create Root (List.tl @@ String.split_on_char '/' s)
+  let create' = Fun.flip create
 
+  let of_path p = match String.split_on_char '/' p with
+    | [""; ""] -> Ok Root
+    | [_] -> Error `Invalid_path  (* occurs if path is empty or a single string with no '/' character. *)
+    | x :: _ when x <> String.empty -> Error `Invalid_path  (* occurs if path does not start with '/'. *)
+    | xs -> List.fold_left (fun a n -> Result.bind a (create' n)) (Ok Root) (List.tl xs)
+ 
   let name = function
     | Root -> ""
     | Cons (_, n) -> n
@@ -61,10 +65,10 @@ module Group = struct
     | _, Root -> false
     | v, Cons (parent, _) -> parent = v
 
-  let rename t str = match t with
-    | Cons (parent, _) when rep_ok str -> Cons (parent, str)
-    | Cons _ -> raise Node_invariant
-    | Root -> raise Cannot_rename_root
+  let rename t str : t result = match t with
+    | Cons (parent, _) when rep_ok str -> Ok (Cons (parent, str))
+    | Cons _ -> Error `Node_invariant
+    | Root -> Error `Cannot_rename_root
 
   let root = Root 
   let ( / ) = create
@@ -77,11 +81,11 @@ end
 module Array = struct
   type t = {parent : Group.t option; name : string}
 
-  let of_path p =
-    let g = Group.of_path p in
-    match Group.parent g with
-    | Some _ as parent -> {parent; name = Group.name g}
-    | None -> raise Node_invariant
+  let of_path p = match Group.of_path p with
+    | Error _ as e -> e
+    | Ok g -> match Group.parent g with
+      | Some _ as parent -> Ok {parent; name = Group.name g}
+      | None -> Error `Node_invariant
 
   let to_path {parent = p; name} = match p with
     | None -> "/"
@@ -104,12 +108,15 @@ module Array = struct
     | {parent = None; _} -> "zarr.json"
     | p -> to_key p ^ "/zarr.json"
 
-  let rename t name = match t.parent with
-    | Some _ when rep_ok name -> {t with name}
-    | Some _ -> raise Node_invariant
-    | None -> raise Cannot_rename_root
+  let rename t name : t result = match t.parent with
+    | Some _ when rep_ok name -> Ok {t with name}
+    | Some _ -> Error `Node_invariant
+    | None -> Error `Cannot_rename_root
       
-  let create g name = if rep_ok name then {parent = Some g; name} else raise Node_invariant
+  let create g name = match rep_ok name with
+    | true -> Ok {parent = Some g; name}
+    | false -> Error `Node_invariant
+
   let ( / ) = create
   let show = to_path
   let root = {parent = None; name = ""}

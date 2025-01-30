@@ -10,11 +10,11 @@
     - must not be a string composed only of period characters, e.g. "." or "..".
     - must not start with the reserved prefix "__".*)
 
-exception Node_invariant
-(** raised when a node's invariants are violated. *)
-
-exception Cannot_rename_root
-(** raised when attempting to rename a root node. *)
+type error =
+  [ `Node_invariant  (** when a node's name invariant is violated. *)
+  | `Cannot_rename_root (** when attempting to rename a root node. *)
+  | `Invalid_path ]
+val open_error : ('a, error) result -> ('a, [> error]) result
 
 module Group : sig
   type t
@@ -23,16 +23,14 @@ module Group : sig
   val root : t
   (** creates the root node *)
 
-  val create : t -> string -> t
-  (** [create p n] returns a group node with parent [p] and name [n].
-      @raise Node_invariant if node invariants are not satisfied. *)
+  val create : t -> string -> (t, error) result
+  (** [create p n] creates a group node with parent [p] and name [n]. *)
 
-  val ( / ) : t -> string -> t
+  val ( / ) : t -> string -> (t, error) result
   (** The infix operator alias of {!create} *)
 
-  val of_path : string -> t 
-  (** [of_path s] returns a node from string [s].
-      @raise Node_invariant if node invariants are not satisfied. *)
+  val of_path : string -> (t, error) result
+  (** [of_path s] creates a group node from path [s]. *)
 
   val to_path : t -> string
   (** [to_path n] returns node [n] as a string path. *)
@@ -76,31 +74,26 @@ module Group : sig
   val pp : Format.formatter -> t -> unit
   (** [pp fmt t] pretty prints a node type value.*)
 
-  val rename : t -> string -> t
-  (** [rename t s] returns a new group node with all properties of [t]
-      but with its name changed to [s].
-
-      @raise Node_invariant if [s] is invalid name.
-      @raise Cannot_rename_root if [t] is a root node.*)
+  val rename : t -> string -> (t, error) result
+  (** [rename t s] creates a new group node with all properties of [t]
+      but with its name changed to [s]. *)
 end
 
 module Array : sig
   type t
   (** The type of an array node. *)
 
-  val create : Group.t -> string -> t
-  (** [create p n] returns an array node with parent [p] and name [n].
-      @raise Node_invariant if node invariants are not satisfied. *)
+  val create : Group.t -> string -> (t, error) result
+  (** [create p n] makes an array node with parent [p] and name [n]. *)
 
-  val ( / ) : Group.t -> string -> t
+  val ( / ) : Group.t -> string -> (t, error) result
   (** The infix operator alias of {!create} *)
 
   val root : t
   (** creates an array root node *)
 
-  val of_path : string -> t
-  (** [of_path s] returns an array node from string [s].
-      @raise Node_invariant if node invariants are not satisfied. *)
+  val of_path : string -> (t, error) result
+  (** [of_path s] creates an array node from path [s]. *)
 
   val to_path : t -> string
   (** [to_path n] returns array node [n] as a string path. *)
@@ -137,10 +130,7 @@ module Array : sig
   val pp : Format.formatter -> t -> unit
   (** [pp fmt t] pretty prints a node type value. *)
 
-  val rename : t -> string -> t
-  (** [rename t s] returns a new node with all properties of [t]
-      but with its name changed to [s].
-
-      @raise Node_invariant if [s] is invalid name.
-      @raise Cannot_rename_root if [t] is a root node.*)
+  val rename : t -> string -> (t, error) result
+  (** [rename t s] creates a new node with all properties of [t]
+      but with its name changed to [s]. *)
 end

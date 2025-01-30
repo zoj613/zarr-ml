@@ -4,6 +4,15 @@ exception Invalid_array_slice
 exception Key_not_found of string
 exception Not_a_filesystem_store of string
 
+type error =
+  [ `Invalid_resize_shape
+  | `Invalid_data_type
+  | `Invalid_array_slice
+  | `Key_not_found of string
+  | `Not_a_filesystem_store of string
+  | Node.error ]
+type 'a result = ('a, error) Stdlib.result
+
 module type S = sig
   type t
   (** The storage type. *)

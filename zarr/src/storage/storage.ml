@@ -67,10 +67,13 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
       in
       exists t node >>= maybe_enumerate t node
 
-    let rename t node str =
-      let key = Node.Group.to_key node
-      and key' = Node.Group.(rename node str |> to_key) in
-      exists t node >>= maybe_rename t key key'
+    let rename t node str : unit result io =
+      let key = Node.Group.to_key node in
+      exists t node >>= function
+      | false -> IO.return (Error (`Key_not_found key))
+      | true -> match Node.Group.rename node str with
+        | Error _ as e -> IO.return (Node.open_error e)
+        | Ok node' -> IO.map Result.ok (rename t key (Node.Group.to_key node'))
   end
   
   module Array = struct
@@ -188,9 +191,12 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
       let* () = IO.iter (remove ~t ~meta ~prefix) unreachable_chunks in
       set t (Node.Array.to_metakey node) Metadata.Array.(encode @@ update_shape meta new_shape)
 
-    let rename t node str =
-      let key = Node.Array.to_key node
-      and key' = Node.Array.(rename node str |> to_key) in
-      exists t node >>= maybe_rename t key key'
+    let rename t node str : unit result io =
+      let key = Node.Array.to_key node in
+      exists t node >>= function
+      | false -> IO.return (Error (`Key_not_found key))
+      | true -> match Node.Array.rename node str with
+        | Error _ as e -> IO.return (Node.open_error e)
+        | Ok node' -> IO.map Result.ok (rename t key (Node.Array.to_key node'))
   end
 end

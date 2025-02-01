@@ -2,18 +2,17 @@ open OUnit2
 open Zarr
 
 let flatten_fstring s = String.(split_on_char ' ' s |> concat "" |> split_on_char '\n' |> concat "")
-let decode_bad_group_metadata ~str ~msg = assert_raises (Metadata.Parse_error msg) (fun () -> Metadata.Group.decode str)
+let decode_bad_group_metadata ~str ~msg = assert_equal (Error (`Parse_error msg)) (Metadata.Group.decode str)
 
 let group = [
 "group metadata" >:: (fun _ ->
   let meta = Metadata.Group.default in
   let got = Metadata.Group.encode meta in
-  assert_bool "should not fail" Metadata.Group.((encode meta |> decode) = meta);
+  (match Metadata.Group.decode got with
+  | Ok meta' -> assert_equal ~printer:Metadata.Group.show meta meta'
+  | Error _ -> assert_failure "Decoding a valid group metadata string should not fail.");
   assert_equal ~printer:Fun.id {|{"zarr_format":3,"node_type":"group"}|} got;
-  assert_equal ~printer:Metadata.Group.show meta Metadata.Group.(decode got);
-  assert_raises
-    (Metadata.Parse_error "metadata must contain a zarr_format field.")
-    (fun () -> Metadata.Group.decode {|{"bad_json":0}|});
+  assert_equal (Error (`Parse_error "metadata must contain a zarr_format field." )) (Metadata.Group.decode {|{"bad_json":0}|});
   let meta' = Metadata.Group.update_attributes meta (`Assoc [("spam", `String "ham"); ("eggs", `Int 42)]) in
   let expected = {|{"zarr_format":3,"node_type":"group","attributes":{"spam":"ham","eggs":42}}|} in
   assert_equal expected (Metadata.Group.encode meta');
@@ -35,11 +34,14 @@ let test_array_metadata :
   unit
   = fun ?dimension_names ~shape ~chunks kind bad_kind fv ->
   let codecs = Codecs.Chain.create chunks [`Bytes LE] in
-  let meta = match dimension_names with
+  let meta = Result.get_ok @@ match dimension_names with
     | Some d -> Metadata.Array.create ~codecs ~shape ~dimension_names:d kind fv chunks
     | None -> Metadata.Array.create ~codecs ~shape kind fv chunks
   in
-  assert_bool "should not fail" Metadata.Array.((encode meta |> decode) = meta);
+  let got = Metadata.Array.encode meta in
+  (match Metadata.Array.decode got with
+  | Ok meta' -> assert_equal meta meta'
+  | Error _ -> assert_failure "Decoding a valid array metadata string should not fail.");
   let meta' = Metadata.Array.update_shape meta (10 :: shape) in
   assert_equal ~msg:"should not be equal" false Metadata.Array.(meta' = meta);
   let show_int_list = [%show: int list] in
@@ -64,12 +66,15 @@ let test_array_metadata :
   assert_bool "Float32 is the only valid kind for this metadata" (not @@ Metadata.Array.is_valid_kind meta bad_kind);
   assert_equal fv Metadata.Array.(fillvalue_of_kind meta kind);
   assert_raises (Failure "kind is not compatible with node's fill value.") (fun () -> Metadata.Array.fillvalue_of_kind meta bad_kind);
-  assert_raises (Metadata.Parse_error "metadata must contain a zarr_format field.") (fun () -> Metadata.Array.decode {|{"bad_json":0}|})
+  assert_equal (Error (`Parse_error "metadata must contain a zarr_format field." )) (Metadata.Array.decode {|{"bad_json":0}|})
 
 let test_scalar_array_metadata () =
   let codecs = Codecs.Chain.create [] [`Bytes LE] in
-  let meta = Metadata.Array.create ~codecs ~shape:[] Float32 0.0 [] in
-  assert_bool "should not fail" Metadata.Array.((encode meta |> decode) = meta);
+  let meta = Result.get_ok @@ Metadata.Array.create ~codecs ~shape:[] Float32 0.0 [] in
+  let got = Metadata.Array.encode meta in
+  (match Metadata.Array.decode got with
+  | Ok meta' -> assert_equal meta meta'
+  | Error _ -> assert_failure "Decoding a valid array metadata string should not fail.");
   let show_int_list = [%show: int list] in
   assert_equal ~printer:show_int_list [] (Metadata.Array.shape meta);
   assert_equal ~printer:show_int_list [] (Metadata.Array.chunk_shape meta);
@@ -81,7 +86,7 @@ let test_scalar_array_metadata () =
     (fun () -> Metadata.Array.create ~codecs ~dimension_names:[Some ""] ~shape:[] Float32 0.0 []) *)
 
 (* test decoding an ill-formed array metadata with an expected error message.*)
-let decode_bad_array_metadata ~str ~msg = assert_raises (Metadata.Parse_error msg) (fun () -> Metadata.Array.decode str)
+let decode_bad_array_metadata ~str ~msg = assert_equal (Error (`Parse_error msg )) (Metadata.Array.decode str)
 
 let test_encode_decode_fill_value d f1 f2 f3 =
   let fmt = Format.sprintf {|{
@@ -97,12 +102,12 @@ let test_encode_decode_fill_value d f1 f2 f3 =
     "dimension_names": ["x", null]}|}
   in
   let str = fmt d f1 in
-  let meta = Metadata.Array.decode str in
-  let meta' = Metadata.Array.decode (fmt d f2) in
+  let meta = Result.get_ok @@ Metadata.Array.decode str in
+  let meta' = Result.get_ok @@ Metadata.Array.decode (fmt d f2) in
   assert_equal false Metadata.Array.(meta = meta');
   assert_bool "Metadata must be equal to itself." Metadata.Array.(meta = meta);
   assert_equal ~printer:Fun.id (flatten_fstring str) Metadata.Array.(encode meta);
-  assert_raises (Metadata.Parse_error "Unsupported fill value.") (fun () -> Metadata.Array.decode (fmt d f3))
+  assert_equal (Error (`Parse_error "Unsupported fill value." )) (Metadata.Array.decode (fmt d f3))
 
 let test_decode_encode_chunk_key name sep (key, exp_encode, exp_null) =
   let str = Format.sprintf {|{
@@ -119,7 +124,7 @@ let test_decode_encode_chunk_key name sep (key, exp_encode, exp_null) =
       {"name": %s, "configuration": {"separator": %s}},
     "attributes": {"question": 7}}|} name sep
   in
-  let meta = Metadata.Array.decode str in
+  let meta = Result.get_ok @@ Metadata.Array.decode str in
   assert_equal ~printer:Fun.id exp_encode (Metadata.Array.chunk_key meta key);
   assert_equal ~printer:Fun.id exp_null (Metadata.Array.chunk_key meta []);
   assert_equal ~printer:Fun.id (flatten_fstring str) (Metadata.Array.encode meta)
@@ -342,7 +347,7 @@ let array = [
     "chunk_grid":
       {"name": "regular", "configuration": {"chunk_shape": [10, 10]}},
     "chunk_key_encoding": {"name": "v2"}}|} in
-  let meta = Metadata.Array.decode str in
+  let meta = Result.get_ok @@ Metadata.Array.decode str in
   (* we except it to use the default "." separator. *)
   assert_equal ~printer:Fun.id "2.0.1" Metadata.Array.(chunk_key meta [2; 0; 1]);
   (* we expect the default (unspecified) config seperator to be dropped when serializing the metadata to JSON format. *)

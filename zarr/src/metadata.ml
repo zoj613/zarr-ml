@@ -1,6 +1,8 @@
 open Extensions
 
-exception Parse_error of string
+type error = [ `Parse_error of string ]
+type 'a result = ('a, error) Stdlib.result
+let open_error = function Ok _ as v -> v | Error #error as v -> v
 
 module FillValue = struct
   type t =
@@ -130,14 +132,14 @@ module NodeType = struct
     | Group -> "group"
 
   module Array = struct
-    let of_yojson : Yojson.Safe.t -> (t, string) result = function
+    let of_yojson : Yojson.Safe.t -> (t, string) Stdlib.result = function
       | `String "array" -> Ok Array
       | `Null -> Error "metadata must contain a node_type field."
       | _ -> Error "node_type field must be 'array'."
   end
 
   module Group = struct
-    let of_yojson : Yojson.Safe.t -> (t, string) result = function
+    let of_yojson : Yojson.Safe.t -> (t, string) Stdlib.result = function
       | `String "group" -> Ok Group
       | `Null -> Error "group metadata must contain a node_type field."
       | _ -> Error "node_type field must be 'group'."
@@ -162,7 +164,7 @@ module Shape = struct
     | `Int i when i > 0 -> Result.map (List.cons i) acc
     | _ -> Error "shape field list must only contain positive integers."
 
-  let of_yojson : Yojson.Safe.t -> (t, string) result = function
+  let of_yojson : Yojson.Safe.t -> (t, string) Stdlib.result = function
     | `List [] -> Ok Empty
     | `List xs -> Result.map (fun x -> Dims x) (List.fold_right add xs (Ok []))
     | `Null -> Error "array metadata must contain a shape field."
@@ -192,9 +194,7 @@ end
 
 module DimensionNames = struct
   type t = string option list 
-
-  let to_yojson (xs : t) : Yojson.Safe.t =
-    `List (List.map (Option.fold ~none:`Null ~some:(fun s -> `String s)) xs)
+  let to_yojson (xs : t) : Yojson.Safe.t = `List (List.map (Option.fold ~none:`Null ~some:(fun s -> `String s)) xs)
 
   let add (x : Yojson.Safe.t) acc = match x with
     | `String s -> Result.map (List.cons (Some s)) acc
@@ -203,9 +203,8 @@ module DimensionNames = struct
 
   let of_yojson ndim x = match x with
     | `Null -> Ok []
-    | `List xs ->
-      if List.length xs = ndim then List.fold_right add xs (Ok [])
-      else Error "dimension_names length and array dimensionality must be equal."
+    | `List xs when List.length xs = ndim -> List.fold_right add xs (Ok [])
+    | `List _ -> Error "dimension_names length and array dimensionality must be equal."
     | _ -> Error "dimension_names field must be a list."
 end
 
@@ -223,18 +222,23 @@ module Array = struct
     ;dimension_names : DimensionNames.t
     ;storage_transformers : Yojson.Safe.t list}
 
-  let create ?(sep=`Slash) ?(dimension_names=[]) ?(attributes=`Null) ~codecs ~shape kind fv chunks =
-    {codecs
-    ;attributes
-    ;dimension_names
-    ;zarr_format = 3
-    ;shape = Shape.create shape
-    ;node_type = NodeType.Array
-    ;storage_transformers = []
-    ;fill_value = FillValue.create kind fv
-    ;data_type = Datatype.of_kind kind
-    ;chunk_key_encoding = ChunkKeyEncoding.create sep
-    ;chunk_grid = RegularGrid.create ~array_shape:shape chunks}
+  let create
+    ?(sep=`Slash) ?(dimension_names=[]) ?(attributes=`Null) ~codecs ~shape kind fv chunks =
+    match RegularGrid.create ~array_shape:shape chunks with
+    | Error _ as e -> e
+    | Ok chunk_grid ->
+      Ok
+      {codecs
+      ;chunk_grid
+      ;attributes
+      ;dimension_names
+      ;zarr_format = 3
+      ;shape = Shape.create shape
+      ;node_type = NodeType.Array
+      ;storage_transformers = []
+      ;fill_value = FillValue.create kind fv
+      ;data_type = Datatype.of_kind kind
+      ;chunk_key_encoding = ChunkKeyEncoding.create sep}
 
   let to_yojson : t -> Yojson.Safe.t = fun t ->
     let l =
@@ -298,10 +302,8 @@ module Array = struct
   let update_attributes t attrs = {t with attributes = attrs}
   (* FIXME: must ensure the dimensions of the array remain unchanged. *)
   let update_shape t shape = {t with shape = Shape.create shape}
-
-  let decode s = match of_yojson (Yojson.Safe.from_string s) with
-    | Error e -> raise (Parse_error e)
-    | Ok m -> m
+  
+  let decode s : t result = Result.map_error (fun e -> `Parse_error e) @@ of_yojson (Yojson.Safe.from_string s)
 
   let is_valid_kind (type a) t (kind : a Ndarray.dtype) = match kind, t.data_type with
     | Ndarray.Char, Datatype.Char
@@ -365,9 +367,7 @@ module Group = struct
     let+ node_type = NodeType.Group.of_yojson Yojson.Safe.Util.(member "node_type" x) in
     {zarr_format; node_type; attributes = Yojson.Safe.Util.member "attributes" x}
 
-  let decode s = match of_yojson (Yojson.Safe.from_string s) with
-    | Error e -> raise (Parse_error e)
-    | Ok m -> m
+  let decode s : t result = Result.map_error (fun e -> `Parse_error e) @@ of_yojson (Yojson.Safe.from_string s)
 
   let show t =
     let x, y = NodeType.show t.node_type, Yojson.Safe.show t.attributes in

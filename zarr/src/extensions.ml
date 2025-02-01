@@ -1,35 +1,34 @@
+type error = [ `Invalid_grid_chunk_shape ]
+type 'a result = ('a, error) Stdlib.result
+let open_error = function Ok _ as v -> v | Error #error as v -> v
+
 module RegularGrid = struct
-  exception Grid_shape_mismatch
   type t = int list
   let chunk_shape : t -> int list = Fun.id
   let ceildiv x y = Float.(to_int @@ ceil (of_int x /. of_int y))
   let floordiv x y = Float.(to_int @@ floor (of_int x /. of_int y))
   let grid_shape t array_shape = List.map2 ceildiv array_shape t
   let index_coord_pair t coord = (List.map2 floordiv coord t, List.map2 Int.rem coord t)
+  let indices t array_shape = List.map (fun x -> List.init x Fun.id) (grid_shape t array_shape) |> Ndarray.Indexing.cartesian_prod
   let ( = ) x y = List.equal Int.equal x y
   let max = List.fold_left Int.max Int.min_int
 
-  let create ~array_shape chunk_shape =
-    if List.(length chunk_shape <> length array_shape) || (max chunk_shape > max array_shape)
-    then raise Grid_shape_mismatch else chunk_shape
-
-  (* returns all chunk indices in this regular grid *)
-  let indices t array_shape =
-    let lol = List.map (fun x -> List.init x Fun.id) (grid_shape t array_shape) in
-    Ndarray.Indexing.cartesian_prod lol
+  let create ~array_shape chunk_shape : t result = match chunk_shape, array_shape with
+    | xs, ys when Int.equal (List.length xs) (List.length ys) || (max xs <= max ys) -> Ok xs
+    | _ -> Error `Invalid_grid_chunk_shape
 
   let to_yojson (g : t) : Yojson.Safe.t =
     let name = ("name", `String "regular") in
     `Assoc [name; ("configuration", `Assoc [("chunk_shape", `List (List.map (fun x -> `Int x) g))])]
 
-  let add (x : Yojson.Safe.t) acc = match x with
+  let add (x : Yojson.Safe.t) (acc : int list result) = match x with
     | `Int i when i > 0 -> Result.map (List.cons i) acc
-    | _ -> Error "chunk_shape must only contain positive ints."
+    | _ -> Error `Invalid_grid_chunk_shape
 
   let of_yojson (array_shape: int list) (x : Yojson.Safe.t) = match x with
     | `Assoc ["name", `String "regular"; "configuration", `Assoc ["chunk_shape", `List l]] ->
-      begin try Result.map (create ~array_shape) (List.fold_right add l (Ok []))
-      with Grid_shape_mismatch -> Error "grid shape mismatch." end
+      let r = Result.bind (List.fold_right add l (Ok [])) (create ~array_shape) in
+      Result.map_error (fun _ -> "grid shape mismatch") r
     | `Null -> Error "array metadata must contain a chunk_grid field." 
     | _ -> Error "Invalid Chunk grid name or configuration."
 end
@@ -59,7 +58,7 @@ module ChunkKeyEncoding = struct
     if is_default then `Assoc [("name", `String str)] else
     `Assoc [("name", `String str); ("configuration", `Assoc [("separator", `String sep)])]
 
-  let of_yojson : Yojson.Safe.t -> (t, string) result = function
+  let of_yojson : Yojson.Safe.t -> (t, string) Stdlib.result = function
     | `Assoc [("name", `String "v2")] -> Ok {name = V2; sep = "."; is_default = true}
     | `Assoc [("name", `String "v2"); ("configuration", `Assoc [("separator", `String ("/" as slash))])] ->
       Ok {name = V2; sep = slash; is_default = false}

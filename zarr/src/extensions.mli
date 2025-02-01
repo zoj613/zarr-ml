@@ -1,7 +1,9 @@
+type error = [ `Invalid_grid_chunk_shape ]
+val open_error : ('a, error) result -> ('a, [> error]) result
+
 module RegularGrid : sig
-  exception Grid_shape_mismatch
   type t
-  val create : array_shape:int list -> int list -> t
+  val create : array_shape:int list -> int list -> (t, error) result
   val chunk_shape : t -> int list
   val indices : t -> int list -> int list list
   val index_coord_pair : t -> int list -> int list * int list

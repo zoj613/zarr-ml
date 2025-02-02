@@ -3,21 +3,13 @@
     This module contains building blocks for creating and working with
     a chain of codecs. *)
 
-exception Array_to_bytes_invariant
-(** raised when a codec chain contains more than 1 array->bytes codec. *)
-
-exception Invalid_transpose_order
-(** raised when a codec chain contains a Transpose codec with an incorrect order. *)
-
-exception Invalid_sharding_chunk_shape
-(** raise when a codec chain contains a shardingindexed codec with an incorrect inner chunk shape. *)
-
-exception Invalid_codec_ordering
-(** raised when a codec chain has incorrect ordering of codecs. i.e if the
-    ordering is not [arraytoarray list -> 1 arraytobytes -> bytestobytes list]. *)
-
-exception Invalid_zstd_level
-(** raised when a codec chain contains a Zstd codec with an incorrect compression value.*)
+type error =
+  [ `Array_to_bytes_invariant  (** when a codec chain contains more than 1 array->bytes codec. *)
+  | `Invalid_transpose_order  (** when a codec chain contains a Transpose codec with an incorrect order. *)
+  | `Invalid_sharding_chunk_shape  (** when a codec chain contains a shardingindexed codec with an incorrect inner chunk shape. *)
+  | `Invalid_codec_ordering  (** when a codec chain has incorrect ordering of codecs. i.e if the ordering is not [arraytoarray list -> 1 arraytobytes -> bytestobytes list]. *)
+  | `Invalid_zstd_compression_level  (** when a codec chain contains a Zstd codec with an incorrect compression value.*)]
+val open_error : ('a, error) result -> ('a, [> error]) result
 
 (** The type of [array -> array] codecs. *)
 type arraytoarray = [ `Transpose of int list ]
@@ -71,19 +63,8 @@ module Chain : sig
       decoding/encoding a Zarr array chunk. *)
   type t
 
-  (** [create s c] returns a type representing a chain of codecs defined by
-      chain [c] and chunk shape [s].
-
-      @raise Bytes_to_bytes_invariant
-        if [c] contains more than one bytes->bytes codec.
-      @raise Invalid_transpose_order
-        if [c] contains a transpose codec with invalid order array.
-      @raise Invalid_zstd_level
-        if [c] contains a Zstd codec whose compression level is invalid.
-      @raise Invalid_sharding_chunk_shape
-        if [c] contains a shardingindexed codec with an
-        incorrect inner chunk shape. *)
-  val create : int list -> codec list -> t
+  (** [create s c] returns a type representing a chain of codecs defined by chain [c] and chunk shape [s]. *)
+  val create : int list -> codec list -> (t, error) result
 
   (** [encode t x] computes the encoded byte string representation of
       array chunk [x]. *)

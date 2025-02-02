@@ -10,7 +10,7 @@ let bytes_encode_decode (type a) (decoded_repr : a array_repr) (fill_value : a) 
     List.iter
       (fun bytes_codec ->
         let chain = [bytes_codec] in
-        let c = Chain.create decoded_repr.shape chain in
+        let c = Result.get_ok (Chain.create decoded_repr.shape chain) in
         let arr = Ndarray.create decoded_repr.kind decoded_repr.shape fill_value in
         let decoded = Chain.decode c decoded_repr (Chain.encode c arr) in
         assert_equal arr decoded)
@@ -28,16 +28,16 @@ let tests = [
     ;codecs = [`Transpose [0; 1; 2]; `Bytes BE; `Gzip L1]}
   in
   let chain  = [`Transpose [2; 1; 0; 3]; `ShardingIndexed shard_cfg; `Crc32c; `Gzip L9] in
-  assert_raises (Zarr.Codecs.Invalid_transpose_order) (fun () -> Chain.create shape chain);
+  assert_equal (Error `Invalid_transpose_order) (Chain.create shape chain);
   let chain = [`ShardingIndexed shard_cfg; `Transpose [2; 1; 0]; `Gzip L0] in
-  assert_raises (Zarr.Codecs.Invalid_codec_ordering) (fun () -> Chain.create shape chain);
+  assert_equal (Error `Invalid_codec_ordering) (Chain.create shape chain);
   let chain = [`Transpose [2; 1; 0]; `Crc32c] in
-  assert_raises (Zarr.Codecs.Array_to_bytes_invariant) (fun () -> Chain.create shape chain);
+  assert_equal (Error `Array_to_bytes_invariant) (Chain.create shape chain);
   let chain = [`Transpose [2; 1; 0]; `ShardingIndexed shard_cfg; `Crc32c; `Gzip L9] in
-  let c = Chain.create shape chain in
+  let c = Result.get_ok (Chain.create shape chain) in
   let arr = Ndarray.create kind shape fill_value in
   let encoded = Chain.encode c arr in
-  assert_equal arr @@ Chain.decode c {shape; kind} encoded;
+  assert_equal arr (Chain.decode c {shape; kind} encoded);
   decode_chain ~shape ~str:"[]" ~msg:"Must be exactly one array->bytes codec.";
   decode_chain
     ~shape
@@ -94,8 +94,8 @@ let tests = [
   (* test encoding of chain with an empty or too big transpose order. *)
   let shape = [2; 2; 2] in
   let chain = [`Transpose []; `Bytes LE] in
-  assert_raises (Zarr.Codecs.Invalid_transpose_order) (fun () -> Chain.create shape chain);
-  assert_raises (Zarr.Codecs.Invalid_transpose_order) (fun () -> Chain.create shape [`Transpose [4; 0; 1]; `Bytes LE]))
+  assert_equal (Error `Invalid_transpose_order) (Chain.create shape chain);
+  assert_equal (Error `Invalid_transpose_order) (Chain.create shape [`Transpose [4; 0; 1]; `Bytes LE]))
 ;
 
 "test sharding indexed codec" >:: (fun _ ->
@@ -239,14 +239,12 @@ let tests = [
   in
   let chain = [`ShardingIndexed cfg] in
   (*test failure for chunk shape not evenly dividing shard. *)
-  assert_raises (Zarr.Codecs.Invalid_sharding_chunk_shape) (fun () -> Chain.create shape chain);
+  assert_equal (Error `Invalid_sharding_chunk_shape) (Chain.create shape chain);
   (* test failure for chunk shape length not equal to dimensionality of shard.*)
-  assert_raises
-    (Zarr.Codecs.Invalid_sharding_chunk_shape)
-    (fun () -> Chain.create shape @@ [`ShardingIndexed {cfg with chunk_shape = [5]}]);
+  assert_equal (Error `Invalid_sharding_chunk_shape) (Chain.create shape [`ShardingIndexed {cfg with chunk_shape = [5]}]);
 
   let chain = [`ShardingIndexed {cfg with chunk_shape = [5; 3; 5]}] in
-  let c = Chain.create shape chain in
+  let c = Result.get_ok (Chain.create shape chain) in
   let arr = Ndarray.create kind shape (-10.) in
   let encoded = Chain.encode c arr in
   assert_equal arr (Chain.decode c {shape; kind} encoded);
@@ -329,7 +327,7 @@ let tests = [
   let chain = [`Bytes LE] in
   List.iter
     (fun level ->
-      let c = Chain.create shape @@ chain @ [`Gzip level] in
+      let c = Result.get_ok (Chain.create shape (chain @ [`Gzip level])) in
       let encoded = Chain.encode c arr in
       assert_equal arr @@ Chain.decode c {shape; kind} encoded)
     [L0; L1; L2; L3; L4; L5; L6; L7; L8; L9])
@@ -369,7 +367,7 @@ let tests = [
   let arr = Ndarray.create Int shape Int.max_int in
   List.iter
     (fun (level, checksum) ->
-      let c = Chain.create shape [`Bytes LE; `Zstd (level, checksum)] in
+      let c = Result.get_ok (Chain.create shape [`Bytes LE; `Zstd (level, checksum)]) in
       let encoded = Chain.encode c arr in
       assert_equal arr @@ Chain.decode c {shape; kind = Ndarray.Int} encoded)
     [(-131072, false); (-131072, true); (0, false); (0, true)])

@@ -33,7 +33,7 @@ let test_array_metadata :
   a ->
   unit
   = fun ?dimension_names ~shape ~chunks kind bad_kind fv ->
-  let codecs = Codecs.Chain.create chunks [`Bytes LE] in
+  let codecs = Result.get_ok (Codecs.Chain.create chunks [`Bytes LE]) in
   let meta = Result.get_ok @@ match dimension_names with
     | Some d -> Metadata.Array.create ~codecs ~shape ~dimension_names:d kind fv chunks
     | None -> Metadata.Array.create ~codecs ~shape kind fv chunks
@@ -69,7 +69,7 @@ let test_array_metadata :
   assert_equal (Error (`Parse_error "metadata must contain a zarr_format field." )) (Metadata.Array.decode {|{"bad_json":0}|})
 
 let test_scalar_array_metadata () =
-  let codecs = Codecs.Chain.create [] [`Bytes LE] in
+  let codecs = Result.get_ok (Codecs.Chain.create [] [`Bytes LE]) in
   let meta = Result.get_ok @@ Metadata.Array.create ~codecs ~shape:[] Float32 0.0 [] in
   let got = Metadata.Array.encode meta in
   (match Metadata.Array.decode got with

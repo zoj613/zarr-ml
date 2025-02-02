@@ -1,9 +1,3 @@
-exception Array_to_bytes_invariant
-exception Invalid_transpose_order
-exception Invalid_sharding_chunk_shape
-exception Invalid_codec_ordering
-exception Invalid_zstd_level
-
 type arraytoarray = [ `Transpose of int list ]
 type deflate_level = L0 | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9
 type fixed_bytestobytes = [ `Crc32c ]
@@ -22,6 +16,15 @@ and ('a, 'b) chain = {a2a : arraytoarray list; a2b : 'a; b2b : 'b list}
 type arraytobytes = [ fixed_arraytobytes | variable_arraytobytes ]
 type 'a array_repr = {kind : 'a Ndarray.dtype; shape : int list}
 
+type error =
+  [ `Array_to_bytes_invariant
+  | `Invalid_transpose_order
+  | `Invalid_sharding_chunk_shape
+  | `Invalid_codec_ordering
+  | `Invalid_zstd_compression_level ]
+type 'a result = ('a, error) Stdlib.result
+let open_error = function Ok _ as v -> v | Error #error as v -> v
+
 module ArrayToArray = struct
   module Transpose = struct
     let encoded_size : int -> int = Fun.id
@@ -32,7 +35,7 @@ module ArrayToArray = struct
       let o = List.fast_sort Int.compare order in
       let l = List.length o in
       if l = 0 || List.compare_length_with shape l <> 0 || o <> List.init l Fun.id
-      then raise Invalid_transpose_order else ()
+      then Error `Invalid_transpose_order else Ok ()
 
     let decode o x =
       let inv_order = Array.(make (List.length o) 0) in
@@ -43,23 +46,23 @@ module ArrayToArray = struct
       let o = `List (List.map (fun x -> `Int x) order) in
       `Assoc [("name", `String "transpose"); ("configuration", `Assoc ["order", o])]
 
-    let rec of_yojson chunk_shape x : ([`Transpose of int list], string) result =
-      match Yojson.Safe.Util.(member "configuration" x) with
-      | `Assoc [("order", `List o)] ->
-        let accum a acc = Result.bind acc (add_as_int a) in
-        Result.bind (List.fold_right accum o (Ok [])) (to_codec ~chunk_shape)
-      | _ -> Error "Invalid transpose configuration."
-
-    and add_as_int v acc = match v with
-      | `Int i when i >= 0 -> Ok (i :: acc)
+    let add_as_int acc = function
+      | `Int i when i >= 0 -> Result.map (List.cons i) acc
       | _ -> Error "transpose order values must be non-negative integers."
 
-    and to_codec ~chunk_shape order = match parse ~order chunk_shape with
-      | exception Invalid_transpose_order -> Error "Invalid_transpose_order"
-      | () -> Ok (`Transpose order)
+    let of_yojson chunk_shape x : ([`Transpose of int list], string) Stdlib.result =
+      match Yojson.Safe.Util.(member "configuration" x) with
+      | `Assoc [("order", `List o)] ->
+        begin match List.fold_left add_as_int (Ok []) o with
+        | Error _ as e -> e
+        | Ok order ->
+          match parse ~order chunk_shape with
+          | Error `Invalid_transpose_order -> Error "Invalid_transpose_order"
+          | Ok () -> Ok (`Transpose order) end
+      | _ -> Error "Invalid transpose configuration."
   end
 
-  let parse (t : arraytoarray) shape = match t with
+  let parse (t : arraytoarray) shape : unit result = match t with
     | `Transpose order -> Transpose.parse ~order shape
 
   let encoded_size input_size (t : arraytoarray) = match t with
@@ -77,7 +80,7 @@ module ArrayToArray = struct
   let to_yojson : arraytoarray -> Yojson.Safe.t = function
     | `Transpose order -> Transpose.to_yojson order
 
-  let of_yojson cs x : (arraytoarray, string) result = match Util.get_name x with
+  let of_yojson cs x : (arraytoarray, string) Stdlib.result = match Util.get_name x with
     | "transpose" -> Transpose.of_yojson cs x
     | s -> Error (Printf.sprintf "array->array codec %s not supported" s)
 end
@@ -128,7 +131,7 @@ module BytesToBytes = struct
 
   module Zstd = struct
     let min_clevel = -131072 and max_clevel = 22
-    let parse_clevel l = if l < min_clevel || max_clevel < l then (raise Invalid_zstd_level)
+    let parse_clevel l = if l < min_clevel || max_clevel < l then (Error `Invalid_zstd_compression_level) else Ok ()
 
     let encode clevel checksum x =
       let params = Bytesrw_zstd.Cctx_params.make ~checksum ~clevel () in
@@ -145,18 +148,17 @@ module BytesToBytes = struct
     let of_yojson x = match Yojson.Safe.Util.(member "configuration" x) with
       | `Assoc [("level", `Int l); ("checksum", `Bool c)] ->
         begin match parse_clevel l with
-          | () -> Ok (`Zstd (l, c))
-          | exception Invalid_zstd_level -> Error "Invalid_zstd_level"
-        end
+          | Ok () -> Ok (`Zstd (l, c))
+          | Error `Invalid_zstd_compression_level -> Error "Invalid_zstd_level" end
       | _ -> Error "Invalid Zstd configuration."
   end
 
   let encoded_size input (t : fixed_bytestobytes) = match t with
     | `Crc32c -> Crc32c.encoded_size input
 
-  let parse : bytestobytes -> unit = function
+  let parse : bytestobytes -> unit result = function
     | `Zstd (l, _) -> Zstd.parse_clevel l
-    | (`Gzip _ | `Crc32c) -> ()
+    | (`Gzip _ | `Crc32c) -> Ok ()
 
   let encode x (t : bytestobytes) = match t with
     | `Gzip l -> Gzip.encode l x
@@ -173,7 +175,7 @@ module BytesToBytes = struct
     | `Crc32c -> Crc32c.to_yojson 
     | `Zstd (l, c) -> Zstd.to_yojson l c
 
-  let of_yojson x : (bytestobytes, string) result = match Util.get_name x with
+  let of_yojson x : (bytestobytes, string) Stdlib.result = match Util.get_name x with
     | "gzip" -> Gzip.of_yojson x
     | "crc32c" -> Crc32c.of_yojson x
     | "zstd" -> Zstd.of_yojson x
@@ -191,11 +193,11 @@ module rec ArrayToBytes : sig
     val partial_encode : t -> get_partial_values -> set_fn -> int -> 'a array_repr -> (int list * 'a) list -> 'a -> unit IO.t
     val partial_decode : t -> get_partial_values -> int -> 'a array_repr -> (int * int list) list -> 'a -> (int * 'a) list IO.t
   end
-  val parse : arraytobytes -> int list -> unit
+  val parse : arraytobytes -> int list -> unit result
   val encoded_size : int -> fixed_arraytobytes -> int
   val encode : arraytobytes -> 'a Ndarray.t -> string
   val decode : arraytobytes -> 'a array_repr -> string -> 'a Ndarray.t
-  val of_yojson : int list -> Yojson.Safe.t -> (arraytobytes, string) result
+  val of_yojson : int list -> Yojson.Safe.t -> (arraytobytes, string) Stdlib.result
   val to_yojson : arraytobytes -> Yojson.Safe.t
 end = struct
 
@@ -230,7 +232,7 @@ end = struct
         | End -> 0
       in
       (* simulate the inner chunks of a shard as a regular grid of specified shape.*)
-      let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
+      let grid = Result.get_ok (RegularGrid.create ~array_shape:repr.shape t.chunk_shape) in
       (* build a finite map with its keys being an inner chunk's index and values
          being a list of (coord-within-inner-chunk, new-value) pairs such that
          new-value is set for the coordinate coord-within-inner-chunk of the inner
@@ -286,7 +288,7 @@ end = struct
       in
       let index_bytes = List.hd l in
       let idx_arr, _ = decode_index t cps index_bytes in
-      let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
+      let grid = Result.get_ok (RegularGrid.create ~array_shape:repr.shape t.chunk_shape) in
       let m = List.fold_left (add_binding ~grid) CoordMap.empty pairs in
       (* split the finite map m into key-value pairs representing empty inner chunks
          and those that don't (using the fact that empty inner chunks have index
@@ -351,7 +353,7 @@ end = struct
       in
       let index_bytes = List.hd l in
       let index, _ = decode_index t cps index_bytes in
-      let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
+      let grid = Result.get_ok (RegularGrid.create ~array_shape:repr.shape t.chunk_shape) in
       let m = List.fold_left (add_binding ~grid) CoordMap.empty pairs in
       let empty, nonempty = CoordMap.fold (choose ~index) m ([], []) in
       let ranges, bindings = List.split nonempty in
@@ -362,8 +364,8 @@ end = struct
       res1 @ res2
   end
 
-  let parse (t : arraytobytes) shape = match t with
-    | `Bytes _ -> ()
+  let parse (t : arraytobytes) shape : unit result = match t with
+    | `Bytes _ -> Ok ()
     | `ShardingIndexed c -> ShardingIndexed.parse c shape
 
   let encoded_size input_size (t : fixed_arraytobytes) = match t with
@@ -381,7 +383,7 @@ end = struct
     | `Bytes endian -> Bytes'.to_yojson endian
     | `ShardingIndexed c -> ShardingIndexed.to_yojson c
 
-  let of_yojson shape x : (arraytobytes, string) result =
+  let of_yojson shape x : (arraytobytes, string) Stdlib.result =
     match Util.get_name x with
     | "bytes" -> Result.map (fun e -> `Bytes e) (Bytes'.of_yojson x)
     | "sharding_indexed" -> Result.map (fun c -> `ShardingIndexed c) (ShardingIndexed.of_yojson shape x)
@@ -392,7 +394,7 @@ and Bytes' : sig
   val encoded_size : int -> int
   val encode : 'a Ndarray.t -> endianness -> string
   val decode : string -> 'a array_repr -> endianness -> 'a Ndarray.t
-  val of_yojson : Yojson.Safe.t -> (endianness, string) result
+  val of_yojson : Yojson.Safe.t -> (endianness, string) Stdlib.result
   val to_yojson : endianness -> Yojson.Safe.t
 end = struct
   let encoded_size : int -> int = Fun.id 
@@ -461,10 +463,10 @@ end
 
 and ShardingIndexed : sig
   type t = internal_shard_config
-  val parse : t -> int list -> unit
+  val parse : t -> int list -> unit result
   val encode : t -> 'a Ndarray.t -> string
   val decode : t -> 'a array_repr -> string -> 'a Ndarray.t
-  val of_yojson : int list -> Yojson.Safe.t -> (t, string) result
+  val of_yojson : int list -> Yojson.Safe.t -> (t, string) Stdlib.result
   val to_yojson : t -> Yojson.Safe.t
   val encode_chain : (arraytobytes, bytestobytes) chain -> 'a Ndarray.t -> string
   val decode_chain : (arraytobytes, bytestobytes) chain -> 'a array_repr -> string -> 'a Ndarray.t
@@ -475,21 +477,21 @@ end = struct
   module Indexing = Ndarray.Indexing
   type t = internal_shard_config  
 
-  let parse_chain : int list -> (arraytobytes, bytestobytes) chain -> unit = fun shape chain ->
+  let parse_chain : int list -> (arraytobytes, bytestobytes) chain -> unit result = fun shape chain ->
     let shape' = match chain.a2a with
-      | [] -> shape
-      | x :: _ as xs ->
-        ArrayToArray.parse x shape;
-        List.fold_left ArrayToArray.encoded_repr shape xs
+      | [] -> Ok shape
+      | x :: _ as xs -> match ArrayToArray.parse x shape with
+        | Ok () -> Ok (List.fold_left ArrayToArray.encoded_repr shape xs)
+        | Error #error as e -> e 
     in
-    ArrayToBytes.parse chain.a2b shape'
+    Result.bind shape' (ArrayToBytes.parse chain.a2b)
 
-  let parse t shape =
-    if List.(length shape <> length t.chunk_shape)
-    || not @@ List.for_all2 (fun x y -> (x mod y) = 0) shape t.chunk_shape
-    then raise Invalid_sharding_chunk_shape else
-    parse_chain shape t.codecs;
-    parse_chain (shape @ [2]) (t.index_codecs :> (arraytobytes, bytestobytes) chain)
+  let parse t shape = match t.chunk_shape with
+    | c when not @@ List.for_all2 (fun x y -> (x mod y) = 0) shape c -> Error `Invalid_sharding_chunk_shape
+    | c when List.(length shape <> length c) -> Error `Invalid_sharding_chunk_shape
+    | _ ->
+      Result.bind (parse_chain shape t.codecs) @@ fun () ->
+      parse_chain (shape @ [2]) (t.index_codecs :> (arraytobytes, bytestobytes) chain)
 
   let encoded_size init chain =
     let a2a_size = List.fold_left ArrayToArray.encoded_size init chain.a2a in
@@ -528,7 +530,7 @@ end = struct
     let shard_shape = Ndarray.shape x in
     let cps = List.map2 (/) shard_shape t.chunk_shape in
     let shard_idx = Ndarray.create Uint64 (cps @ [2]) Stdint.Uint64.max_int in
-    let grid = RegularGrid.create ~array_shape:shard_shape t.chunk_shape in
+    let grid = Result.get_ok (RegularGrid.create ~array_shape:shard_shape t.chunk_shape) in
     let kind = Ndarray.data_type x in
     let coords = Indexing.coords_of_slice [] shard_shape in
     let m = List.fold_right (add_coord ~grid ~arr:x) coords CoordMap.empty in
@@ -577,7 +579,7 @@ end = struct
     in
     let cps = List.map2 (/) repr.shape t.chunk_shape in
     let idx_arr, chunk_bytes = decode_index t cps b in
-    let grid = RegularGrid.create ~array_shape:repr.shape t.chunk_shape in
+    let grid = Result.get_ok (RegularGrid.create ~array_shape:repr.shape t.chunk_shape) in
     let coords = Indexing.coords_of_slice [] repr.shape in
     let m = List.fold_left2 (add_indexed_coord ~grid) CoordMap.empty List.(init (length coords) Fun.id) coords in
     let inner_repr = {repr with shape = t.chunk_shape} in
@@ -692,20 +694,22 @@ module Chain = struct
   type t = (arraytobytes, bytestobytes) chain
 
   let rec create shape chain =
+    let open Util.Result_syntax in
     let a2a, rest = extract_arraytoarray [] chain in
-    let a2b, rest = extract_arraytobytes shape rest in
+    let* a2b, rest = extract_arraytobytes shape rest in
     let b2b, other = extract_bytestobytes [] rest in
-    if List.compare_length_with other 0 <> 0 then raise Invalid_codec_ordering else
-    (* At this point the codec ordering in the chain is correct, so parse its contents.*)
-    let a2a_encoded_shape = match a2a with
-      | [] -> shape
-      | x :: _ as xs -> 
-        ArrayToArray.parse x shape;
-        List.fold_left ArrayToArray.encoded_repr shape xs
-    in
-    ArrayToBytes.parse a2b a2a_encoded_shape;
-    List.iter BytesToBytes.parse b2b;
-    {a2a; a2b; b2b}
+    match List.compare_length_with other 0 with
+    | l when l <> 0 -> Error `Invalid_codec_ordering
+    | _ ->
+      let* a2a_encoded_shape = match a2a with
+        | [] -> Ok shape
+        | x :: _ as xs ->
+          let+ () = ArrayToArray.parse x shape in
+          List.fold_left ArrayToArray.encoded_repr shape xs
+      in
+      let r = ArrayToBytes.parse a2b a2a_encoded_shape in
+      let+ () = List.fold_left (fun acc b -> Result.bind acc (fun () -> BytesToBytes.parse b)) r b2b in
+      {a2a; a2b; b2b}
 
   and extract_arraytoarray l r = match r with
     | (#arraytoarray as x) :: xs -> extract_arraytoarray (l @ [x]) xs
@@ -716,18 +720,19 @@ module Chain = struct
     | xs -> (l, xs)
 
   and extract_arraytobytes shape = function
-    | (#fixed_arraytobytes as x) :: xs -> (x, xs)
+    | (#fixed_arraytobytes as x) :: xs -> Ok (x, xs)
     | (#variable_array_tobytes as x) :: xs ->
+      let open Util.Result_syntax in
       begin match x with
       | `ShardingIndexed cfg ->
-        let codecs = create shape cfg.codecs in
-        let index_codecs = create (shape @ [2]) (cfg.index_codecs :> codec list) in
+        let* codecs = create shape cfg.codecs in
+        let* index_codecs = create (shape @ [2]) (cfg.index_codecs :> codec list) in
         (* coerse to a fixed codec chain list type *)
         let pred = function #fixed_bytestobytes as c -> Some c | _ -> None in
         let b2b = List.filter_map pred index_codecs.b2b in
-        let a2b = match index_codecs.a2b with
-          | #fixed_arraytobytes as c -> c
-          | _ -> raise Array_to_bytes_invariant 
+        let* a2b = match index_codecs.a2b with
+          | #fixed_arraytobytes as c -> Ok c
+          | _ -> Error `Array_to_bytes_invariant 
         in
         let cfg' : internal_shard_config = {
           index_codecs = {index_codecs with a2b; b2b};
@@ -735,9 +740,8 @@ module Chain = struct
           chunk_shape = cfg.chunk_shape;
           codecs;
         }
-        in (`ShardingIndexed cfg', xs)
-      end
-    | _ -> raise Array_to_bytes_invariant
+        in Ok (`ShardingIndexed cfg', xs) end
+    | _ -> Error `Array_to_bytes_invariant
  
   let encode t x =
     let a = List.fold_left ArrayToArray.encode x t.a2a in

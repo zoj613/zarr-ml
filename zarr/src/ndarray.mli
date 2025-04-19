@@ -99,22 +99,23 @@ module Indexing : sig
     | L of int list
     | R of int * int
     | R' of int * int * int
+  type t
+  type error = [ `Invalid_array_slice | `Invalid_data_type ]
 
-  val slice_of_coords : int list list -> index list
-  (** [slice_of_coords c] takes a list of array coordinates and returns
+  (*val slice_of_coords : int list list -> index list
+      [slice_of_coords c] takes a list of array coordinates and returns
       a slice corresponding to the coordinates. Elements of each slice
       variant are sorted in increasing order.*)
+
+  val create : index list -> int list -> (t, [> error]) result
+  (** [create xs shape] creates a slice from a description [xs] of indices
+      per dimension from an array of shape [s]. *)
       
-  val coords_of_slice : index list -> int list -> int list list
+  val coords_of_slice : t -> int list list
   (** [coords_of_slice s shp] returns an array of coordinates given
       a slice [s] and array shape [shp]. *)
 
-  val cartesian_prod : int list list -> int list list
-  (** [cartesian_prod ll] returns a cartesian product of the elements of
-      list [ll]. It is mainly used to generate a C-order of chunk indices
-      in a regular Zarr array grid. *)
-
-  val slice_shape : index list -> int list -> int list
+  val slice_shape : t -> int list
   (** [slice_shape s shp] returns the shape of slice [s] within an array
       of shape [shp]. *)
 end

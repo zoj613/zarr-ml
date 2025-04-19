@@ -1,6 +1,4 @@
 type error = [ `Node_invariant | `Cannot_rename_root | `Invalid_path ]
-type 'a result = ('a, error) Stdlib.result
-let open_error = function Ok _ as v -> v | Error #error as v -> v
 
 (* Check if the path's name satisfies path invariants *)
 let rep_ok name =
@@ -12,7 +10,7 @@ let rep_ok name =
 module Group = struct
   type t = Root | Cons of t * string
 
-  let create parent name : t result = match rep_ok name with
+  let create parent name = match rep_ok name with
     | false -> Error `Node_invariant
     | true -> Ok (Cons (parent, name))
 
@@ -65,7 +63,7 @@ module Group = struct
     | _, Root -> false
     | v, Cons (parent, _) -> parent = v
 
-  let rename t str : t result = match t with
+  let rename t str = match t with
     | Cons (parent, _) when rep_ok str -> Ok (Cons (parent, str))
     | Cons _ -> Error `Node_invariant
     | Root -> Error `Cannot_rename_root
@@ -108,7 +106,7 @@ module Array = struct
     | {parent = None; _} -> "zarr.json"
     | p -> to_key p ^ "/zarr.json"
 
-  let rename t name : t result = match t.parent with
+  let rename t name = match t.parent with
     | Some _ when rep_ok name -> Ok {t with name}
     | Some _ -> Error `Node_invariant
     | None -> Error `Cannot_rename_root

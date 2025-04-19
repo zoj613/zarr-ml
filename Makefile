@@ -4,7 +4,7 @@ build:
 
 .PHONY: clean
 clean:
-	dune clean
+	dune clean && rm -rf _coverage
 
 .PHONY: test
 test: build

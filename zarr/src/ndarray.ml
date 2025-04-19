@@ -164,51 +164,57 @@ module Indexing = struct
 
   (* internal restricted representation of index type *)
   type index' = L of int list | R' of int * int * int
+  type t = index' list
+
+  type error = [ `Invalid_array_slice | `Invalid_data_type ]
 
   (* this is copied from the Owl project so we skip testing it. *)
   let[@coverage off] check_slice_definition axis shp =
+    let open Util.Result_syntax in
     let axis_len = List.length axis in
     let shp_len = List.length shp in
-    assert (axis_len <= shp_len);
+    if not (axis_len <= shp_len) then Error `Invalid_array_slice else
     (* add missing definition on higher dimensions *)
     let axis = if axis_len < shp_len then axis @ List.init (shp_len - axis_len) (fun _ -> F) else axis in
     (* re-format slice definition, note I_ will be replaced with L_ *)
-    List.map2
-      (fun i n -> match i with
+    List.fold_right2
+      (fun i n acc ->
+      let* xs = acc in match i with
       | I x ->
         let x = if x >= 0 then x else n + x in
-        assert (x < n);
-        R' (x, x, 1)
+        if not (x < n) then Error `Invalid_array_slice else
+        Ok (R' (x, x, 1) :: xs)
       | L x ->
         let is_cont = ref true in
-        if List.length x <> n then is_cont := false;
-        let x =
-          List.mapi
-            (fun i j ->
+        let lx = List.length x in
+        if lx <> n then is_cont := false;
+        let idx = List.init lx Fun.id in
+        let* x =
+          List.fold_right2
+            (fun i j k ->
+              let* acc' = k in
               let j = if j >= 0 then j else n + j in
-              assert (j < n);
-              if i <> j then is_cont := false;
-              j)
-            x
+              if not (j < n) then Error `Invalid_array_slice else
+              (if i <> j then is_cont := false; Ok (j :: acc')))
+            idx x (Ok [])
         in
-        if !is_cont = true then R' (0, n-1, 1) else L x
-      | F -> R' (0, n - 1, 1)
+        if !is_cont = true then Ok (R' (0, n-1, 1) :: xs) else Ok (L x :: xs)
+      | F -> Ok (R' (0, n - 1, 1) :: xs)
       | T x ->
         let a = if x >= 0 then x else n + x in
-        assert (a < n);
-        R' (a, a, 1)
+        if not (a < n) then Error `Invalid_array_slice else Ok (R' (a, a, 1) :: xs)
       | R (x, y) ->
         let a = if x >= 0 then x else n + x in
         let b = if y >= 0 then y else n + y in
         let c = if a <= b then 1 else -1 in
         assert (not (a >= n || b >= n));
-        R' (a, b, c)
+        if (a >= n || b >= n) then Error `Invalid_array_slice else Ok (R' (a, b, c) :: xs)
       | R' (x, y, c) ->
         let a = if x >= 0 then x else n + x in
         let b = if y >= 0 then y else n + y in
-        assert (not (a >= n || b >= n || c = 0));
-        assert (not ((a < b && c < 0) || (a > b && c > 0)));
-        R' (a, b, c)) axis shp
+        if (a >= n || b >= n || c = 0) || ((a < b && c < 0) || (a > b && c > 0))
+        then Error `Invalid_array_slice else Ok (R' (a, b, c) :: xs))
+      axis shp (Ok [])
 
   (* this was opied from the Owl project so we skip testing it. *)
   let[@coverage off] calc_slice_shape axis =
@@ -218,9 +224,8 @@ module Indexing = struct
     in
     List.map f axis
 
-  let rec cartesian_prod : int list list -> int list list = function
-    | [] -> [[]]
-    | x :: xs -> List.concat_map (fun i -> List.map (List.cons i) (cartesian_prod xs)) x
+  let create = check_slice_definition
+  let slice_shape slice = calc_slice_shape slice
 
   let range ~step start stop =
     let rec aux ~step ~stop acc = function
@@ -229,25 +234,10 @@ module Indexing = struct
     in
     aux ~step ~stop [] start
        
-  (* get indices from a reformated slice *)
-  let indices_of_slice = function
-    | R' (start, stop, step) -> range ~step start stop
-    | L x -> x
-
-  let coords_of_slice slice shape =
-    cartesian_prod @@ List.map indices_of_slice (check_slice_definition slice shape)
-
-  let slice_of_coords = function
-    | [] as x -> x
-    | x :: _ as xs ->
-      let module S = Set.Make(Int) in
-      let add_unique ~acc i y = if S.mem y acc.(i) then () else acc.(i) <- S.add y acc.(i) in
-      let fill_dims coord acc = List.iteri (add_unique ~acc) coord; acc in
-      let ndims = List.length x in
-      let indices = Array.make ndims S.empty in
-      let dimsets = List.fold_right fill_dims xs indices in
-      List.map (fun s -> (L (S.elements s) : index)) (Array.to_list dimsets)
-
-  let slice_shape slice array_shape =
-    calc_slice_shape (check_slice_definition slice array_shape)
+  let coords_of_slice slice =
+    let indices_of_slice = function
+      | R' (start, stop, step) -> range ~step start stop
+      | L x -> x
+    in
+    Util.cartesian_prod (List.map indices_of_slice slice)
 end

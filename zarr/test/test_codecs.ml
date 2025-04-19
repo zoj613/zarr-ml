@@ -33,12 +33,16 @@ let tests = [
   assert_equal (Error `Invalid_codec_ordering) (Chain.create shape chain);
   let chain = [`Transpose [2; 1; 0]; `Crc32c] in
   assert_equal (Error `Array_to_bytes_invariant) (Chain.create shape chain);
-  let chain = [`Transpose [2; 1; 0]; `ShardingIndexed shard_cfg; `Crc32c; `Gzip L9] in
+  let chain = [`Transpose [2; 1; 0]; `ShardingIndexed shard_cfg; `Crc32c; `Zstd (0, false)] in
   let c = Result.get_ok (Chain.create shape chain) in
   let arr = Ndarray.create kind shape fill_value in
   let encoded = Chain.encode c arr in
   assert_equal arr (Chain.decode c {shape; kind} encoded);
   decode_chain ~shape ~str:"[]" ~msg:"Must be exactly one array->bytes codec.";
+  decode_chain
+    ~shape
+    ~str:{|[{"name": "bytes", "configuration": {"endian": "little"}}, {"name": "bytes", "configuration": {"endian": "big"}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
   decode_chain
     ~shape
     ~str:{|[{"name": "gzip", "configuration": {"level": 1}}]|}
@@ -49,8 +53,8 @@ let tests = [
     ~msg:"fake_codec codec is unsupported or has invalid configuration.";
 
   let str = Chain.to_yojson c |> Yojson.Safe.to_string in
-  (match Chain.of_yojson shape @@ Yojson.Safe.from_string str with
-  | Ok v -> assert_equal v c;
+  (match Chain.of_yojson shape (Yojson.Safe.from_string str) with
+  | Ok v -> assert_equal ~cmp:String.equal encoded (Chain.encode v arr)
   | Error _ -> assert_failure "a serialized chain should successfully deserialize"))
 ;
 
@@ -99,6 +103,19 @@ let tests = [
 ;
 
 "test sharding indexed codec" >:: (fun _ ->
+  (* test use of more than one bytes->array codec *)
+  decode_chain
+    ~shape:[5; 5; 5]
+    ~str:{|[
+      {"name": "sharding_indexed",
+       "configuration":
+         {"chunk_shape": [5, 5, 5],
+          "index_location": "end",
+          "codecs":
+            [{"name": "bytes", "configuration": {"endian": "little"}}, {"name": "bytes", "configuration": {"endian": "big"}}],
+          "index_codecs":
+            [{"name": "bytes", "configuration": {"endian": "big"}}]}}]|}
+    ~msg:"Must be exactly one array->bytes codec.";
   (* test missing chunk_shape field. *)
   decode_chain
     ~shape:[]

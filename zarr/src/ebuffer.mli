@@ -32,6 +32,5 @@ module type S = sig
   val get_nativeint : bytes -> int -> nativeint
 end
 
-module Little : sig include S end
-
-module Big : sig include S end
+module Little : S
+module Big : S

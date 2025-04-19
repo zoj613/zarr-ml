@@ -22,8 +22,6 @@ type error =
   | `Invalid_sharding_chunk_shape
   | `Invalid_codec_ordering
   | `Invalid_zstd_compression_level ]
-type 'a result = ('a, error) Stdlib.result
-let open_error = function Ok _ as v -> v | Error #error as v -> v
 
 module ArrayToArray = struct
   module Transpose = struct
@@ -62,7 +60,7 @@ module ArrayToArray = struct
       | _ -> Error "Invalid transpose configuration."
   end
 
-  let parse (t : arraytoarray) shape : unit result = match t with
+  let parse (t : arraytoarray) shape : (unit, [> error]) result = match t with
     | `Transpose order -> Transpose.parse ~order shape
 
   let encoded_size input_size (t : arraytoarray) = match t with
@@ -156,7 +154,7 @@ module BytesToBytes = struct
   let encoded_size input (t : fixed_bytestobytes) = match t with
     | `Crc32c -> Crc32c.encoded_size input
 
-  let parse : bytestobytes -> unit result = function
+  let parse : bytestobytes -> (unit, [> error]) result = function
     | `Zstd (l, _) -> Zstd.parse_clevel l
     | (`Gzip _ | `Crc32c) -> Ok ()
 
@@ -186,14 +184,26 @@ module CoordMap = Util.CoordMap
 module RegularGrid = Extensions.RegularGrid
 
 module rec ArrayToBytes : sig
-  module Make (IO : Types.IO) : sig
+  module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) : sig
     type t = internal_shard_config
-    type get_partial_values = Types.range list -> string list IO.t
-    type set_fn = ?append:bool -> (int * string) list -> unit IO.t
-    val partial_encode : t -> get_partial_values -> set_fn -> int -> 'a array_repr -> (int list * 'a) list -> 'a -> unit IO.t
-    val partial_decode : t -> get_partial_values -> int -> 'a array_repr -> (int * int list) list -> 'a -> (int * 'a) list IO.t
+    val partial_encode :
+      fill_value:'a ->
+      Store.t ->
+      Types.key ->
+      t ->
+      'a array_repr ->
+      (Types.chunk_coord * 'a) list ->
+      (unit, [> `Zarr of Store.error ]) result IO.t
+    val partial_decode :
+      fill_value:'a ->
+      Store.t ->
+      Types.key ->
+      t ->
+      'a array_repr ->
+      (int * Types.chunk_coord) list ->
+      ((int * 'a) list, [> `Zarr of Store.error ]) result IO.t
   end
-  val parse : arraytobytes -> int list -> unit result
+  val parse : arraytobytes -> int list -> (unit, [> error]) result
   val encoded_size : int -> fixed_arraytobytes -> int
   val encode : arraytobytes -> 'a Ndarray.t -> string
   val decode : arraytobytes -> 'a array_repr -> string -> 'a Ndarray.t
@@ -201,170 +211,174 @@ module rec ArrayToBytes : sig
   val to_yojson : arraytobytes -> Yojson.Safe.t
 end = struct
 
-  module Make (IO : Types.IO) = struct
-    open IO.Syntax
-    open ShardingIndexed
-
+  module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = struct
     type t = ShardingIndexed.t
-    type get_partial_values = (int * int option) list -> string list IO.t
-    type set_fn = ?append:bool -> (int * string) list -> unit IO.t
+    open IO.Syntax
 
-    let add_binding ~grid acc (c, v) =
-      let id, co = RegularGrid.index_coord_pair grid c in
-      CoordMap.add_to_list id (co, v) acc
+    let add_binding ~shard_grid acc (shard_coord, element) =
+      let innerchunk_index, coord_within_innerchunk = RegularGrid.index_coord_pair shard_grid shard_coord in
+      CoordMap.add_to_list innerchunk_index (coord_within_innerchunk, element) acc
 
-    (* specialized function for partially writing possibly multiple inner chunks
-       to an empty shard of a designated array using the sharding indexed codec.*)
-    let partial_encode_empty_shard t (set_partial : set_fn) repr pairs fill_value =
-      let update_index ~t ~index ~fill_value ~repr i z (ofs, acc) =
-        let arr = Ndarray.create repr.kind t.chunk_shape fill_value in
-        List.iter (fun (c, v) -> Ndarray.set arr c v) z;
-        let s = encode_chain t.codecs arr in
-        let n = String.length s in
-        Ndarray.set index (i @ [0]) (Stdint.Uint64.of_int ofs);
-        Ndarray.set index (i @ [1]) (Stdint.Uint64.of_int n);
-        ofs + n, (ofs, s) :: acc
+    (* specialized function for partially writing multiple inner chunks to an empty shard of a designated array using the sharding indexed codec.*)
+    let partial_encode_empty_shard fill_value store shard_key shard_params repr coord_elem_pairs =
+      let update_innerchunk ~shard_params ~index_array ~fill_value data_type innerchunk_index innerchunk_coord_elem_pairs (offset, acc) =
+        let arr = Ndarray.create data_type shard_params.chunk_shape fill_value in
+        List.iter (fun (coords, element) -> Ndarray.set arr coords element) innerchunk_coord_elem_pairs;
+        let innerchunk_data = ShardingIndexed.encode_innerchunk shard_params.codecs arr in
+        let nbytes = String.length innerchunk_data in
+        Ndarray.set index_array (innerchunk_index @ [0]) (Stdint.Uint64.of_int offset);
+        Ndarray.set index_array (innerchunk_index @ [1]) (Stdint.Uint64.of_int nbytes);
+        offset + nbytes, (offset, innerchunk_data) :: acc
       in
-      let cps = List.map2 (/) repr.shape t.chunk_shape in
-      let index = Ndarray.create Uint64 (cps @ [2]) Stdint.Uint64.max_int in
-      let init = match t.index_location with
-        | Start -> index_size t.index_codecs cps
+      let chunk_per_shard = List.map2 (/) repr.shape shard_params.chunk_shape in
+      let initial_offset = match shard_params.index_location with
+        | Start -> ShardingIndexed.index_size shard_params.index_codecs chunk_per_shard
         | End -> 0
       in
-      (* simulate the inner chunks of a shard as a regular grid of specified shape.*)
-      let grid = Result.get_ok (RegularGrid.create ~array_shape:repr.shape t.chunk_shape) in
+      (* simulate the inner chunks of a shard using a regular grid of specific shape.*)
+      let shard_grid = Result.get_ok (RegularGrid.create ~array_shape:repr.shape shard_params.chunk_shape) in
       (* build a finite map with its keys being an inner chunk's index and values
-         being a list of (coord-within-inner-chunk, new-value) pairs such that
-         new-value is set for the coordinate coord-within-inner-chunk of the inner
-         chunk represented by the associated key.*)
-      let m = List.fold_left (add_binding ~grid) CoordMap.empty pairs in
-      let shard_size, ranges = CoordMap.fold (update_index ~t ~index ~fill_value ~repr) m (init, []) in
-      let indexbytes = encode_index_chain t.index_codecs index in
+         being a list of (coord-within-inner-chunk, element) pairs such that
+         element is set for the coordinate coord-within-inner-chunk of the inner
+         chunk represented by the associated key/index.*)
+      let index_array = Ndarray.create Uint64 (chunk_per_shard @ [2]) Stdint.Uint64.max_int in
+      let m = List.fold_left (add_binding ~shard_grid) CoordMap.empty coord_elem_pairs in
+      let shardsize, offset_bytes_pairs = CoordMap.fold (update_innerchunk ~shard_params ~index_array ~fill_value repr.kind) m (initial_offset, []) in
+      let indexbytes = ShardingIndexed.encode_index_chain shard_params.index_codecs index_array in
       (* write all resultant (offset, bytes) pairs into the bytes of the new shard
          taking note to append/prepend the bytes of the shard's index array.*)
-      match t.index_location with
-      | Start -> set_partial ((0, indexbytes) :: List.rev ranges)
-      | End -> set_partial (List.rev @@ (shard_size, indexbytes) :: ranges)
+      match shard_params.index_location with
+      | Start -> Store.set_partial_values store shard_key ((0, indexbytes) :: List.rev offset_bytes_pairs)
+      | End -> Store.set_partial_values store shard_key (List.rev @@ (shardsize, indexbytes) :: offset_bytes_pairs)
 
-    (* function to partially write new values to one or more inner chunks of
+    (* function to partially write new elements to one or more inner chunks of
        an existing shard using the sharding indexed codec. *)
-    let partial_encode t get_partial (set_partial : set_fn) shardsize repr pairs fv =
-      let choose ~idx_arr key value (l, r) =
-        let oc = key @ [0] and nc = key @ [1] in
-        match Ndarray.(get idx_arr oc, get idx_arr nc) with
-        | o, n when Stdint.Uint64.(max_int = o && max_int = n) ->
-          ((-1, None), (oc, nc, -1, 0, value)) :: l, r
-        | o, n ->
-          let o', n' = Stdint.Uint64.(to_int o, to_int n) in
-          l, ((o', Some n'), (oc, nc, o', n', value)) :: r
+    let partial_encode ~fill_value store shard_key shard_params repr coord_elem_pairs =
+      let choose ~index_array innerchunk_index element (l, r) =
+        let offset_coords = innerchunk_index @ [0] and nbytes_coords = innerchunk_index @ [1] in
+        match Ndarray.(get index_array offset_coords, get index_array nbytes_coords) with
+        | offset, nbytes when Stdint.Uint64.(max_int = offset && max_int = nbytes) ->
+          (offset_coords, nbytes_coords, element) :: l, r
+        | offset, nbytes ->
+          l, (Stdint.Uint64.to_int offset, Stdint.Uint64.to_int nbytes, offset_coords, nbytes_coords, element) :: r
       in
-      let accumulate_nonempty ~repr' ~idx_arr (acc, l, r) x (oc, nc, ofs, nb, z) =
-        let arr = decode_chain t.codecs repr' x in
-        List.iter (fun (c, v) -> Ndarray.set arr c v) z;
-        let s = encode_chain t.codecs arr in
-        let nb' = String.length s in
-        if nb' = nb then acc, (ofs, s) :: l, r else begin
-          Ndarray.set idx_arr oc (Stdint.Uint64.of_int acc);
-          Ndarray.set idx_arr nc (Stdint.Uint64.of_int nb');
-          acc + nb', l, (acc, s) :: r
+      let update_nonempty_innerchunk ~repr' ~index_array codec_chain (acc, l, r) data (offset, nbytes, offset_coords, nbytes_coords, innerchunk_coord_elem_pairs) =
+        let arr = ShardingIndexed.decode_innerchunk codec_chain repr' data in
+        List.iter (fun (coords, element) -> Ndarray.set arr coords element) innerchunk_coord_elem_pairs;
+        let data' = ShardingIndexed.encode_innerchunk codec_chain arr in
+        let nbytes' = String.length data' in
+        if nbytes' = nbytes then acc, (offset, data') :: l, r else begin
+          Ndarray.set index_array offset_coords (Stdint.Uint64.of_int acc);
+          Ndarray.set index_array nbytes_coords (Stdint.Uint64.of_int nbytes');
+          acc + nbytes', l, (acc, data') :: r
         end
       in
-      let accumulate_empty ~repr' ~idx_arr ~fv (ofs, l) (_, (oc, nc, _, _, z)) =
-        let arr = Ndarray.create repr'.kind repr'.shape fv in 
-        List.iter (fun (c, v) -> Ndarray.set arr c v) z;
-        let s = encode_chain t.codecs arr in
-        let n = String.length s in
-        Ndarray.set idx_arr oc (Stdint.Uint64.of_int ofs);
-        Ndarray.set idx_arr nc (Stdint.Uint64.of_int n);
-        ofs + n, (ofs, s) :: l
+      let update_empty_innerchunk ~shard_params ~index_array ~fill_value data_type (offset, acc) (offset_coords, nbytes_coords, innerchunk_coord_elem_pairs) =
+        let arr = Ndarray.create data_type shard_params.chunk_shape fill_value in 
+        List.iter (fun (coords, element) -> Ndarray.set arr coords element) innerchunk_coord_elem_pairs;
+        let innerchunk_data = ShardingIndexed.encode_innerchunk shard_params.codecs arr in
+        let nbytes = String.length innerchunk_data in
+        Ndarray.set index_array offset_coords (Stdint.Uint64.of_int offset);
+        Ndarray.set index_array nbytes_coords (Stdint.Uint64.of_int nbytes);
+        offset + nbytes, (offset, innerchunk_data) :: acc
       in
       (* begin *)
-      if shardsize = 0 then partial_encode_empty_shard t set_partial repr pairs fv else
-      let cps = List.map2 (/) repr.shape t.chunk_shape in
-      let is = index_size t.index_codecs cps in
-      let* l = match t.index_location with
-        | Start -> get_partial [0, Some is]
-        | End -> get_partial [shardsize - is, None]
+      let* shard_size = Store.size store shard_key in
+      if shard_size = 0 then partial_encode_empty_shard fill_value store shard_key shard_params repr coord_elem_pairs else
+      let chunks_per_shard = List.map2 (/) repr.shape shard_params.chunk_shape in
+      let index_size = ShardingIndexed.index_size shard_params.index_codecs chunks_per_shard in
+      let* index_data = match shard_params.index_location with
+        | Start -> IO.map List.hd (Store.get_partial_values store shard_key [0, Some index_size])
+        | End -> IO.map List.hd (Store.get_partial_values store shard_key [shard_size - index_size, None])
       in
-      let index_bytes = List.hd l in
-      let idx_arr, _ = decode_index t cps index_bytes in
-      let grid = Result.get_ok (RegularGrid.create ~array_shape:repr.shape t.chunk_shape) in
-      let m = List.fold_left (add_binding ~grid) CoordMap.empty pairs in
+      let index_array = fst @@ ShardingIndexed.decode_index shard_params chunks_per_shard index_data in
+      (* Using Result.get_ok here is safe since RegularGrid.create is guaranteed to be called with correct arguments *)
+      let shard_grid = Result.get_ok (RegularGrid.create ~array_shape:repr.shape shard_params.chunk_shape) in
+      let m = List.fold_left (add_binding ~shard_grid) CoordMap.empty coord_elem_pairs in
       (* split the finite map m into key-value pairs representing empty inner chunks
          and those that don't (using the fact that empty inner chunks have index
          array values equal to 2^64 - 1; then process these seperately.*)
-      let empty, nonempty = CoordMap.fold (choose ~idx_arr) m ([], []) in
-      let ranges, nonempty' = List.split nonempty in
-      let* xs = get_partial ranges in
-      let repr' = {repr with shape = t.chunk_shape} in
+      let empty, nonempty = CoordMap.fold (choose ~index_array) m ([], []) in
+      let ranges = List.map (fun (offset, nbytes, _, _, _) -> offset, Some nbytes) nonempty in
+      let* innerchunks = Store.get_partial_values store shard_key ranges in
+      let repr' = {repr with shape = shard_params.chunk_shape} in
       (* fold over the nonempty index coordinates and finite map to obtain
          (offset, bytes) pairs to write in-place and those to append at the
          end of the shard. bytes to write in-place are determined by comparing
          encoded size vs the corresponding nbytes[i] value already contained in
          the shard's index array.*)
-      let bsize, inplace, nonempty_append =
-        List.fold_left2 (accumulate_nonempty ~repr' ~idx_arr) (shardsize, [], []) xs nonempty'
+      let shard_size', indexed_innerchunks, indexed_innerchunks' =
+        ListLabels.fold_left2
+          ~f:(update_nonempty_innerchunk ~repr' ~index_array shard_params.codecs)
+          ~init:(shard_size, [], [])
+          innerchunks
+          nonempty
       in
-      let* () = match inplace with
+      let* () = match indexed_innerchunks with
         | [] -> IO.return_unit
-        | rs -> set_partial rs
+        | rs -> Store.set_partial_values store shard_key rs
       in
-      let* () = match nonempty_append with
+      let* () = match indexed_innerchunks' with
         | [] -> IO.return_unit
-        | rs -> set_partial ~append:true (List.rev rs)
+        | rs -> Store.set_partial_values store shard_key ~append:true (List.rev rs)
       in
       (* new values that need to be written to previously empty inner chunks will
          be appended at the end of the shard and the corresponding index array's
          offset and number-of-bytes values updated accordingly.*)
-      let bsize', empty_append =
-        List.fold_left (accumulate_empty ~repr' ~idx_arr ~fv) (bsize, []) empty
+      let shard_size'', indexed_innerchunks'' =
+        ListLabels.fold_left
+          ~f:(update_empty_innerchunk ~shard_params ~index_array ~fill_value repr.kind)
+          ~init:(shard_size', [])
+          empty
       in
-      let* () = match empty_append with
+      let* () = match indexed_innerchunks'' with
         | [] -> IO.return_unit
-        | rs -> set_partial ~append:true (List.rev rs)
-      in
-      let ib = encode_index_chain t.index_codecs idx_arr in
-      match t.index_location with
-      | Start -> set_partial [0, ib]
-      | End -> set_partial ~append:true [bsize', ib]
+        | rs -> Store.set_partial_values store shard_key ~append:true (List.rev rs)
+    in
+    let indexbytes = ShardingIndexed.encode_index_chain shard_params.index_codecs index_array in
+    match shard_params.index_location with
+    | Start -> Store.set_partial_values store shard_key [(0, indexbytes)]
+    | End -> Store.set_partial_values store shard_key ~append:true [(shard_size'', indexbytes)]
       (* end *)
 
     (* function to partially read values off of a non-empty shard previously
        encoded using the sharding indexed codec. *) 
-    let partial_decode t get_partial shardsize repr (pairs : (int * int list) list) fill_value =
-      let add_binding ~grid acc (i, y) =
-        let id, c = RegularGrid.index_coord_pair grid y in
-        CoordMap.add_to_list id (i, c) acc
+    let partial_decode ~fill_value store chunk_key shard_params repr (indexed_shard_coords : (int * Types.chunk_coord) list) =
+      let add_indexed_innerchunk_coord ~shard_grid acc ((i, shard_coord) : int * int list) =
+        let innerchunk_index, coord_within_innerchunk = RegularGrid.index_coord_pair shard_grid shard_coord in
+        CoordMap.add_to_list innerchunk_index (i, coord_within_innerchunk) acc
       in
-      let choose ~index key value (l, r) = match Ndarray.(get index (key @ [0]), get index (key @ [1])) with
-        | o, n when Stdint.Uint64.(max_int = o && max_int = n) -> ((-1, None), value) :: l, r
-        | o, n -> l, ((Stdint.Uint64.to_int o, Some (Stdint.Uint64.to_int n)), value) :: r
+      let choose ~index_array innerchunk_index (indexed_innerchunk_coords : (int * int list) list) (l, r) =
+        match Ndarray.(get index_array (innerchunk_index @ [0]), get index_array (innerchunk_index @ [1])) with
+        | offset, nbytes when Stdint.Uint64.(max_int = offset && max_int = nbytes) ->
+          l @ fst (List.split indexed_innerchunk_coords), r
+        | offset, nbytes ->
+          l, ((Stdint.Uint64.to_int offset, Some (Stdint.Uint64.to_int nbytes)), indexed_innerchunk_coords) :: r
       in
-      let indexed_chunk_data ~repr' acc x z =
-        let arr = decode_chain t.codecs repr' x in
-        acc @ List.map (fun ((i, c) : int * int list) -> i, Ndarray.get arr c) z
+      let indexed_innerchunk_element repr' acc data (indexed_innerchunk_coords : (int * int list) list) =
+        let arr = ShardingIndexed.decode_innerchunk shard_params.codecs repr' data in
+        acc @ List.map (fun (i, coords) -> i, Ndarray.get arr coords) indexed_innerchunk_coords
       in
-      let indexed_empty_chunk (_, z) = List.map (fun ((i, _) : int * int list) -> i, fill_value) z in
-      let cps = List.map2 (/) repr.shape t.chunk_shape in
-      let is = index_size t.index_codecs cps in
-      let* l = match t.index_location with
-        | Start -> get_partial [0, Some is]
-        | End -> get_partial [shardsize - is, None]
+      let chunks_per_shard = List.map2 (/) repr.shape shard_params.chunk_shape in
+      let index_size = ShardingIndexed.index_size shard_params.index_codecs chunks_per_shard in
+      let* shard_size = Store.size store chunk_key in
+      let* shard_data = match shard_params.index_location with
+        | Start -> IO.map List.hd (Store.get_partial_values store chunk_key [(0, Some index_size)])
+        | End -> IO.map List.hd (Store.get_partial_values store chunk_key [(shard_size - index_size, None)])
       in
-      let index_bytes = List.hd l in
-      let index, _ = decode_index t cps index_bytes in
-      let grid = Result.get_ok (RegularGrid.create ~array_shape:repr.shape t.chunk_shape) in
-      let m = List.fold_left (add_binding ~grid) CoordMap.empty pairs in
-      let empty, nonempty = CoordMap.fold (choose ~index) m ([], []) in
-      let ranges, bindings = List.split nonempty in
-      let+ xs = get_partial ranges in
-      let repr' = {repr with shape = t.chunk_shape} in
-      let res1 = List.fold_left2 (indexed_chunk_data ~repr') [] xs bindings in
-      let res2 = List.concat_map indexed_empty_chunk empty in  
-      res1 @ res2
+      let index_array = fst @@ ShardingIndexed.decode_index shard_params chunks_per_shard shard_data in
+      let shard_grid = Result.get_ok (RegularGrid.create ~array_shape:repr.shape shard_params.chunk_shape) in
+      let m = List.fold_left (add_indexed_innerchunk_coord ~shard_grid) CoordMap.empty indexed_shard_coords in
+      let empty, nonempty = CoordMap.fold (choose ~index_array) m ([], []) in
+      let ranges, indexed_innerchunk_coords = List.split nonempty in
+      let+ innerchunks = Store.get_partial_values store chunk_key ranges in
+      let repr' = {repr with shape = shard_params.chunk_shape} in
+      let res1 = List.fold_left2 (indexed_innerchunk_element repr') [] innerchunks indexed_innerchunk_coords in
+      let res2 = List.map (fun i -> i, fill_value) empty in  
+      res1 @ res2  (* indexed chunk coord data *)
   end
 
-  let parse (t : arraytobytes) shape : unit result = match t with
+  let parse (t : arraytobytes) shape : (unit, [> error]) result = match t with
     | `Bytes _ -> Ok ()
     | `ShardingIndexed c -> ShardingIndexed.parse c shape
 
@@ -463,13 +477,13 @@ end
 
 and ShardingIndexed : sig
   type t = internal_shard_config
-  val parse : t -> int list -> unit result
+  val parse : t -> int list -> (unit, [> error]) result
   val encode : t -> 'a Ndarray.t -> string
   val decode : t -> 'a array_repr -> string -> 'a Ndarray.t
   val of_yojson : int list -> Yojson.Safe.t -> (t, string) Stdlib.result
   val to_yojson : t -> Yojson.Safe.t
-  val encode_chain : (arraytobytes, bytestobytes) chain -> 'a Ndarray.t -> string
-  val decode_chain : (arraytobytes, bytestobytes) chain -> 'a array_repr -> string -> 'a Ndarray.t
+  val encode_innerchunk : (arraytobytes, bytestobytes) chain -> 'a Ndarray.t -> string
+  val decode_innerchunk : (arraytobytes, bytestobytes) chain -> 'a array_repr -> string -> 'a Ndarray.t
   val decode_index : t -> int list -> string -> Stdint.uint64 Ndarray.t * string
   val index_size : (fixed_arraytobytes, fixed_bytestobytes) chain -> int list -> int
   val encode_index_chain : (fixed_arraytobytes, fixed_bytestobytes) chain -> Stdint.uint64 Ndarray.t -> string
@@ -477,18 +491,19 @@ end = struct
   module Indexing = Ndarray.Indexing
   type t = internal_shard_config  
 
-  let parse_chain : int list -> (arraytobytes, bytestobytes) chain -> unit result = fun shape chain ->
+  let parse_chain (shape : int list) (chain : (arraytobytes, bytestobytes) chain) =
     let shape' = match chain.a2a with
       | [] -> Ok shape
-      | x :: _ as xs -> match ArrayToArray.parse x shape with
-        | Ok () -> Ok (List.fold_left ArrayToArray.encoded_repr shape xs)
-        | Error #error as e -> e 
+      | x :: _ as xs ->
+        Result.map
+          (fun () -> List.fold_left ArrayToArray.encoded_repr shape xs)
+          (ArrayToArray.parse x shape)
     in
     Result.bind shape' (ArrayToBytes.parse chain.a2b)
 
   let parse t shape = match t.chunk_shape with
-    | c when not @@ List.for_all2 (fun x y -> (x mod y) = 0) shape c -> Error `Invalid_sharding_chunk_shape
     | c when List.(length shape <> length c) -> Error `Invalid_sharding_chunk_shape
+    | c when not @@ List.for_all2 (fun x y -> (x mod y) = 0) shape c -> Error `Invalid_sharding_chunk_shape
     | _ ->
       Result.bind (parse_chain shape t.codecs) @@ fun () ->
       parse_chain (shape @ [2]) (t.index_codecs :> (arraytobytes, bytestobytes) chain)
@@ -498,7 +513,7 @@ end = struct
     let a2b_size = ArrayToBytes.encoded_size a2a_size chain.a2b in
     List.fold_left BytesToBytes.encoded_size a2b_size chain.b2b
   
-  let encode_chain chain x =
+  let encode_innerchunk chain x =
     let a = List.fold_left ArrayToArray.encode x chain.a2a in
     let b = ArrayToBytes.encode chain.a2b a in
     List.fold_left BytesToBytes.encode b chain.b2b
@@ -521,7 +536,7 @@ end = struct
     let update_inner_chunk ~t ~shard_idx ~kind i pairs (ofs, xs) =
       let v = Array.of_list (List.map snd pairs) in
       let x' = Ndarray.of_array kind t.chunk_shape v in
-      let b = encode_chain t.codecs x' in
+      let b = encode_innerchunk t.codecs x' in
       let nb = Stdint.Uint64.of_int (String.length b) in
       Ndarray.set shard_idx (i @ [0]) ofs;
       Ndarray.set shard_idx (i @ [1]) nb;
@@ -532,15 +547,15 @@ end = struct
     let shard_idx = Ndarray.create Uint64 (cps @ [2]) Stdint.Uint64.max_int in
     let grid = Result.get_ok (RegularGrid.create ~array_shape:shard_shape t.chunk_shape) in
     let kind = Ndarray.data_type x in
-    let coords = Indexing.coords_of_slice [] shard_shape in
-    let m = List.fold_right (add_coord ~grid ~arr:x) coords CoordMap.empty in
+    let slice = Result.get_ok (Indexing.create [] shard_shape) in
+    let m = List.fold_right (add_coord ~grid ~arr:x) (Indexing.coords_of_slice slice) CoordMap.empty in
     let _, xs = CoordMap.fold (update_inner_chunk ~t ~shard_idx ~kind) m (Stdint.Uint64.zero, []) in
     let idx_bytes = encode_index_chain t.index_codecs shard_idx in
     match t.index_location with
     | Start -> String.concat String.empty (idx_bytes :: List.rev xs)
     | End -> String.concat String.empty (List.rev (idx_bytes :: xs))
 
-  let decode_chain t repr x =
+  let decode_innerchunk t repr x =
     let shape = List.fold_left ArrayToArray.encoded_repr repr.shape t.a2a in
     let b2b = List.fold_right BytesToBytes.decode t.b2b x in
     let a2b = ArrayToBytes.decode t.a2b {repr with shape} b2b in
@@ -555,16 +570,17 @@ end = struct
     | [] -> arr
     | `Transpose o :: _ -> ArrayToArray.Transpose.decode o arr
 
-  let index_size index_chain cps = encoded_size (16 * List.fold_left Int.mul 1 cps) index_chain
+  let index_size index_chain chunks_per_shard =
+    encoded_size (16 * List.fold_left Int.mul 1 chunks_per_shard) index_chain
 
-  let decode_index t cps b =
-    let l = index_size t.index_codecs cps in
-    let o = String.length b - l in
-    let ib, rest = match t.index_location with
-      | End -> String.sub b o l, String.sub b 0 o
-      | Start -> String.sub b 0 l, String.sub b l o
+  let decode_index t chunks_per_shard shard_data =
+    let l = index_size t.index_codecs chunks_per_shard in
+    let o = String.length shard_data - l in
+    let index_data, chunk_data = match t.index_location with
+      | End -> String.sub shard_data o l, String.sub shard_data 0 o
+      | Start -> String.sub shard_data 0 l, String.sub shard_data l o
     in
-    decode_index_chain t.index_codecs (cps @ [2]) ib, rest
+    decode_index_chain t.index_codecs (chunks_per_shard @ [2]) index_data, chunk_data
 
   let decode (type a) (t : t) (repr : a array_repr) (b : string) =
     let add_indexed_coord ~grid acc i coord =
@@ -574,13 +590,14 @@ end = struct
     let read_inner_chunk ~t ~idx_arr ~inner_repr ~chunk_bytes key value acc =
       let ofs = Stdint.Uint64.to_int (Ndarray.get idx_arr (key @ [0])) in
       let nb = Stdint.Uint64.to_int (Ndarray.get idx_arr (key @ [1])) in
-      let arr = decode_chain t.codecs inner_repr (String.sub chunk_bytes ofs nb) in
+      let arr = decode_innerchunk t.codecs inner_repr (String.sub chunk_bytes ofs nb) in
       acc @ List.map (fun ((i, c) : int * int list) -> i, Ndarray.get arr c) value
     in
-    let cps = List.map2 (/) repr.shape t.chunk_shape in
-    let idx_arr, chunk_bytes = decode_index t cps b in
+    let chunks_per_shard = List.map2 (/) repr.shape t.chunk_shape in
+    let idx_arr, chunk_bytes = decode_index t chunks_per_shard b in
     let grid = Result.get_ok (RegularGrid.create ~array_shape:repr.shape t.chunk_shape) in
-    let coords = Indexing.coords_of_slice [] repr.shape in
+    let slice = Result.get_ok (Indexing.create [] repr.shape) in
+    let coords = Indexing.coords_of_slice slice in
     let m = List.fold_left2 (add_indexed_coord ~grid) CoordMap.empty List.(init (length coords) Fun.id) coords in
     let inner_repr = {repr with shape = t.chunk_shape} in
     let pairs = CoordMap.fold (read_inner_chunk ~t ~idx_arr ~inner_repr ~chunk_bytes) m [] in
@@ -609,62 +626,43 @@ end = struct
        ("codecs", chain_to_yojson t.codecs)])]
 
   let chain_of_yojson (chunk_shape : int list) codecs =
-    let open Util.Result_syntax in
-    let split ~f codec (l, r) = 
-      Result.fold ~ok:(fun v -> v :: l, r) ~error:(fun _ -> l, codec :: r) (f codec)
-    in
+    let split ~f codec (l, r) = Result.fold ~ok:(fun v -> v :: l, r) ~error:(fun _ -> l, codec :: r) (f codec) in
     let partition f encoded = List.fold_right (split ~f) encoded ([], []) in
-    let* codecs = match codecs with
-      | [] -> Error "No codec chain specified for sharding_indexed."
-      | y -> Ok y
-    in
-    let* a2b, rest = match partition (ArrayToBytes.of_yojson chunk_shape) codecs with
-      | [x], rest -> Ok (x, rest)
-      | _ -> Error "Must be exactly one array->bytes codec."
-    in
-    let a2a, rest = partition (ArrayToArray.of_yojson chunk_shape) rest in
-    let b2b, rest = partition BytesToBytes.of_yojson rest in
-    match rest with
-    | [] -> Ok {a2a; a2b; b2b}
-    | x :: _ ->
-      let codec = Util.get_name x in
-      Error (Printf.sprintf "%s codec is unsupported or has invalid configuration." codec)
+    match codecs with
+    | [] -> Error "No codec chain specified for sharding_indexed."
+    | y -> match partition (ArrayToBytes.of_yojson chunk_shape) y with
+      | ([], _ | _::_::_, _) -> Error "Must be exactly one array->bytes codec."
+      | a2b :: [], xs ->
+        let a2a, rest = partition (ArrayToArray.of_yojson chunk_shape) xs in
+        match partition BytesToBytes.of_yojson rest with
+        | b2b, [] -> Ok {a2a; a2b; b2b}
+        | _, x :: _ -> Error (Printf.sprintf "%s codec is unsupported or has invalid configuration." (Util.get_name x))
 
   let of_yojson (shard_shape : int list) x =
     let open Util.Result_syntax in
-    let extract ~assoc name =
-      Yojson.Safe.Util.filter_map (fun (n, v) -> if n = name then Some v else None) assoc
-    in
-    let add_as_int a acc =
-      let* k = acc in
-      match a with
+    let extract ~assoc name = Yojson.Safe.Util.filter_map (fun (n, v) -> if n = name then Some v else None) assoc in
+    let add_as_int a acc = Result.bind acc @@ fun k -> match a with
       | `Int i when i > 0 -> Ok (i :: k)
       | _ -> Error "chunk_shape must only contain positive integers."
     in
-    let add_fixed_size_codec ~error_msg c acc =
-      let* l = acc in
-      match c with
+    let add_fixed_size_codec ~error_msg c acc = Result.bind acc @@ fun l -> match c with
       | `Crc32c -> Ok (`Crc32c :: l)
       | `Gzip _ | `Zstd _ -> Error error_msg
     in
     let assoc = Yojson.Safe.Util.(member "configuration" x |> to_assoc) in
-    let* chunk_shape = match extract ~assoc "chunk_shape" with
+    let* index_location = match extract ~assoc "index_location" with
+      | `String "end" :: [] -> Ok End
+      | `String "start" :: [] -> Ok Start
+      | [] -> Error "sharding_indexed must have a index_location field"
+      | _ -> Error "index_location must only be 'end' or 'start'"
+    and* chunk_shape = match extract ~assoc "chunk_shape" with
       | [] -> Error "sharding_indexed must contain a chunk_shape field"
       | x :: _ -> List.fold_right add_as_int (Yojson.Safe.Util.to_list x) (Ok [])
-    in
-    let* index_location = match extract ~assoc "index_location" with
-      | [] -> Error "sharding_indexed must have a index_location field"
-      | x :: _ ->
-        match x with
-        | `String "end" -> Ok End
-        | `String "start" -> Ok Start
-        | _ -> Error "index_location must only be 'end' or 'start'"
     in
     let* codecs = match extract ~assoc "codecs" with
       | [] -> Error "sharding_indexed must have a codecs field"
       | x :: _ -> chain_of_yojson chunk_shape (Yojson.Safe.Util.to_list x)
-    in
-    let* ic = match extract ~assoc "index_codecs" with
+    and* ic = match extract ~assoc "index_codecs" with
       | [] -> Error "sharding_indexed must have a index_codecs field"
       | x :: _ ->
         let cps = List.map2 (/) shard_shape chunk_shape in
@@ -695,52 +693,49 @@ module Chain = struct
 
   let rec create shape chain =
     let open Util.Result_syntax in
-    let a2a, rest = extract_arraytoarray [] chain in
-    let* a2b, rest = extract_arraytobytes shape rest in
-    let b2b, other = extract_bytestobytes [] rest in
-    match List.compare_length_with other 0 with
-    | l when l <> 0 -> Error `Invalid_codec_ordering
-    | _ ->
-      let* a2a_encoded_shape = match a2a with
-        | [] -> Ok shape
-        | x :: _ as xs ->
-          let+ () = ArrayToArray.parse x shape in
-          List.fold_left ArrayToArray.encoded_repr shape xs
-      in
-      let r = ArrayToBytes.parse a2b a2a_encoded_shape in
-      let+ () = List.fold_left (fun acc b -> Result.bind acc (fun () -> BytesToBytes.parse b)) r b2b in
-      {a2a; a2b; b2b}
+    let* a2a, encoded_shape, rest = extract_arraytoarray [] shape chain in
+    let* a2b, other = extract_arraytobytes encoded_shape rest in
+    let* b2b, rest = extract_bytestobytes [] other in
+    match rest with
+    | _::_ -> Error `Invalid_codec_ordering
+    | [] -> Ok {a2a; a2b; b2b}
 
-  and extract_arraytoarray l r = match r with
-    | (#arraytoarray as x) :: xs -> extract_arraytoarray (l @ [x]) xs
-    | xs -> (l, xs)
+  and extract_arraytoarray l shape r = match r with
+    | (#arraytoarray as x) :: xs -> extract_arraytoarray (l @ [x]) shape xs
+    | _ -> match l with
+      | [] as e -> Ok (e, shape, r)
+      | x :: _ -> Result.map (fun () -> l, List.fold_left ArrayToArray.encoded_repr shape l, r) (ArrayToArray.parse x shape)
 
   and extract_bytestobytes l r = match r with
     | (#bytestobytes as x) :: xs -> extract_bytestobytes (l @ [x]) xs
-    | xs -> (l, xs)
+    | _ -> match l with
+      | [] as e -> Ok (e, r)
+      | _ ->
+        let is_ok = List.fold_left (fun acc b -> Result.bind acc (fun () -> BytesToBytes.parse b)) (Ok ()) l in
+        Result.map (fun () -> l, r) is_ok
 
   and extract_arraytobytes shape = function
-    | (#fixed_arraytobytes as x) :: xs -> Ok (x, xs)
+    | (#fixed_arraytobytes as x) :: xs -> Result.map (fun () -> x, xs) (ArrayToBytes.parse x shape)
     | (#variable_array_tobytes as x) :: xs ->
       let open Util.Result_syntax in
       begin match x with
       | `ShardingIndexed cfg ->
-        let* codecs = create shape cfg.codecs in
-        let* index_codecs = create (shape @ [2]) (cfg.index_codecs :> codec list) in
+        let* codecs = create shape cfg.codecs
+        and* index_codecs = create (shape @ [2]) (cfg.index_codecs :> codec list) in
         (* coerse to a fixed codec chain list type *)
-        let pred = function #fixed_bytestobytes as c -> Some c | _ -> None in
-        let b2b = List.filter_map pred index_codecs.b2b in
         let* a2b = match index_codecs.a2b with
           | #fixed_arraytobytes as c -> Ok c
           | _ -> Error `Array_to_bytes_invariant 
         in
+        let pred = function #fixed_bytestobytes as c -> Some c | _ -> None in
         let cfg' : internal_shard_config = {
-          index_codecs = {index_codecs with a2b; b2b};
+          index_codecs = {index_codecs with a2b; b2b = List.filter_map pred index_codecs.b2b};
           index_location = cfg.index_location;
           chunk_shape = cfg.chunk_shape;
           codecs;
-        }
-        in Ok (`ShardingIndexed cfg', xs) end
+        } in
+        Result.map (fun () -> `ShardingIndexed cfg', xs) (ArrayToBytes.parse (`ShardingIndexed cfg') shape)
+      end
     | _ -> Error `Array_to_bytes_invariant
  
   let encode t x =
@@ -763,42 +758,36 @@ module Chain = struct
     let b2b = List.map BytesToBytes.to_yojson t.b2b in
     `List (a2a @ (a2b :: b2b))
 
-  let of_yojson chunk_shape x =
-    let open Util.Result_syntax in
-    let split ~f codec (l, r) = 
-      Result.fold ~ok:(fun v -> v :: l, r) ~error:(fun _ -> l, codec :: r) (f codec)
-    in
+  let of_yojson chunk_shape (x : Yojson.Safe.t) =
+    let split ~f codec (l, r) = Result.fold ~ok:(fun v -> v :: l, r) ~error:(fun _ -> l, codec :: r) (f codec) in
     let partition f encoded = List.fold_right (split ~f) encoded ([], []) in
-    let* codecs = match x with
-      | `List xs -> Ok xs
-      | `Null -> Error "array metadata must contain a codecs field."
-      | _ -> Error "codecs field must be a list of objects."
-    in
-    let* a2b, rest = match partition (ArrayToBytes.of_yojson chunk_shape) codecs with
-      | [x], rest -> Ok (x, rest)
-      | _ -> Error "Must be exactly one array->bytes codec."
-    in
-    let a2a, rest = partition (ArrayToArray.of_yojson chunk_shape) rest in
-    let b2b, rest = partition BytesToBytes.of_yojson rest in
-    match rest with
-    | [] -> Ok {a2a; a2b; b2b}
-    | x :: _ ->
-      let codec = Util.get_name x in
-      Error (Printf.sprintf "%s codec is unsupported or has invalid configuration." codec)
+    match x with
+    | `List codecs ->
+      begin match partition (ArrayToBytes.of_yojson chunk_shape) codecs with
+      | ([], _ | _::_::_, _) -> Error "Must be exactly one array->bytes codec."
+      | [a2b], rest ->
+        let a2a, rest = partition (ArrayToArray.of_yojson chunk_shape) rest in
+        let b2b, rest = partition BytesToBytes.of_yojson rest in
+        match rest with
+        | [] -> Ok {a2a; a2b; b2b}
+        | x :: _ -> Error (Printf.sprintf "%s codec is unsupported or has invalid configuration." (Util.get_name x))
+      end
+    | `Null -> Error "array metadata must contain a codecs field."
+    | _ -> Error "codecs field must be a list of objects."
 end
 
-module Make (IO : Types.IO) = struct
-  module M = ArrayToBytes.Make(IO)
+module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = struct
+  module M = ArrayToBytes.Make(IO)(Store)
 
   let is_just_sharding : Chain.t -> bool = function
     | {a2a = []; a2b = `ShardingIndexed _; b2b = []} -> true
     | _ -> false
 
-  let partial_encode t f g bsize repr pairs fv = match t.a2b with
-    | `ShardingIndexed c -> M.partial_encode c f g bsize repr pairs fv
+  let partial_encode ~fill_value store chunk_key t repr pairs = match t.a2b with
+    | `ShardingIndexed config -> M.partial_encode ~fill_value store chunk_key config repr pairs
     | `Bytes _ -> failwith "bytes codec does not support partial encoding." 
 
-  let partial_decode t f s repr pairs fv = match t.a2b with
-    | `ShardingIndexed c -> M.partial_decode c f s repr pairs fv
+  let partial_decode ~fill_value store chunk_key t repr pairs = match t.a2b with
+    | `ShardingIndexed config -> M.partial_decode ~fill_value store chunk_key config repr pairs
     | `Bytes _ -> failwith "bytes codec does not support partial decoding."
 end

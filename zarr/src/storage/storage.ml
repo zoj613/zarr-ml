@@ -1,202 +1,206 @@
 include Storage_intf
 
 module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = struct
-  module IO_chain = Codecs.Make(IO)
+  module IO_chain = Codecs.Make(IO)(Store)
+  type error = Store.error
+  type t = Store.t
 
   open IO.Infix
   open IO.Syntax
-  open Store
-
-  type t = Store.t
-  type 'a io = 'a IO.t
-
-  let maybe_rename t old_name new_name = function
-    | false -> raise (Key_not_found old_name)
-    | true -> rename t old_name new_name
 
   let node_kind t metakey =
-    let+ s = get t metakey in
-    match Yojson.Safe.(Util.member "node_type" @@ from_string s) with
-    | `String "array" -> `Array
-    | `String "group" -> `Group
-    | _ -> raise (Metadata.Parse_error (Printf.sprintf "invalid node_type in %s" metakey))
+    let* x = Store.get t metakey in
+    match Yojson.Safe.(Util.member "node_type" @@ from_string x) with
+    | `String "array" -> IO.return `Array
+    | `String "group" -> IO.return `Group
+    | _ -> IO.error (`Parse_error (Printf.sprintf "invalid node_type in %s" metakey))
 
   let choose path left right = function
-    | `Array -> Node.Array.of_path path :: left, right
-    | `Group -> left, Node.Group.of_path path :: right
+    | `Array -> IO.lift (Result.map (fun x -> x :: left, right) (Node.Array.of_path path))
+    | `Group -> IO.lift (Result.map (fun x -> left, x :: right) (Node.Group.of_path path))
 
   let hierarchy t =
-    let add ~t ((left, right) as acc) k =
-      if not (String.ends_with ~suffix:"zarr.json" k) then IO.return acc else
-      let path = if k = "zarr.json" then "/" else "/" ^ String.(sub k 0 (length k - 10)) in
-      IO.map (choose path left right) (node_kind t k)
+    let maybe_add ~t acc = function
+      | "zarr.json" as key -> IO.lift acc >>= fun (l, r) -> node_kind t key >>= choose "/" l r
+      | key -> match Filename.chop_suffix_opt ~suffix:"/zarr.json" ("/" ^ key) with
+        | None -> IO.lift acc
+        | Some path -> IO.lift acc >>= fun (l, r) -> node_kind t key >>= choose path l r
     in
-    list t >>= IO.fold_left (add ~t) ([], [])
+    Store.list t >>= IO.fold_left (maybe_add ~t) (Ok ([], []))
 
-  let clear t = erase_prefix t ""
+  let clear t = Store.erase_prefix t ""
 
   module Group = struct
-    let exists t node = is_member t (Node.Group.to_metakey node)
-    let delete t node = erase_prefix t (Node.Group.to_prefix node)
-    let metadata t node = IO.map Metadata.Group.decode (get t @@ Node.Group.to_metakey node)
+    let exists t node = Store.is_member t (Node.Group.to_metakey node)
+    let delete t node = Store.erase_prefix t (Node.Group.to_prefix node)
 
     (* This recursively creates parent group nodes if they don't exist.*)
     let rec create ?(attrs=`Null) t node =
       let maybe_create ~attrs t node = function
         | true -> IO.return_unit
         | false ->
-          let key = Node.Group.to_metakey node
-          and meta = Metadata.Group.(update_attributes default attrs) in
-          let* () = set t key (Metadata.Group.encode meta) in
+          let meta = Metadata.Group.(update_attributes default attrs) in
+          let* () = Store.set t (Node.Group.to_metakey node) (Metadata.Group.encode meta) in
           match Node.Group.parent node with
           | None -> IO.return_unit
           | Some p -> create t p
       in
       exists t node >>= maybe_create ~attrs t node
 
-    let children t node =
-      let add ~t (left, right) prefix =
-        let path = "/" ^ String.sub prefix 0 (String.length prefix - 1) in
-        IO.map (choose path left right) (node_kind t @@ prefix ^ "zarr.json")
-      in
-      let maybe_enumerate t node = function
-        | false -> IO.return ([], [])
-        | true ->
-          let* _, ps = list_dir t (Node.Group.to_prefix node) in
-          IO.fold_left (add ~t) ([], []) ps
-      in
-      exists t node >>= maybe_enumerate t node
+    let metadata t node =
+      let* x = Store.get t (Node.Group.to_metakey node) in
+      IO.lift (Metadata.Group.decode x)
 
-    let rename t node str : unit result io =
+    let rename t node str =
       let key = Node.Group.to_key node in
       exists t node >>= function
-      | false -> IO.return (Error (`Key_not_found key))
-      | true -> match Node.Group.rename node str with
-        | Error _ as e -> IO.return (Node.open_error e)
-        | Ok node' -> IO.map Result.ok (rename t key (Node.Group.to_key node'))
+      | false -> IO.error (`Key_not_found key)
+      | true ->
+        let* node' = IO.lift (Node.Group.rename node str) in
+        let* () = Store.rename t key (Node.Group.to_key node') in
+        IO.return node'
+
+    let children t node =
+      let add_node ~t acc prefix =
+        let path = "/" ^ Filename.chop_suffix prefix "/" in
+        let* k = node_kind t (prefix ^ "zarr.json") in
+        IO.bind (IO.lift acc) (fun (l, r) -> choose path l r k)
+      in
+      let xs = ([], []) in
+      exists t node >>= function
+      | false -> IO.return xs
+      | true ->
+        let* _, ps = Store.list_dir t (Node.Group.to_prefix node) in
+        IO.fold_left (add_node ~t) (Ok xs) ps
   end
   
   module Array = struct
     module CoordMap = Util.CoordMap
     module Indexing = Ndarray.Indexing
-    let exists t node = is_member t (Node.Array.to_metakey node)
-    let delete t node = erase_prefix t (Node.Array.to_key node ^ "/")
-    let metadata t node = IO.map Metadata.Array.decode (get t @@ Node.Array.to_metakey node)
+    let exists t node = Store.is_member t (Node.Array.to_metakey node)
+    let delete t node = Store.erase_prefix t (Node.Array.to_key node ^ "/")
 
     (* This recursively creates parent group nodes if they don't exist.*)
-    let create ?(sep=`Slash) ?(dimension_names=[]) ?(attributes=`Null) ~codecs ~shape ~chunks kind fv node t =
-      let c = Codecs.Chain.create chunks codecs in
-      let m = Metadata.Array.create ~sep ~codecs:c ~dimension_names ~attributes ~shape kind fv chunks in
-      let value = Metadata.Array.encode m in 
-      let key = Node.Array.to_metakey node in
-      let* () = set t key value in
-      Option.fold ~none:IO.return_unit ~some:(Group.create t) (Node.Array.parent node)
+    let create ?(overwrite=false) ?(sep=`Slash) ?(dimension_names=[]) ?(attributes=`Null) ~codecs ~shape ~chunks kind fv node t =
+      let write_metadata_json () =
+        let create c = Metadata.Array.create ~sep ~codecs:c ~dimension_names ~attributes ~shape kind fv chunks in
+        let maybe_metadata = Result.bind (Codecs.Chain.create chunks codecs) create in
+        let* x = IO.lift (Result.map Metadata.Array.encode maybe_metadata) in
+        let* () = Store.set t (Node.Array.to_metakey node) x in
+        Option.fold ~none:IO.return_unit ~some:(Group.create t) (Node.Array.parent node)
+      in
+      exists t node >>= function
+      | false -> write_metadata_json ()
+      | true -> match overwrite with
+        | true -> delete t node >>= write_metadata_json
+        | false -> IO.error (`Node_already_exists (Node.Array.to_path node))
 
-    let write t node slice x =
+    let metadata t node =
+      let* x = Store.get t (Node.Array.to_metakey node) in
+      IO.lift (Metadata.Array.decode x)
+
+    let write t node indices x =
       let update_ndarray ~arr (c, v) = Ndarray.set arr c v in
       let add_coord_value ~meta acc co y =
         let chunk_idx, c = Metadata.Array.index_coord_pair meta co in
         CoordMap.add_to_list chunk_idx (c, y) acc
       in
-      let update_chunk ~t ~meta ~prefix ~chain ~fv ~repr (idx, pairs) =
-        let ckey = prefix ^ Metadata.Array.chunk_key meta idx in
-        if IO_chain.is_just_sharding chain then
-          let pget = get_partial_values t ckey and pset = set_partial_values t ckey in
-          let* shardsize = size t ckey in
-          IO_chain.partial_encode chain pget pset shardsize repr pairs fv
-        else is_member t ckey >>= function
+      let update_chunk ~t ~meta ~prefix ~chain ~fill_value ~repr k (idx, pairs) =
+        let* () = IO.lift k in
+        let chunk_key = prefix ^ Metadata.Array.chunk_key meta idx in
+        if IO_chain.is_just_sharding chain
+        then IO_chain.partial_encode ~fill_value t chunk_key chain repr pairs
+        else Store.is_member t chunk_key >>= function
+        | false ->
+          let arr = Ndarray.create repr.kind repr.shape fill_value in
+          List.iter (update_ndarray ~arr) pairs;
+          Store.set t chunk_key (Codecs.Chain.encode chain arr)
         | true ->
-          let* v = get t ckey in
+          let* v = Store.get t chunk_key in
           let arr = Codecs.Chain.decode chain repr v in
           List.iter (update_ndarray ~arr) pairs;
-          set t ckey (Codecs.Chain.encode chain arr)
-        | false ->
-          let arr = Ndarray.create repr.kind repr.shape fv in
-          List.iter (update_ndarray ~arr) pairs;
-          set t ckey (Codecs.Chain.encode chain arr)
+          Store.set t chunk_key (Codecs.Chain.encode chain arr)
       in
       let* meta = metadata t node in
       let shape = Metadata.Array.shape meta in
-      let slice_shape = try Indexing.slice_shape slice shape with
-        | Assert_failure _ -> raise Invalid_array_slice
-      in
-      if Ndarray.shape x <> slice_shape then raise Invalid_array_slice else
+      let* slice = IO.lift (Indexing.create indices shape) in
+      let slice_shape = Indexing.slice_shape slice in
+      if Ndarray.shape x <> slice_shape then IO.error `Invalid_array_slice else
       let kind = Ndarray.data_type x in
-      if not (Metadata.Array.is_valid_kind meta kind) then raise Invalid_data_type else
-      let coords = Indexing.coords_of_slice slice shape in
+      if not (Metadata.Array.is_valid_kind meta kind) then IO.error `Invalid_data_type else
+      let coords = Indexing.coords_of_slice slice in
       let m = List.fold_left2 (add_coord_value ~meta) CoordMap.empty coords (Ndarray.to_array x |> Array.to_list) in
-      let fv = Metadata.Array.fillvalue_of_kind meta kind
+      let fill_value = Metadata.Array.fillvalue_of_kind meta kind
       and repr = Codecs.{kind; shape = Metadata.Array.chunk_shape meta}
       and prefix = Node.Array.to_key node ^ "/"
       and chain = Metadata.Array.codecs meta in
-      IO.iter (update_chunk ~t ~meta ~prefix ~chain ~fv ~repr) (CoordMap.bindings m)
+      IO.fold_left (update_chunk ~t ~meta ~prefix ~chain ~fill_value ~repr) (Ok ()) (CoordMap.bindings m)
 
-    let read (type a) t node slice (kind : a Ndarray.dtype) =
+    let read (type a) t node indices (kind : a Ndarray.dtype) =
       let add_indexed_coord ~meta acc i y =
         let chunk_idx, c = Metadata.Array.index_coord_pair meta y in
         CoordMap.add_to_list chunk_idx (i, c) acc
       in
-      let read_chunk ~t ~meta ~prefix ~chain ~fv ~repr (idx, pairs) =
+      let read_chunk ~t ~meta ~prefix ~chain ~fill_value ~repr acc (idx, pairs) =
+        let* xs = IO.lift acc in
         let ckey = prefix ^ Metadata.Array.chunk_key meta idx in
-        size t ckey >>= function
-        | 0 -> IO.return @@ List.map (fun (i, _) -> i, fv) pairs
-        | shardsize when IO_chain.is_just_sharding chain ->
-          let pget = get_partial_values t ckey in
-          IO_chain.partial_decode chain pget shardsize repr pairs fv
+        Store.size t ckey >>= function
+        | 0 -> IO.return (xs @ List.map (fun (i, _) -> i, fill_value) pairs)
+        | _ when IO_chain.is_just_sharding chain ->
+          IO.map (List.append xs) (IO_chain.partial_decode ~fill_value t ckey chain repr pairs)
         | _ ->
-          let+ v = get t ckey in
+          let+ v = Store.get t ckey in
           let arr = Codecs.Chain.decode chain repr v in
-          List.map (fun (i, c) -> i, Ndarray.get arr c) pairs
+          xs @ List.map (fun (i, c) -> i, Ndarray.get arr c) pairs
       in
       let* meta = metadata t node in
-      if not (Metadata.Array.is_valid_kind meta kind) then raise Invalid_data_type else
+      if not (Metadata.Array.is_valid_kind meta kind) then IO.error `Invalid_data_type else
       let shape = Metadata.Array.shape meta in
-      let slice_shape = try Indexing.slice_shape slice shape with
-        | Assert_failure _ -> raise Invalid_array_slice
-      in
+      let* slice = IO.lift (Indexing.create indices shape) in
+      let slice_shape = Indexing.slice_shape slice in
       let numel = List.fold_left Int.mul 1 slice_shape in
-      let coords = Indexing.coords_of_slice slice shape in
+      let coords = Indexing.coords_of_slice slice in
       let m = List.fold_left2 (add_indexed_coord ~meta) CoordMap.empty List.(init numel Fun.id) coords
       and chain = Metadata.Array.codecs meta
       and prefix = Node.Array.to_key node ^ "/"
-      and fv = Metadata.Array.fillvalue_of_kind meta kind
+      and fill_value = Metadata.Array.fillvalue_of_kind meta kind
       and repr = Codecs.{kind; shape = Metadata.Array.chunk_shape meta} in
-      let+ ps = IO.concat_map (read_chunk ~t ~meta ~prefix ~chain ~fv ~repr) (CoordMap.bindings m) in
+      let+ ps = IO.fold_left (read_chunk ~t ~meta ~prefix ~chain ~fill_value ~repr) (Ok []) (CoordMap.bindings m) in
       (* sorting restores the C-order of the decoded array coordinates.*)
-      let sorted_pairs = List.fast_sort (fun (x, _) (y, _) -> Int.compare x y) ps in
-      let vs = List.map snd sorted_pairs in
+      let ps' = List.fast_sort (fun (x, _) (y, _) -> Int.compare x y) ps in
+      let vs = List.map snd ps' in
       Ndarray.of_array kind slice_shape (Array.of_list vs)
 
+    module StrSet = Set.Make (struct
+      type t = int list
+      let compare : t -> t -> int = Stdlib.compare
+    end)
+
     let reshape t node new_shape =
-      let module S = Set.Make (struct
-        type t = int list
-        let compare : t -> t -> int = Stdlib.compare
-      end)
-      in
-      let maybe_erase t key = function
-        | false -> IO.return_unit
-        | true -> erase t key
-      in
-      let remove ~t ~meta ~prefix v =
+      let remove ~t ~meta ~prefix acc v =
+        let* () = IO.lift acc in
         let key = prefix ^ Metadata.Array.chunk_key meta v in
-        is_member t key >>= maybe_erase t key
+        Store.is_member t key >>= function
+        | false -> IO.return_unit
+        | true -> Store.erase t key
       in
       let* meta = metadata t node in
       let old_shape = Metadata.Array.shape meta in
-      if List.(length new_shape <> length old_shape) then raise Invalid_resize_shape else
-      let s = S.of_list (Metadata.Array.chunk_indices meta old_shape)
-      and s' = S.of_list (Metadata.Array.chunk_indices meta new_shape) in
-      let unreachable_chunks = S.elements (S.diff s s')
-      and prefix = Node.Array.to_key node ^ "/" in
-      let* () = IO.iter (remove ~t ~meta ~prefix) unreachable_chunks in
-      set t (Node.Array.to_metakey node) Metadata.Array.(encode @@ update_shape meta new_shape)
+      if List.(length new_shape <> length old_shape) then IO.error `Invalid_resize_shape else
+      let s = StrSet.of_list (Metadata.Array.chunk_indices meta old_shape)
+      and s' = StrSet.of_list (Metadata.Array.chunk_indices meta new_shape) in
+      let xs = StrSet.(diff s s' |> elements) in  (* unreachable chunks after reshaping *)
+      let prefix = Node.Array.to_key node ^ "/" in
+      let* () = IO.fold_left (remove ~t ~meta ~prefix) (Ok ()) xs in
+      Store.set t (Node.Array.to_metakey node) Metadata.Array.(encode @@ update_shape meta new_shape)
 
-    let rename t node str : unit result io =
+    let rename t node str =
       let key = Node.Array.to_key node in
       exists t node >>= function
-      | false -> IO.return (Error (`Key_not_found key))
-      | true -> match Node.Array.rename node str with
-        | Error _ as e -> IO.return (Node.open_error e)
-        | Ok node' -> IO.map Result.ok (rename t key (Node.Array.to_key node'))
+      | false -> IO.error (`Key_not_found key)
+      | true ->
+        let* node' = IO.lift (Node.Array.rename node str) in
+        let* () = Store.rename t key (Node.Array.to_key node') in
+        IO.return node'
   end
 end

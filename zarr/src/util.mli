@@ -9,7 +9,9 @@ end
 (** Result monad operator syntax. *)
 module Result_syntax : sig
   val (let*) : ('a, 'e) result -> ('a -> ('b, 'e) result ) -> ('b, 'e) result
+  val (and*) : ('a, 'e) result -> ('b, 'e) result -> ('a * 'b, 'e) result
   val (let+) : ('a, 'e) result -> ('a -> 'b) -> ('b, 'e) result
+  val (and+) : ('a, 'e) result -> ('b, 'e) result -> ('a * 'b, 'e) result
 end
 
 val get_name : Yojson.Safe.t -> string
@@ -26,3 +28,8 @@ val create_parent_dir : string -> int -> unit
 
 val sanitize_dir : string -> string
 (** [sanitize_dir d] Chops off any trailing '/' in directory path [d]. *)
+
+val cartesian_prod : int list list -> int list list
+(** [cartesian_prod ll] returns a cartesian product of the elements of
+    list [ll]. It is mainly used to generate a C-order of chunk indices
+    in a regular Zarr array grid. *)

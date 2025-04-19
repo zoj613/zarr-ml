@@ -1,6 +1,4 @@
 type error = [ `Invalid_grid_chunk_shape ]
-type 'a result = ('a, error) Stdlib.result
-let open_error = function Ok _ as v -> v | Error #error as v -> v
 
 module RegularGrid = struct
   type t = int list
@@ -9,26 +7,26 @@ module RegularGrid = struct
   let floordiv x y = Float.(to_int @@ floor (of_int x /. of_int y))
   let grid_shape t array_shape = List.map2 ceildiv array_shape t
   let index_coord_pair t coord = (List.map2 floordiv coord t, List.map2 Int.rem coord t)
-  let indices t array_shape = List.map (fun x -> List.init x Fun.id) (grid_shape t array_shape) |> Ndarray.Indexing.cartesian_prod
   let ( = ) x y = List.equal Int.equal x y
   let max = List.fold_left Int.max Int.min_int
+  let indices t array_shape = List.map (fun x -> List.init x Fun.id) (grid_shape t array_shape) |> Util.cartesian_prod
 
-  let create ~array_shape chunk_shape : t result = match chunk_shape, array_shape with
-    | xs, ys when Int.equal (List.length xs) (List.length ys) || (max xs <= max ys) -> Ok xs
+  let create ~array_shape chunk_shape = match chunk_shape, array_shape with
+    | xs, ys when Int.equal (List.length xs) (List.length ys) && (max xs <= max ys) -> Ok xs
     | _ -> Error `Invalid_grid_chunk_shape
 
   let to_yojson (g : t) : Yojson.Safe.t =
     let name = ("name", `String "regular") in
     `Assoc [name; ("configuration", `Assoc [("chunk_shape", `List (List.map (fun x -> `Int x) g))])]
 
-  let add (x : Yojson.Safe.t) (acc : int list result) = match x with
+  let add (x : Yojson.Safe.t) acc = match x with
     | `Int i when i > 0 -> Result.map (List.cons i) acc
     | _ -> Error `Invalid_grid_chunk_shape
 
   let of_yojson (array_shape: int list) (x : Yojson.Safe.t) = match x with
     | `Assoc ["name", `String "regular"; "configuration", `Assoc ["chunk_shape", `List l]] ->
       let r = Result.bind (List.fold_right add l (Ok [])) (create ~array_shape) in
-      Result.map_error (fun _ -> "grid shape mismatch") r
+      Result.map_error (fun _ -> "Invalid grid chunk shape.") r
     | `Null -> Error "array metadata must contain a chunk_grid field." 
     | _ -> Error "Invalid Chunk grid name or configuration."
 end

@@ -13,8 +13,14 @@ module CoordMap = struct
 end
 
 module Result_syntax = struct
+  let both x y = match x, y with
+    | Ok a, Ok b -> Ok (a, b)
+    | Error _ as r, _ -> r
+    | _, (Error _ as r) -> r
   let (let*) = Result.bind
+  let (and*) = both
   let (let+) x f = Result.map f x
+  let (and+) = both
 end
 
 let get_name j = Yojson.Safe.Util.(member "name" j |> to_string)
@@ -31,3 +37,7 @@ let rec create_parent_dir fn perm =
 let sanitize_dir dir = match Filename.chop_suffix_opt ~suffix:"/" dir with
   | None -> dir
   | Some d -> d
+
+let rec cartesian_prod : int list list -> int list list = function
+  | [] -> [[]]
+  | x :: xs -> List.concat_map (fun i -> List.map (List.cons i) (cartesian_prod xs)) x

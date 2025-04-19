@@ -6,7 +6,6 @@
     [zarr.json] within the prefix of a group or array.*)
 
 type error = [ `Parse_error of string (** when parsing a metadata JSON document fails. *) ]
-val open_error : ('a, error) result -> ('a, [> error]) result
 
 module Array : sig
   (** A module which contains functionality to work with a parsed JSON
@@ -24,7 +23,7 @@ module Array : sig
     'a Ndarray.dtype ->
     'a ->
     int list ->
-    (t, Extensions.error) result
+      (t, [> Extensions.error]) result
   (** [create ~codecs ~shape kind fv cshp] Creates a new array metadata
       document with codec chain [codecs], shape [shape], fill value [fv],
       data type [kind] and chunk shape [cshp].
@@ -34,7 +33,7 @@ module Array : sig
   val encode : t -> string
   (** [encode t] returns a byte string representing a JSON Zarr array metadata. *)
 
-  val decode : string -> (t, error) result
+  val decode : string -> (t, [> error]) result
   (** [decode s] decodes a bytes string [s] into a {!ArrayMetadata.t} type.
 
       @raise Parse_error if metadata string is invalid. *)
@@ -104,7 +103,7 @@ module Group : sig
   val encode : t -> string
   (** [encode t] returns a byte string representing a JSON Zarr group metadata. *)
 
-  val decode : string -> (t, error) result
+  val decode : string -> (t, [> error]) result
   (** [decode s] decodes a bytes string [s] into a {!t} type.
 
       @raise Parse_error if metadata string is invalid. *)

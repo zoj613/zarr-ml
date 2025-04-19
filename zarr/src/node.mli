@@ -14,7 +14,6 @@ type error =
   [ `Node_invariant  (** when a node's name invariant is violated. *)
   | `Cannot_rename_root (** when attempting to rename a root node. *)
   | `Invalid_path ]
-val open_error : ('a, error) result -> ('a, [> error]) result
 
 module Group : sig
   type t
@@ -23,13 +22,13 @@ module Group : sig
   val root : t
   (** creates the root node *)
 
-  val create : t -> string -> (t, error) result
+  val create : t -> string -> (t, [> error]) result
   (** [create p n] creates a group node with parent [p] and name [n]. *)
 
-  val ( / ) : t -> string -> (t, error) result
+  val ( / ) : t -> string -> (t, [> error]) result
   (** The infix operator alias of {!create} *)
 
-  val of_path : string -> (t, error) result
+  val of_path : string -> (t, [> error]) result
   (** [of_path s] creates a group node from path [s]. *)
 
   val to_path : t -> string
@@ -74,7 +73,7 @@ module Group : sig
   val pp : Format.formatter -> t -> unit
   (** [pp fmt t] pretty prints a node type value.*)
 
-  val rename : t -> string -> (t, error) result
+  val rename : t -> string -> (t, [> error]) result
   (** [rename t s] creates a new group node with all properties of [t]
       but with its name changed to [s]. *)
 end
@@ -83,16 +82,16 @@ module Array : sig
   type t
   (** The type of an array node. *)
 
-  val create : Group.t -> string -> (t, error) result
+  val create : Group.t -> string -> (t, [> error]) result
   (** [create p n] makes an array node with parent [p] and name [n]. *)
 
-  val ( / ) : Group.t -> string -> (t, error) result
+  val ( / ) : Group.t -> string -> (t, [> error]) result
   (** The infix operator alias of {!create} *)
 
   val root : t
   (** creates an array root node *)
 
-  val of_path : string -> (t, error) result
+  val of_path : string -> (t, [> error]) result
   (** [of_path s] creates an array node from path [s]. *)
 
   val to_path : t -> string
@@ -130,7 +129,7 @@ module Array : sig
   val pp : Format.formatter -> t -> unit
   (** [pp fmt t] pretty prints a node type value. *)
 
-  val rename : t -> string -> (t, error) result
+  val rename : t -> string -> (t, [> error]) result
   (** [rename t s] creates a new node with all properties of [t]
       but with its name changed to [s]. *)
 end

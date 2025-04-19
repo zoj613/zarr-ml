@@ -1,55 +1,77 @@
+type error = [ `Read of string | `Write of string ]
+
 module type S = sig
-  exception Path_already_exists of string
-  include Storage.S
-  val open_store : ?level:Codecs.deflate_level -> string -> t
+  include Storage.S with type error = error
+  val open_store : ?level:Codecs.deflate_level -> string -> (t, [> `Zarr of [> `Read of string ]]) result
   (** [open_store ?level p] returns a store instance representing a zip
       archive of a Zarr v3 hierarchy stored at path [p]. [level] is the DEFLATE
       algorithm compression setting used when writing new entries into the archive. *)
 
-  val create : ?level:Codecs.deflate_level -> string -> t io
+  val create : ?level:Codecs.deflate_level -> string -> (t, [> `Zarr of error]) result io
   (** [create ?level p] creates a zip archive at path [p] and then returns a
       store instance representing the zip archive. [level] is the DEFLATE algorithm
-      compression setting used when writing new entries into the archive.
-
-      @raise Path_already_exists if a file already exists at path [p]. *)
+      compression setting used when writing new entries into the archive. *)
 end
 
 module Make (IO : Types.IO) : S with type 'a io := 'a IO.t = struct
+  open IO.Infix
   open IO.Syntax
 
-  let with_open_in path f =
-    let* ic = IO.map Zip.open_in (IO.return path) in
-    Fun.protect ~finally:(fun () -> Zip.close_in ic) (fun () -> IO.return (f ic))
-
-  let with_open_out path f =
-    let* oc = IO.map Zip.open_update (IO.return path) in
-    Fun.protect ~finally:(fun () -> Zip.close_out oc) (fun () -> IO.return (f oc))
-
   module Store = struct
-    type t = {path : string; level : int}
     type 'a io = 'a IO.t
+    type t = {path : string; level : int}
+    type nonrec error = error
+
+    let with_open_in path f = match Zip.open_in path with
+      | exception Zip.Error (_, entry, msg) ->
+        IO.error (`Zarr (`Read (Printf.sprintf "%s: %s" entry msg)))
+      | ic ->
+        let out = f ic in
+        Zip.close_in ic;
+        IO.lift out
+
+    let with_open_out path f = match Zip.open_update path with
+      | exception Zip.Error (_, entry, msg) ->
+        IO.error (`Zarr (`Write (Printf.sprintf "%s: %s" entry msg)))
+      | oc ->
+        let out = f oc in
+        Zip.close_out oc;
+        IO.lift out
+
+    let read_entry ~ic ~f e = match Zip.read_entry ic e with
+      | exception Zip.Error (_, entry, msg) ->
+        Error (`Zarr (`Read (Printf.sprintf "%s: %s" entry msg)))
+      | s -> f s
+
+    let write_entry ~level ~key data oc = match Zip.add_entry ~level data oc key with
+      | exception Zip.Error (_, entry, msg) ->
+        Error (`Zarr (`Write (Printf.sprintf "%s: %s" entry msg)))
+      | () as x -> Ok x
 
     let is_member t key =
       let entry_exists ~key ic = match Zip.find_entry ic key with
-        | exception Not_found -> false
-        | _ -> true
+        | exception Not_found -> Ok false
+        | _ -> Ok true
       in 
       with_open_in t.path (entry_exists ~key)
 
     let size t key =
       let entry_size ~key ic = match Zip.find_entry ic key with
-        | exception Not_found -> 0
-        | e -> e.uncompressed_size
+        | exception Not_found -> Ok 0
+        | e -> Ok e.uncompressed_size
       in
       with_open_in t.path (entry_size ~key)
 
     let get t key =
       let read_entry ~key ic = match Zip.find_entry ic key with
-        | exception Not_found -> raise (Storage.Key_not_found key)
-        | e -> Zip.read_entry ic e
+        | exception Not_found -> Error (`Zarr (`Read (Printf.sprintf "%s: does not not exist" key)))
+        | e -> read_entry ~ic ~f:Result.ok e
       in
       with_open_in t.path (read_entry ~key)
 
+    (* TODO: Maybe account for String.sub possibly throwing Invalid_argument exception?
+      But then the way this function is used in codecs.ml it ensures that we pass valid
+      substring args always.*)
     let get_partial_values t key ranges =
       let read_range ~data ~size (ofs, len) = match len with
         | Some l -> String.sub data ofs l
@@ -60,8 +82,7 @@ module Make (IO : Types.IO) : S with type 'a io := 'a IO.t = struct
       List.map (read_range ~data ~size) ranges
 
     let list t =
-      let to_filename : Zip.entry -> string = fun e -> e.filename in
-      let get_keys ic = List.map to_filename (Zip.entries ic) in
+      let get_keys ic = Ok (List.map (fun (e : Zip.entry) -> e.filename) (Zip.entries ic)) in
       with_open_in t.path get_keys
 
     module StrSet = Set.Make(String)
@@ -76,17 +97,16 @@ module Make (IO : Types.IO) : S with type 'a io := 'a IO.t = struct
           StrSet.add pre l, r
         | e -> l, e.filename :: r
       in
-      let+ entries = with_open_in t.path Zip.entries in
+      let+ entries = with_open_in t.path (fun ic -> Ok (Zip.entries ic)) in
       let prefs, keys = List.fold_left add_entry_with_prefix (StrSet.empty, []) entries in
       keys, StrSet.elements prefs
 
-    let set t key value =
-      let level = t.level in
-      with_open_out t.path (fun oc -> Zip.add_entry ~level value oc key)
+    let set t key data = with_open_out t.path (write_entry ~level:t.level ~key data)
 
     let set_partial_values t key ?(append=false) rvs =
-      let* ov = try get t key with
-        | Storage.Key_not_found _ -> IO.return String.empty
+      let* ov = size t key >>= function
+        | 0 -> IO.return String.empty
+        | _ -> get t key
       in
       let f = if append || ov = String.empty then
         fun acc (_, v) -> acc ^ v else
@@ -97,58 +117,61 @@ module Make (IO : Types.IO) : S with type 'a io := 'a IO.t = struct
       in
       set t key (List.fold_left f ov rvs)
 
-    let add_to_zip ~oc ~level (path, v) = Zip.add_entry ~level v oc path
+    let add_to_zip ~oc ~level acc (key, data) =
+      Result.bind acc (fun () -> write_entry ~level ~key data oc)
 
     let rename t prefix new_prefix =
-      let add_pair ~ic ~prefix ~new_prefix acc = function
-        | (e : Zip.entry) when not (String.starts_with ~prefix e.filename) ->
-          (e.filename, Zip.read_entry ic e) :: acc
-        | e ->
-          let l = String.length prefix in
-          let path = new_prefix ^ String.sub e.filename l (String.length e.filename - l) in
-          (path, Zip.read_entry ic e) :: acc
+      let accumulate ~prefix ~new_prefix acc path data =
+        if not (String.starts_with ~prefix path) then Ok ((path, data) :: acc) else
+        let l = String.length prefix in
+        let path' = new_prefix ^ String.sub path l (String.length path - l) in
+        Ok ((path', data) :: acc)
       in
-      let rename_entries ic = List.fold_left (add_pair ~ic ~prefix ~new_prefix) [] (Zip.entries ic) in
+      let add_pair ~ic ~prefix ~new_prefix acc (entry : Zip.entry) =
+        Result.bind acc (fun k -> read_entry ~ic ~f:(accumulate ~prefix ~new_prefix k entry.filename) entry)
+      in
+      let rename_entries ic = List.fold_left (add_pair ~ic ~prefix ~new_prefix) (Ok []) (Zip.entries ic) in
       let* pairs = with_open_in t.path rename_entries in
       let oc = Zip.open_out t.path in Zip.close_out oc;  (* truncate the old zip file *)
-      let level = t.level in
-      with_open_out t.path (fun oc -> List.iter (add_to_zip ~oc ~level) pairs)
+      with_open_out t.path (fun oc -> List.fold_left (add_to_zip ~oc ~level:t.level) (Ok ()) pairs)
+
+    let prepend_path ~acc path data = Result.map (List.cons (path, data)) acc
 
     let erase t key =
       let filter ~ic acc = function
         | (e : Zip.entry) when e.filename = key -> acc
-        | e -> (e.filename, Zip.read_entry ic e) :: acc
+        | e -> read_entry ~ic ~f:(prepend_path ~acc e.filename) e
       in
-      let filter_entries ic = List.fold_left (filter ~ic) [] (Zip.entries ic) in
+      let filter_entries ic = List.fold_left (filter ~ic) (Ok []) (Zip.entries ic) in
       let* pairs = with_open_in t.path filter_entries in
       let oc = Zip.open_out t.path in Zip.close_out oc;  (* truncate the old zip file *)
-      with_open_out t.path (fun oc -> List.iter (add_to_zip ~oc ~level:t.level) pairs)
+      with_open_out t.path (fun oc -> List.fold_left (add_to_zip ~oc ~level:t.level) (Ok ()) pairs)
 
     let erase_prefix t prefix =
       let filter ~ic ~prefix acc = function
         | (e : Zip.entry) when String.starts_with ~prefix e.filename -> acc
-        | e -> (e.filename, Zip.read_entry ic e) :: acc
+        | e -> read_entry ~ic ~f:(prepend_path ~acc e.filename) e
       in
-      let filter_entries ic = List.fold_left (filter ~ic ~prefix) [] (Zip.entries ic) in
+      let filter_entries ic = List.fold_left (filter ~ic ~prefix) (Ok []) (Zip.entries ic) in
       let* pairs = with_open_in t.path filter_entries in
       let oc = Zip.open_out t.path in Zip.close_out oc;  (* truncate the old zip file *)
-      with_open_out t.path (fun oc -> List.iter (add_to_zip ~oc ~level:t.level) pairs)
+      with_open_out t.path (fun oc -> List.fold_left (add_to_zip ~oc ~level:t.level) (Ok ()) pairs)
   end
-
-  exception Path_already_exists of string
 
   let open_store ?(level=Codecs.L6) path =
     let l = match level with
       | L0 -> 0 | L1 -> 1 | L2 -> 2 | L3 -> 3 | L4 -> 4
       | L5 -> 5 | L6 -> 6 | L7 -> 7 | L8 -> 8 | L9 -> 9
     in
-    Store.{path; level = l}
+    if Sys.file_exists path then Ok Store.{path; level = l} else
+    Error (`Zarr (`Read (Printf.sprintf "%s: File does not exist." path)))
 
   let create ?(level=Codecs.L6) path =
-    if Sys.file_exists path then raise (Path_already_exists path)
-    else
-      let* oc = IO.map Zip.open_out (IO.return path) in
-      Fun.protect ~finally:(fun () -> Zip.close_out oc) (fun () -> IO.return (open_store ~level path))
+    if Sys.file_exists path
+    then IO.error (`Zarr (`Read (Printf.sprintf "%s: File already exists." path))) else
+    let oc = Zip.open_out path in
+    Zip.close_out oc;
+    IO.lift (open_store ~level path)
 
   include Storage.Make(IO)(Store)
 end

@@ -1,8 +1,6 @@
 open Extensions
 
 type error = [ `Parse_error of string ]
-type 'a result = ('a, error) Stdlib.result
-let open_error = function Ok _ as v -> v | Error #error as v -> v
 
 module FillValue = struct
   type t =
@@ -14,10 +12,10 @@ module FillValue = struct
     | IntFloat of int * float
     | IntlitFloat of string * float
     | StringFloat of string * float  (* float represented using hex string in the metadata json. *)
-    | IntComplex of (int * int) * Complex.t  (* complex number represented using ints in the metadata json. *)
-    | IntlitComplex of (string * string) * Complex.t  (* complex number represented using ints in the metadata json. *)
+    | IntComplex of int * int * Complex.t  (* complex number represented using ints in the metadata json. *)
+    | IntlitComplex of string * string * Complex.t  (* complex number represented using ints in the metadata json. *)
     | FloatComplex of Complex.t  (* complex number represented using floats in the metadata json. *)
-    | StringComplex of (string * string) * Complex.t
+    | StringComplex of string * string * Complex.t
 
   let rec create : type a. a Ndarray.dtype -> a -> t = fun kind x -> match kind with
     | Ndarray.Char -> Char x
@@ -51,10 +49,10 @@ module FillValue = struct
     | StringFloat ("-Infinity", _), StringFloat ("-Infinity", _) -> true
     | StringFloat ("NaN", _), StringFloat ("NaN", _) -> true
     | StringFloat (a, _), StringFloat (b, _) when String.equal a b -> true
-    | IntComplex ((a1, b1), _), IntComplex ((a2, b2), _) when Int.(equal a1 a2 && equal b1 b2) -> true
-    | IntlitComplex ((a1, b1), _), IntlitComplex ((a2, b2), _) when String.(equal a1 a2 && equal b1 b2) -> true
+    | IntComplex (a1, b1, _), IntComplex (a2, b2, _) when Int.(equal a1 a2 && equal b1 b2) -> true
+    | IntlitComplex (a1, b1, _), IntlitComplex (a2, b2, _) when String.(equal a1 a2 && equal b1 b2) -> true
     | FloatComplex Complex.{re=r1;im=i1}, FloatComplex Complex.{re=r2;im=i2} when Float.(equal r1 r2 && equal i1 i2) -> true
-    | StringComplex ((a1, b1), _), StringComplex ((a2, b2), _) when String.(equal a1 a2 && equal b1 b2) -> true
+    | StringComplex (a1, b1, _), StringComplex (a2, b2, _) when String.(equal a1 a2 && equal b1 b2) -> true
     | _ -> false
 
   (* This makes sure the way the fill-value is encoded in the metadata is
@@ -98,14 +96,14 @@ module FillValue = struct
       begin match Stdint.Uint64.of_string s with
       | exception Invalid_argument _ -> Error "Unsupported fill value."
       | a -> Ok (StringFloat (s, Stdint.Uint64.to_float a)) end
-    | Datatype.Complex32, `List [`Int a; `Int b] -> Ok (IntComplex ((a, b), Complex.{re=Float.of_int a; im=Float.of_int b}))
-    | Datatype.Complex32, `List [`Intlit a; `Intlit b] -> Ok (IntlitComplex ((a, b), Complex.{re=Float.of_string a; im=Float.of_string b}))
+    | Datatype.Complex32, `List [`Int a; `Int b] -> Ok (IntComplex (a, b, Complex.{re=Float.of_int a; im=Float.of_int b}))
+    | Datatype.Complex32, `List [`Intlit a; `Intlit b] -> Ok (IntlitComplex (a, b, Complex.{re=Float.of_string a; im=Float.of_string b}))
     | Datatype.Complex32, `List [`Float re; `Float im] -> Ok (FloatComplex Complex.{re; im})
-    | Datatype.Complex32, `List [`String a; `String b] -> Ok (StringComplex ((a, b), Complex.{re=Float.of_string a; im=Float.of_string b}))
-    | Datatype.Complex64, `List [`Int a; `Int b] -> Ok (IntComplex ((a, b), Complex.{re=Float.of_int a; im=Float.of_int b}))
-    | Datatype.Complex64, `List [`Intlit a; `Intlit b] -> Ok (IntlitComplex ((a, b), Complex.{re=Float.of_string a; im=Float.of_string b}))
+    | Datatype.Complex32, `List [`String a; `String b] -> Ok (StringComplex (a, b, Complex.{re=Float.of_string a; im=Float.of_string b}))
+    | Datatype.Complex64, `List [`Int a; `Int b] -> Ok (IntComplex (a, b, Complex.{re=Float.of_int a; im=Float.of_int b}))
+    | Datatype.Complex64, `List [`Intlit a; `Intlit b] -> Ok (IntlitComplex (a, b, Complex.{re=Float.of_string a; im=Float.of_string b}))
     | Datatype.Complex64, `List [`Float re; `Float im] -> Ok (FloatComplex Complex.{re; im})
-    | Datatype.Complex64, `List [`String a; `String b] -> Ok (StringComplex ((a, b), Complex.{re=Float.of_string a; im=Float.of_string b}))
+    | Datatype.Complex64, `List [`String a; `String b] -> Ok (StringComplex (a, b, Complex.{re=Float.of_string a; im=Float.of_string b}))
     | _, `Null -> Error "array metadata must contain a fill_value field."
     | _ -> Error "Unsupported fill value."
 
@@ -118,10 +116,10 @@ module FillValue = struct
     | IntFloat (i, _) -> `Int i
     | IntlitFloat (s, _) -> `Intlit s
     | StringFloat (s, _) -> `String s
-    | IntComplex ((a, b), _) -> `List [`Int a; `Int b]
-    | IntlitComplex ((a, b), _) -> `List [`Intlit a; `Intlit b]
+    | IntComplex (a, b, _) -> `List [`Int a; `Int b]
+    | IntlitComplex (a, b, _) -> `List [`Intlit a; `Intlit b]
     | FloatComplex Complex.{re; im} -> `List [`Float re; `Float im]
-    | StringComplex ((a, b), _) -> `List [`String a; `String b]
+    | StringComplex (a, b, _) -> `List [`String a; `String b]
 end
 
 module NodeType = struct
@@ -224,21 +222,19 @@ module Array = struct
 
   let create
     ?(sep=`Slash) ?(dimension_names=[]) ?(attributes=`Null) ~codecs ~shape kind fv chunks =
-    match RegularGrid.create ~array_shape:shape chunks with
-    | Error _ as e -> e
-    | Ok chunk_grid ->
-      Ok
-      {codecs
-      ;chunk_grid
-      ;attributes
-      ;dimension_names
-      ;zarr_format = 3
-      ;shape = Shape.create shape
-      ;node_type = NodeType.Array
-      ;storage_transformers = []
-      ;fill_value = FillValue.create kind fv
-      ;data_type = Datatype.of_kind kind
-      ;chunk_key_encoding = ChunkKeyEncoding.create sep}
+    Result.bind (RegularGrid.create ~array_shape:shape chunks) @@ fun chunk_grid ->
+    Ok
+    {codecs
+    ;chunk_grid
+    ;attributes
+    ;dimension_names
+    ;zarr_format = 3
+    ;shape = Shape.create shape
+    ;node_type = NodeType.Array
+    ;storage_transformers = []
+    ;fill_value = FillValue.create kind fv
+    ;data_type = Datatype.of_kind kind
+    ;chunk_key_encoding = ChunkKeyEncoding.create sep}
 
   let to_yojson : t -> Yojson.Safe.t = fun t ->
     let l =
@@ -261,23 +257,21 @@ module Array = struct
   let of_yojson x =
     let open Util.Result_syntax in
     let member = Yojson.Safe.Util.member in
-    let* zarr_format = ZarrFormat.of_yojson (member "zarr_format" x) in
-    let* shape = Shape.of_yojson (member "shape" x) in
-    let* data_type = Datatype.of_yojson (member "data_type" x) in
-    let* fill_value = FillValue.of_yojson data_type (member "fill_value" x) in
-    let* chunk_key_encoding = ChunkKeyEncoding.of_yojson (member "chunk_key_encoding" x) in
-    let* chunk_grid = RegularGrid.of_yojson (Shape.to_list shape) (member "chunk_grid" x) in
-    let* codecs = Codecs.Chain.of_yojson (RegularGrid.chunk_shape chunk_grid) (member "codecs" x) in
-    let* node_type = NodeType.Array.of_yojson (member "node_type" x) in
-    (* Optional fields *)
-    let* dimension_names = DimensionNames.of_yojson (Shape.ndim shape) (member "dimension_names" x) in
-    let+ storage_transformers = match member "storage_transformers" x with
+    let* storage_transformers = match member "storage_transformers" x with
       | `Null -> Ok []
       | _ -> Error "storage_transformers field is not yet supported."
-    in
-    let attributes = member "attributes" x in
+    and* zarr_format = ZarrFormat.of_yojson (member "zarr_format" x)
+    and* node_type = NodeType.Array.of_yojson (member "node_type" x)
+    and* chunk_key_encoding = ChunkKeyEncoding.of_yojson (member "chunk_key_encoding" x)
+    and* shape = Shape.of_yojson (member "shape" x)
+    and* data_type = Datatype.of_yojson (member "data_type" x) in
+    let* fill_value = FillValue.of_yojson data_type (member "fill_value" x)
+    and* dimension_names = DimensionNames.of_yojson (Shape.ndim shape) (member "dimension_names" x)
+    and* chunk_grid = RegularGrid.of_yojson (Shape.to_list shape) (member "chunk_grid" x) in
+    let+ codecs = Codecs.Chain.of_yojson (RegularGrid.chunk_shape chunk_grid) (member "codecs" x) in
+    (* Optional fields *)
     {zarr_format; shape; node_type; data_type; codecs; fill_value; chunk_grid
-    ;chunk_key_encoding; attributes; dimension_names; storage_transformers}
+    ;chunk_key_encoding; dimension_names; storage_transformers; attributes = member "attributes" x}
 
   let ( = ) x y =
     Shape.(x.shape = y.shape)
@@ -303,7 +297,7 @@ module Array = struct
   (* FIXME: must ensure the dimensions of the array remain unchanged. *)
   let update_shape t shape = {t with shape = Shape.create shape}
   
-  let decode s : t result = Result.map_error (fun e -> `Parse_error e) @@ of_yojson (Yojson.Safe.from_string s)
+  let decode s = Result.map_error (fun e -> `Parse_error e) @@ of_yojson (Yojson.Safe.from_string s)
 
   let is_valid_kind (type a) t (kind : a Ndarray.dtype) = match kind, t.data_type with
     | Ndarray.Char, Datatype.Char
@@ -363,11 +357,11 @@ module Group = struct
 
   let of_yojson x =
     let open Util.Result_syntax in
-    let* zarr_format = ZarrFormat.of_yojson Yojson.Safe.Util.(member "zarr_format" x) in
-    let+ node_type = NodeType.Group.of_yojson Yojson.Safe.Util.(member "node_type" x) in
+    let+ zarr_format = ZarrFormat.of_yojson Yojson.Safe.Util.(member "zarr_format" x)
+    and+ node_type = NodeType.Group.of_yojson Yojson.Safe.Util.(member "node_type" x) in
     {zarr_format; node_type; attributes = Yojson.Safe.Util.member "attributes" x}
 
-  let decode s : t result = Result.map_error (fun e -> `Parse_error e) @@ of_yojson (Yojson.Safe.from_string s)
+  let decode s = Result.map_error (fun e -> `Parse_error e) @@ of_yojson (Yojson.Safe.from_string s)
 
   let show t =
     let x, y = NodeType.show t.node_type, Yojson.Safe.show t.attributes in

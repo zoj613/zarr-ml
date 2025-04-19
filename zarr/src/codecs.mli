@@ -9,7 +9,6 @@ type error =
   | `Invalid_sharding_chunk_shape  (** when a codec chain contains a shardingindexed codec with an incorrect inner chunk shape. *)
   | `Invalid_codec_ordering  (** when a codec chain has incorrect ordering of codecs. i.e if the ordering is not [arraytoarray list -> 1 arraytobytes -> bytestobytes list]. *)
   | `Invalid_zstd_compression_level  (** when a codec chain contains a Zstd codec with an incorrect compression value.*)]
-val open_error : ('a, error) result -> ('a, [> error]) result
 
 (** The type of [array -> array] codecs. *)
 type arraytoarray = [ `Transpose of int list ]
@@ -64,7 +63,7 @@ module Chain : sig
   type t
 
   (** [create s c] returns a type representing a chain of codecs defined by chain [c] and chunk shape [s]. *)
-  val create : int list -> codec list -> (t, error) result
+  val create : int list -> codec list -> (t, [> error]) result
 
   (** [encode t x] computes the encoded byte string representation of
       array chunk [x]. *)
@@ -88,28 +87,26 @@ end
 
 (** A functor for generating a Sharding Indexed codec that supports partial
     (en/de)coding via IO operations. *)
-module Make (IO : Types.IO) : sig
-
+module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) : sig
   (** [is_just_sharding t] is [true] if the codec chain [t] contains only
       the [sharding_indexed] codec. *)
   val is_just_sharding : Chain.t -> bool
 
   val partial_encode :
+    fill_value:'a ->
+    Store.t ->
+    Types.key ->  (* shard key *)
     Chain.t ->
-    (Types.range list -> string list IO.t) ->
-    (?append:bool -> (int * string) list -> unit IO.t) ->
-    int ->
     'a array_repr ->
-    (int list * 'a) list ->
-    'a ->
-    unit IO.t
+    (Types.chunk_coord * 'a) list ->
+    (unit, [> `Zarr of Store.error ]) result IO.t
 
   val partial_decode :
+    fill_value:'a ->
+    Store.t ->
+    Types.key ->  (* shard key *)
     Chain.t ->
-    (Types.range list -> string list IO.t) ->
-    int ->
     'a array_repr ->
-    (int * int list) list ->
-    'a ->
-    (int * 'a) list IO.t
+    (int * Types.chunk_coord) list ->
+    ((int * 'a) list, [> `Zarr of Store.error ]) result IO.t
 end

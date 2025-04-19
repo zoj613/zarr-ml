@@ -8,15 +8,12 @@ module ZipStore : Zarr.Zip.S with type 'a io := 'a
 
 (** A blocking I/O local filesystem storage backend for a Zarr v3 hierarchy. *)
 module FilesystemStore : sig
-  include Zarr.Storage.S with type 'a io := 'a
+  type error = [ `Read of string | `Write of string ]
+  include Zarr.Storage.S with type error := error and type 'a io := 'a
 
-  val create : ?perm:int -> string -> t
-  (** [create ~perm dir] returns a new filesystem store.
+  val create : ?perm:int -> string -> (t, [> `Zarr of [> `Write of string ]]) result
+  (** [create ~perm dir] creates a new filesystem store.*)
 
-      @raise Failure if [dir] is a directory that already exists.*)
-
-  val open_store : ?perm:int -> string -> t
-  (** [open_store ~perm dir] returns an existing filesystem Zarr store.
-
-      @raise Failure if [dir] is not a Zarr store path. *)
+  val open_store : ?perm:int -> string -> (t, [> `Zarr of [> `Read of string ]]) result
+  (** [open_store ~perm dir] create a handle an existing filesystem Zarr store stored at path [dir]. *)
 end

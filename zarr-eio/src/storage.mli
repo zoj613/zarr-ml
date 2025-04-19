@@ -8,15 +8,12 @@ module ZipStore : Zarr.Zip.S with type 'a io := 'a
 
 (** An Eio-aware local filesystem storage backend for a Zarr v3 hierarchy. *)
 module FilesystemStore : sig
-  include Zarr.Storage.S with type 'a io := 'a
+  type error = [ `Read of string | `Write of string ]
+  include Zarr.Storage.S with type error := error and type 'a io := 'a
 
-  val create : ?perm:Eio.File.Unix_perm.t -> env:<fs : Eio.Fs.dir_ty Eio.Path.t; ..> -> string -> t
-  (** [create ~perm ~env dir] returns a new filesystem store.
+  val create : ?perm:int -> env:<fs : Eio.Fs.dir_ty Eio.Path.t; ..> -> string -> (t, [> `Zarr of [> `Write of string ]]) result
+  (** [create ~perm ~env dir] returns a new filesystem store. *)
 
-      @raise Failure if [dir] is a directory that already exists.*)
-
-  val open_store : ?perm:Eio.File.Unix_perm.t -> env:<fs : Eio.Fs.dir_ty Eio.Path.t; ..> -> string -> t
-  (** [open_store ~perm ~env dir] returns an existing filesystem Zarr store.
-
-      @raise Failure if [dir] is a file and not a Zarr store path. *)
+  val open_store : ?perm:int -> env:<fs : Eio.Fs.dir_ty Eio.Path.t; ..> -> string -> (t, [> `Zarr of [> `Read of string ]]) result
+  (** [open_store ~perm ~env dir] returns an existing filesystem Zarr store. *)
 end

@@ -1,19 +1,19 @@
 module type IO = sig
   type 'a t
-  val return : 'a -> 'a t
-  val bind : 'a t -> ('a -> 'b t) -> 'b t
-  val map : ('a -> 'b) -> 'a t -> 'b t
-  val return_unit : unit t
-  val iter : ('a -> unit t) -> 'a list -> unit t
-  val fold_left : ('acc -> 'a -> 'acc t) -> 'acc -> 'a list -> 'acc t
-  val concat_map : ('a -> 'b list t) -> 'a list -> 'b list t
+  val return : 'a -> ('a, _) result t
+  val error : 'e -> (_, 'e) result t
+  val return_unit : (unit, _) result t
+  val lift : ('a, 'b) result -> ('a, 'b) result t
+  val bind : ('a, 'e) result t -> ('a -> ('b, 'e) result t) -> ('b, 'e) result t
+  val map : ('a -> 'b) -> ('a, 'e) result t -> ('b, 'e) result t
+  val fold_left : ((('a, _) result as 'r) -> 'b -> 'r t) -> 'r -> 'b list -> 'r t
   module Infix : sig
-    val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
-    val (>>|) : 'a t -> ('a -> 'b) -> 'b t
+    val (>>=) : ('a, 'e) result t -> ('a -> ('b, 'e) result t) -> ('b, 'e) result t
+    val (>>|) : ('a, 'e) result t -> ('a -> 'b) -> ('b, 'e) result t
   end
   module Syntax : sig
-    val (let*) : 'a t -> ('a -> 'b t) -> 'b t
-    val (let+) : 'a t -> ('a -> 'b) -> 'b t
+    val (let*) : ('a, 'e) result t -> ('a -> ('b, 'e) result t) -> ('b, 'e) result t 
+    val (let+) : ('a, 'e) result t -> ('a -> 'b) -> ('b, 'e) result t
   end
 end
 
@@ -22,6 +22,7 @@ type range = int * int option
 type value = string
 type range_start = int
 type prefix = string
+type chunk_coord = int list
 
 module type Store = sig
   (** The abstract store interface that stores should implement.
@@ -40,16 +41,17 @@ module type Store = sig
       a prefix is a string containing only characters that are valid for use
       in keys and ending with a trailing / character. *)
   type t
+  type error
   type 'a io
-  val size : t -> key -> int io
-  val get : t -> key -> value io
-  val get_partial_values : t -> string -> range list -> value list io
-  val set : t -> key -> value -> unit io
-  val set_partial_values : t -> key -> ?append:bool -> (range_start * value) list -> unit io
-  val erase : t -> key -> unit io
-  val erase_prefix : t -> key -> unit io
-  val list : t -> key list io
-  val list_dir : t -> key -> (key list * prefix list) io
-  val is_member : t -> key -> bool io
-  val rename : t -> key -> key -> unit io
+  val size : t -> key -> (int, [> `Zarr of error ]) result io
+  val get : t -> key -> (value, [> `Zarr of error ]) result io
+  val get_partial_values : t -> string -> range list -> (value list, [> `Zarr of error ]) result io
+  val set : t -> key -> value -> (unit, [> `Zarr of error ]) result io
+  val set_partial_values : t -> key -> ?append:bool -> (range_start * value) list -> (unit, [> `Zarr of error ]) result io
+  val erase : t -> key -> (unit, [> `Zarr of error ]) result io
+  val erase_prefix : t -> key -> (unit, [> `Zarr of error ]) result io
+  val list : t -> (key list, [> `Zarr of error ]) result io
+  val list_dir : t -> key -> ((key list * prefix list), [> `Zarr of error ]) result io
+  val is_member : t -> key -> (bool, [> `Zarr of error ]) result io
+  val rename : t -> key -> key -> (unit, [> `Zarr of error ]) result io
 end

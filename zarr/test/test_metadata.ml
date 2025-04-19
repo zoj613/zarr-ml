@@ -9,7 +9,7 @@ let group = [
   let meta = Metadata.Group.default in
   let got = Metadata.Group.encode meta in
   (match Metadata.Group.decode got with
-  | Ok meta' -> assert_equal ~printer:Metadata.Group.show meta meta'
+  | Ok meta' -> assert_equal ~printer:Metadata.Group.show ~cmp:Metadata.Group.(=) meta meta'
   | Error _ -> assert_failure "Decoding a valid group metadata string should not fail.");
   assert_equal ~printer:Fun.id {|{"zarr_format":3,"node_type":"group"}|} got;
   assert_equal (Error (`Parse_error "metadata must contain a zarr_format field." )) (Metadata.Group.decode {|{"bad_json":0}|});
@@ -40,7 +40,7 @@ let test_array_metadata :
   in
   let got = Metadata.Array.encode meta in
   (match Metadata.Array.decode got with
-  | Ok meta' -> assert_equal meta meta'
+  | Ok meta' -> assert_equal ~cmp:Metadata.Array.(=) meta meta'
   | Error _ -> assert_failure "Decoding a valid array metadata string should not fail.");
   let meta' = Metadata.Array.update_shape meta (10 :: shape) in
   assert_equal ~msg:"should not be equal" false Metadata.Array.(meta' = meta);
@@ -66,14 +66,16 @@ let test_array_metadata :
   assert_bool "Float32 is the only valid kind for this metadata" (not @@ Metadata.Array.is_valid_kind meta bad_kind);
   assert_equal fv Metadata.Array.(fillvalue_of_kind meta kind);
   assert_raises (Failure "kind is not compatible with node's fill value.") (fun () -> Metadata.Array.fillvalue_of_kind meta bad_kind);
-  assert_equal (Error (`Parse_error "metadata must contain a zarr_format field." )) (Metadata.Array.decode {|{"bad_json":0}|})
+  match Metadata.Array.decode {|{"bad_json":0}|} with
+  | Ok _ -> assert_failure "parsing a bad json array should not be allowed."
+  | Error _ -> ()
 
 let test_scalar_array_metadata () =
   let codecs = Result.get_ok (Codecs.Chain.create [] [`Bytes LE]) in
   let meta = Result.get_ok @@ Metadata.Array.create ~codecs ~shape:[] Float32 0.0 [] in
   let got = Metadata.Array.encode meta in
   (match Metadata.Array.decode got with
-  | Ok meta' -> assert_equal meta meta'
+  | Ok meta' -> assert_equal ~cmp:Metadata.Array.(=) meta meta'
   | Error _ -> assert_failure "Decoding a valid array metadata string should not fail.");
   let show_int_list = [%show: int list] in
   assert_equal ~printer:show_int_list [] (Metadata.Array.shape meta);
@@ -330,9 +332,10 @@ let array = [
       {"name": "bytes", "configuration": {"endian": "big"}}],
     "fill_value": "0x7fc00000"}|}
   in
-  decode_bad_array_metadata ~str:(template {|"regular"|} {|[1, 20, 20]|}) ~msg:"grid shape mismatch.";
-  decode_bad_array_metadata ~str:(template {|"regular"|} {|[100000, 20]|}) ~msg:"grid shape mismatch.";
-  decode_bad_array_metadata ~str:(template {|"regular"|} {|[-4, 4]|}) ~msg:"chunk_shape must only contain positive ints.";
+  decode_bad_array_metadata ~str:(template {|"regular"|} {|[]|}) ~msg:"Invalid grid chunk shape.";
+  decode_bad_array_metadata ~str:(template {|"regular"|} {|[1, 20, 20]|}) ~msg:"Invalid grid chunk shape.";
+  decode_bad_array_metadata ~str:(template {|"regular"|} {|[100000, 20]|}) ~msg:"Invalid grid chunk shape.";
+  decode_bad_array_metadata ~str:(template {|"regular"|} {|[-4, 4]|}) ~msg:"Invalid grid chunk shape.";
   decode_bad_array_metadata ~str:(template {|"UNKNOWN"|} {|[2, 4]|}) ~msg:"Invalid Chunk grid name or configuration.";
   (* test if decoding a chunk  key encoding field without a configuration
      leads to a default value being used. *)

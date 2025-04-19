@@ -11,7 +11,7 @@ arrays, designed for use in parallel computing.
 - Supports creating n-dimensional Zarr arrays and chunking them along any dimension.
 - Compresses chunks using a variety of supported compression codecs.
 - Supports indexing operations to read/write views of a Zarr array.
-- Supports storing arrays in-memory or the local filesystem. It is also
+- Supports storing arrays in-memory, the local filesystem, or on an Amazon S3 bucket. It is also
   extensible, allowing users to easily create and use their own custom storage
   backends. See the example implementing an [In-memory Zip archive store][9] for more details.
 - Supports both synchronous and asynchronous I/O via [Lwt][4] and [Eio][8]. The user can
@@ -49,89 +49,68 @@ To install the development version using the latest git commit, do
 ## Quick start
 Below is a demonstration of the library's API for synchronous reads/writes.
 A similar example using the `Lwt`-backed Asynchronous API can be found [here][7]
-### setup
+
 ```ocaml
 open Zarr
 open Zarr.Codecs
 open Zarr.Indexing
 open Zarr_sync.Storage
-open IO.Infix  (* opens infix operators >>= and >>| for monadic bind & map *)
+open IO.Syntax
 
-let store = FilesystemStore.create "testdata.zarr";;
-```
-### create group
-```ocaml
-let group_node = Node.Group.of_path "/some/group";;
-FilesystemStore.Group.create store group_node;;
-```
-### create an array
-```ocaml
-let array_node = Node.Array.(group_node / "name");;
+let* store = FilesystemStore.create "testdata.zarr" in
+(* create group *)
+let* group_node = Node.Group.of_path "/some/group" in
+let* () = FilesystemStore.Group.create store group_node in
+
 (* creates an array with char data type and fill value '?' *)
-FilesystemStore.Array.create
-  ~codecs:[`Transpose [2; 0; 1]; `Bytes BE; `Gzip L2]
-  ~shape:[100; 100; 50]
-  ~chunks:[10; 15; 20]
-  Ndarray.Char 
-  '?'
-  array_node
-  store;;
-```
-### read/write from/to an array
-```ocaml
-let slice = [R (0, 20); I 10; F];;
-let x = FilesystemStore.Array.read store array_node slice Ndarray.Char;;
-(* Do some computation on the array slice *)
-let x' = Zarr.Ndarray.map (fun _ -> Random.int 256 |> Char.chr) x;;
-FilesystemStore.Array.write store array_node slice x';;
-let y = FilesystemStore.Array.read store array_node slice Ndarray.Char;;
-assert (Ndarray.equal x' y);;
-```
-### create an array with sharding
-```ocaml
+let shape = [100; 100; 50] in
+let chunks = [10; 15; 20] in
+let codecs = [`Transpose [2; 0; 1]; `Bytes BE; `Gzip L2] in
+let* array_node = Node.Array.(group_node / "name") in
+let* () = FilesystemStore.Array.create ~codecs ~shape ~chunks Ndarray.Char '?' array_node store in
+
+(* read/write from/to the array *)
+let slice = [R (0, 20); I 10; F] in  (* same as [0:20, 10, :] in NumPy. *)
+let* x = FilesystemStore.Array.read store array_node slice Ndarray.Char in
+(* Do some computation on the array view *)
+let x' = Zarr.Ndarray.map (fun _ -> Random.int 256 |> Char.chr) x in
+let* () = FilesystemStore.Array.write store array_node slice x' in
+let* y = FilesystemStore.Array.read store array_node slice Ndarray.Char in
+assert (Ndarray.equal x' y);
+
+(* creating an array with Sharding is supported. *)
 let config =
   {chunk_shape = [5; 3; 5]
-  ;codecs = [`Transpose [2; 0; 1]; `Bytes LE; `Zstd (0, true)]
+  ;codecs = [`Bytes LE; `Zstd (0, true)]
   ;index_codecs = [`Bytes BE; `Crc32c]
-  ;index_location = Start};;
+  ;index_location = Start} in
+let codecs = [`ShardingIndexed config] in
+let* shard_node = Node.Array.(group_node / "another") in
+let* () = FilesystemStore.Array.create ~codecs ~shape ~chunks Ndarray.Complex32 Complex.zero shard_node store in
 
-let shard_node = Node.Array.(group_node / "another");;
-
-FilesystemStore.Array.create
-  ~codecs:[`ShardingIndexed config]
-  ~shape:[100; 100; 50]
-  ~chunks:[10; 15; 20]
-  Ndarray.Complex32
-  Complex.zero
-  shard_node
-  store;;
-```
-### exploratory functions
-```ocaml
-let a, g = FilesystemStore.hierarchy store;;
-List.map Node.Array.to_path a;;
-(*- : string list = ["/some/group/name"; "/some/group/another"] *)
-List.map Node.Group.to_path g;;
-(*- : string list = ["/"; "/some"; "/some/group"] *)
-
-FilesystemStore.Array.reshape store array_node [25; 32; 10];;
-
-let meta = FilesystemStore.Group.metadata store group_node;;
-Metadata.Group.show meta;; (* pretty prints the contents of the metadata *)
-
-FilesystemStore.Array.exists store shard_node;;
-FilesystemStore.Group.exists store group_node;;
-
-let a, g = FilesystemStore.Group.children store group_node;;
-List.map Node.Array.to_path a;;
-(*- : string list = ["/some/group/name"; "/some/group/another"] *)
-List.map Node.Group.to_path g;;
-(*- : string list = [] *)
-
-FilesystemStore.Group.delete store group_node;;
-FilesystemStore.clear store;; (* clears the store *)
-FilesystemStore.Group.rename store group_node "new_name";;
-FilesystemStore.Array.rename store anode "new_name";;
+(* list all nodes inside a store and group them according to node type. *)
+let* a, g = FilesystemStore.hierarchy store in
+let array_paths = List.map Node.Array.to_path a in (*- : string list = ["/some/group/name"; "/some/group/another"] *)
+let group_paths = List.map Node.Group.to_path g in (*- : string list = ["/"; "/some"; "/some/group"] *)
+(* get child nodes of group_node .*)
+let* a, g = FilesystemStore.Group.children store group_node in
+(* resize an existing array. *)
+let* () = FilesystemStore.Array.reshape store array_node [25; 32; 10] in
+(* check if a node exists inside a store. *)
+let* exists = FilesystemStore.Array.exists store shard_node in
+(* get a metadata object that can be used to query a group/array's properties.
+   See Metadata.Array & Metadata.Group modules *)
+let* meta = FilesystemStore.Group.metadata store group_node in
+(* get a prettified string of the contents of the metadata *)
+print_endline @@ Metadata.Group.show meta;
+(* give the specified node a new name *)
+let* () = FilesystemStore.Array.rename store array_node "newarray" in
+let* () = FilesystemStore.Group.rename store group_node "newgroup" in
+(* delete the specified group node from store if it exists. *)
+let group_node' = Result.get_ok (Node.Group.rename group_node "newgroup") in
+let* () = FilesystemStore.Group.delete store group_node' in
+(* wipe the store clean by deleting all nodes. *)
+FilesystemStore.clear store
 ```
 
 [1]: https://codecov.io/gh/zoj613/zarr-ml/graph/badge.svg?token=KOOG2Y1SH5

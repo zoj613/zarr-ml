@@ -1,21 +1,23 @@
 module IO = struct
   type 'a t = 'a
-  let return = Fun.id
-  let bind x f = f x
-  let map f x = f x
-  let return_unit = ()
-  let iter f xs = Eio.Fiber.List.iter f xs
-  let fold_left = List.fold_left
-  let concat_map f xs = List.concat (Eio.Fiber.List.map f xs)
+  let return = Result.ok
+  let error = Result.error
+  let return_unit = Ok ()
+  let lift = Fun.id
+  let bind = Result.bind
+  let map = Result.map
+  let rec fold_left f acc xs = match xs with
+    | [] -> lift acc
+    | x :: l -> bind (f acc x) (fun k -> fold_left f (Ok k) l)
 
   module Infix = struct
     let (>>=) = bind
-    let (>>|) = (>>=)
+    let (>>|) x f = map f x
   end
 
   module Syntax = struct
-    let (let*) = bind
-    let (let+) = (let*)
+    let (let*) = Infix.(>>=)
+    let (let+) = Infix.(>>|)
   end
 end
 
@@ -24,8 +26,9 @@ module MemoryStore = Zarr.Memory.Make(IO)
 
 module FilesystemStore = struct
   module S = struct
+    type 'a io = 'a
     type t = {root : Eio.Fs.dir_ty Eio.Path.t; perm : Eio.File.Unix_perm.t}
-    type 'a io = 'a IO.t
+    type error = [ `Read of string | `Write of string ]
 
     let fspath_to_key t (path : Eio.Fs.dir_ty Eio.Path.t) =
       let s = snd path and pos = String.length (snd t.root) + 1 in
@@ -35,13 +38,14 @@ module FilesystemStore = struct
 
     let size t key =
       let flow_size flow = Optint.Int63.to_int (Eio.File.size flow) in
-      try Eio.Path.with_open_in (key_to_fspath t key) flow_size with
-      | Eio.Io (Eio.Fs.E Not_found Eio_unix.Unix_error _, _) -> 0
+      match Eio.Path.with_open_in (key_to_fspath t key) flow_size with
+      | exception Eio.Io (Eio.Fs.E Not_found Eio_unix.Unix_error _, _) -> Ok 0
+      | x -> Ok x
 
-    let get t key =
-      try Eio.Path.load (key_to_fspath t key) with
-      | Eio.Io (Eio.Fs.E Not_found Eio_unix.Unix_error _, _) ->
-        raise (Zarr.Storage.Key_not_found key)
+    let get t key = match Eio.Path.load (key_to_fspath t key) with
+      | exception Eio.Io (Eio.Fs.E Not_found Eio_unix.Unix_error _, _) ->
+        Error (`Zarr (`Read (Format.sprintf "%s not found" key)))
+      | x -> Ok x
 
     let get_partial_values t key ranges =
       let add ~size a (s, l) =
@@ -58,7 +62,7 @@ module FilesystemStore = struct
       let size = Optint.Int63.to_int (Eio.File.size flow) in
       let size', ranges' = List.fold_left_map (add ~size) 0 ranges in
       let buffer = Bigarray.Array1.create Char C_layout size' in
-      List.map (read ~flow ~buffer) ranges'
+      Ok (List.map (read ~flow ~buffer) ranges')
 
     let create_parent_dir fp perm =
       Option.fold
@@ -69,7 +73,7 @@ module FilesystemStore = struct
     let set t key value =
       let fp = key_to_fspath t key in
       create_parent_dir fp t.perm;
-      Eio.Path.save ~create:(`Or_truncate t.perm) fp value
+      Ok (Eio.Path.save ~create:(`Or_truncate t.perm) fp value)
 
     let set_partial_values t key ?(append=false) rvs =
       let write = if append then
@@ -86,27 +90,32 @@ module FilesystemStore = struct
       let fp = key_to_fspath t key in
       create_parent_dir fp t.perm;
       Eio.Path.with_open_out ~append ~create:(`If_missing t.perm) fp @@ fun flow ->
-      List.iter (write ~flow ~allocator) rvs
+      Ok (List.iter (write ~flow ~allocator) rvs)
 
     let rec walk t acc dir =
       let add ~t ~dir a x = match Eio.Path.(dir / x) with 
         | p when Eio.Path.is_directory p -> walk t a p
-        | p -> (fspath_to_key t p) :: a
+        | p -> Result.map (List.cons (fspath_to_key t p)) a
       in
       List.fold_left (add ~t ~dir) acc (Eio.Path.read_dir dir)
 
-    let list t = walk t [] t.root
-    let list_prefix t prefix = walk t [] (key_to_fspath t prefix)
-    let is_member t key = Eio.Path.is_file (key_to_fspath t key)
-    let erase t key = Eio.Path.unlink (key_to_fspath t key)
-    let rename t k k' = Eio.Path.rename (key_to_fspath t k) (key_to_fspath t k')
+    let list t = walk t (Ok []) t.root
+    let list_prefix t prefix = walk t (Ok []) (key_to_fspath t prefix)
+    let is_member t key = Ok (Eio.Path.is_file (key_to_fspath t key))
+    let erase t key = Ok (Eio.Path.unlink (key_to_fspath t key))
+    let rename t k k' = Ok (Eio.Path.rename (key_to_fspath t k) (key_to_fspath t k'))
 
     let erase_prefix t pre =
       (* if prefix points to the root of the store, only delete sub-dirs and files.*)
+      let open Zarr.Util.Result_syntax in
+      let maybe_delete acc x = Result.bind acc (fun () -> erase t x) in
+      let batch_delete = List.fold_left maybe_delete (Ok ()) in
       let prefix = key_to_fspath t pre in
-      if Filename.chop_suffix (snd prefix) "/" = snd t.root
-      then Eio.Fiber.List.iter (erase t) (list_prefix t pre)
-      else Eio.Path.rmtree ~missing_ok:true prefix
+      let prefix_path = snd prefix in
+      let none = `Zarr (`Read (Format.sprintf "%s not found" prefix_path)) in
+      let* path = Option.to_result ~none (Filename.chop_suffix_opt ~suffix:"/" prefix_path) in
+      if path = snd t.root then Result.bind (list_prefix t pre) batch_delete else
+      Ok (Eio.Path.rmtree ~missing_ok:true prefix)
 
     let list_dir t prefix =
       let choose ~t ~dir x = match Eio.Path.(dir / x) with
@@ -114,18 +123,19 @@ module FilesystemStore = struct
         | p -> Either.left (fspath_to_key t p)
       in
       let dir = key_to_fspath t prefix in
-      List.partition_map (choose ~t ~dir) (Eio.Path.read_dir dir)
+      Ok (List.partition_map (choose ~t ~dir) (Eio.Path.read_dir dir))
   end
 
   let create ?(perm=0o700) ~env dirname =
     Zarr.Util.create_parent_dir dirname perm;
-    Sys.mkdir dirname perm;
-    S.{root = Eio.Path.(Eio.Stdenv.fs env / Zarr.Util.sanitize_dir dirname); perm}
+    match Sys.mkdir dirname perm with
+    | exception Sys_error msg -> Error (`Zarr (`Write msg))
+    | () -> Ok S.{root = Eio.Path.(Eio.Stdenv.fs env / Zarr.Util.sanitize_dir dirname); perm}
 
-  let open_store ?(perm=0o700) ~env dirname =
-    if Sys.is_directory dirname
-    then S.{root = Eio.Path.(Eio.Stdenv.fs env / Zarr.Util.sanitize_dir dirname); perm}
-    else raise (Zarr.Storage.Not_a_filesystem_store dirname)
+  let open_store ?(perm=0o700) ~env dirname = match Sys.is_directory dirname with
+    | exception Sys_error msg -> Error (`Zarr (`Read msg))
+    | false -> Error (`Zarr (`Read (Format.sprintf "%s is not a directory." dirname)))
+    | true -> Ok S.{root = Eio.Path.(Eio.Stdenv.fs env / Zarr.Util.sanitize_dir dirname); perm}
 
   include Zarr.Storage.Make(IO)(S)
 end

@@ -13,7 +13,8 @@ let group_node = [
   assert_equal ~printer:Node.Group.show Node.Group.root r;
   List.iter
     (fun x -> assert_equal (Error `Node_invariant) (Node.Group.of_path x))
-    [""; "na/meas"; "/some/..."; "/root/__name"; "/sd/"];
+    ["/some/..."; "/root/__name"; "/sd/"];
+  List.iter (fun x -> assert_equal (Error `Invalid_path) (Node.Group.of_path x)) [""; "na/meas"];
   (* node name tests *)
   let n =  Result.get_ok (Node.Group.of_path "/some/dir/moredirs/path/pname") in
   assert_equal "pname" (Node.Group.name n);
@@ -69,7 +70,8 @@ let array_node = [
   (* creation from string path *)
   List.iter
     (fun x -> assert_equal (Error `Node_invariant) (Node.Array.of_path x))
-    ["/"; ""; "na/meas"; "/some/..."; "/root/__name"; "/sd/"];
+    ["/"; "/some/..."; "/root/__name"; "/sd/"];
+  List.iter (fun x -> assert_equal (Error `Invalid_path) (Node.Array.of_path x)) [""; "na/meas"];
   (* node name tests *)
   let s = "/some/dir/moredirs/path/pname" in
   let n = Result.get_ok (Node.Array.of_path s) in
@@ -106,6 +108,7 @@ let array_node = [
   assert_equal ~printer:Fun.id "some/dir/moredirs/path/pname" (Node.Array.to_key n);
   assert_equal ~printer:Fun.id "" Node.Array.(to_key root);
   assert_equal ~printer:Fun.id "/" Node.Array.(to_path root);
+  assert_equal ~printer:Fun.id "/name" Node.Array.(Node.Group.root / "name" |> Result.get_ok |> to_path);
   assert_equal ~printer:Fun.id "zarr.json" Node.Array.(to_metakey root);
   assert_equal ~printer:Fun.id ("some/dir/moredirs/path/pname/zarr.json") (Node.Array.to_metakey n))
 ]

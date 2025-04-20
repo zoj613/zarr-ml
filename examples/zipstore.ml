@@ -41,19 +41,19 @@ end = struct
   open IO.Syntax
 
   module Store = struct
-    type t = {ic : Zipc.t Atomic.t; level : Zipc_deflate.level}
+    type t = {atomic_ref : Zipc.t Atomic.t; level : Zipc_deflate.level}
     type nonrec error = error
     type 'a io = 'a IO.t
 
-    let is_member t key = IO.return (Zipc.mem key @@ Atomic.get t.ic)
+    let is_member t key = IO.return (Zipc.mem key @@ Atomic.get t.atomic_ref)
 
-    let size t key = match Zipc.find key (Atomic.get t.ic) with
+    let size t key = match Zipc.find key (Atomic.get t.atomic_ref) with
       | None -> IO.return 0
       | Some m -> match Zipc.Member.kind m with
         | Zipc.Member.Dir -> IO.return 0
         | Zipc.Member.File f -> IO.return (Zipc.File.decompressed_size f)
 
-    let get t key = match Zipc.find key (Atomic.get t.ic) with
+    let get t key = match Zipc.find key (Atomic.get t.atomic_ref) with
       | None -> IO.error (`Zarr (`Read (Printf.sprintf "%s not found" key)))
       | Some m -> match Zipc.Member.kind m with
         | Zipc.Member.Dir -> IO.return String.empty
@@ -71,7 +71,7 @@ end = struct
       List.map (read_range ~data ~size) ranges
 
     let list t =
-      let zip = Atomic.get t.ic in
+      let zip = Atomic.get t.atomic_ref in
       IO.return (Zipc.fold (fun mem acc -> Zipc.Member.path mem :: acc) zip [])
 
     let list_dir t prefix =
@@ -83,7 +83,7 @@ end = struct
         if not (String.contains_from key n '/') then key :: l, r else
         l, S.add String.(sub key 0 @@ 1 + index_from key n '/') r
       in
-      let zip = Atomic.get t.ic in 
+      let zip = Atomic.get t.atomic_ref in 
       let ks, ps = Zipc.fold (accumulate ~prefix) zip ([], S.empty) in
       IO.return (ks, S.elements ps)
 
@@ -93,12 +93,12 @@ end = struct
       | Ok file -> match Zipc.Member.(make ~path:key (File file)) with
         | Error e -> Error (`Zarr (`Write e))
         | Ok m ->
-          let zip = Atomic.get t.ic in
-          if Atomic.compare_and_set t.ic zip (Zipc.add m zip)
+          let zip = Atomic.get t.atomic_ref in
+          if Atomic.compare_and_set t.atomic_ref zip (Zipc.add m zip)
           then IO.return_unit else set t key value
 
     let rec set_partial_values t key ?(append=false) rv =
-      let z = Atomic.get t.ic in
+      let z = Atomic.get t.atomic_ref in
       let* mem = match Zipc.find key z with
         | Some m -> IO.return m
         | None ->
@@ -126,21 +126,21 @@ end = struct
       | Ok file -> match Zipc.Member.(make ~path:key (File file)) with
         | Error e -> Error (`Zarr (`Write e))
         | Ok m ->
-          if Atomic.compare_and_set t.ic z (Zipc.add m z)
+          if Atomic.compare_and_set t.atomic_ref z (Zipc.add m z)
           then IO.return_unit else set_partial_values t key ~append rv
 
     let rec erase t key =
-      let zip = Atomic.get t.ic in
-      if Atomic.compare_and_set t.ic zip (Zipc.remove key zip)
+      let zip = Atomic.get t.atomic_ref in
+      if Atomic.compare_and_set t.atomic_ref zip (Zipc.remove key zip)
       then IO.return_unit else erase t key
 
     let rec erase_prefix t prefix =
       let accumulate ~prefix m acc =
         if String.starts_with ~prefix (Zipc.Member.path m) then acc else Zipc.add m acc
       in
-      let z = Atomic.get t.ic in
+      let z = Atomic.get t.atomic_ref in
       let z' = Zipc.fold (accumulate ~prefix) z Zipc.empty in
-      if Atomic.compare_and_set t.ic z z'
+      if Atomic.compare_and_set t.atomic_ref z z'
       then IO.return_unit else erase_prefix t prefix
 
     (* Adapted from: https://github.com/dbuenzli/zipc/issues/8#issuecomment-2392417890 *)
@@ -157,10 +157,10 @@ end = struct
         | Error _ as e -> e 
         | Ok m' -> Result.map (Zipc.add m') acc 
       in
-      let z = Atomic.get t.ic in
+      let z = Atomic.get t.atomic_ref in
       match Zipc.fold (accumulate ~prefix ~new_prefix) z (Ok Zipc.empty) with
       | Error e -> IO.error (`Zarr (`Write e))
-      | Ok z' -> match Atomic.compare_and_set t.ic z z' with
+      | Ok z' -> match Atomic.compare_and_set t.atomic_ref z z' with
         | true -> IO.return_unit
         | false -> rename t prefix new_prefix
   end
@@ -168,7 +168,7 @@ end = struct
   include Zarr.Storage.Make(IO)(Store)
 
   let with_open ?(level=`Default) ?(perm=0o700) mode path f =
-    let make z = Store.{ic = Atomic.make z; level} in
+    let make z = Store.{atomic_ref = Atomic.make z; level} in
     let* x = match Sys.file_exists path with
       | false -> IO.return (make Zipc.empty)
       | true -> match Zipc.of_binary_string In_channel.(with_open_bin path input_all) with
@@ -179,7 +179,7 @@ end = struct
     | `Read_only -> f x
     | `Read_write ->
       let* out = f x in
-      match Zipc.to_binary_string (Atomic.get x.ic) with
+      match Zipc.to_binary_string (Atomic.get x.atomic_ref) with
       | Error e -> IO.error (`Zarr (`Write e))
       | Ok s ->
         let flags = [Open_wronly; Open_trunc; Open_creat] in

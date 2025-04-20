@@ -8,6 +8,7 @@
 type error =
   [ `Parse_error of string  (** when parsing a metadata JSON document fails. *)
   | `Invalid_dimension_names  (** when dimension_names array is not the same length as an array's dimensionality. *)
+  | `Invalid_resize_shape
   | `Invalid_datatype ]
 
 module Array : sig
@@ -75,7 +76,7 @@ module Array : sig
   (** [update_attributes t json] returns a new metadata type with an updated
       attribute field containing contents in [json] *)
 
-  val update_shape : t -> int list -> t
+  val update_shape : t -> int list -> (t, [> `Invalid_resize_shape ]) result
   (** [update_shape t new_shp] returns a new metadata type containing
       shape [new_shp]. *)
 

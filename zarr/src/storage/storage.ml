@@ -105,8 +105,8 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
         let* () = IO.lift k in
         let chunk_key = prefix ^ Metadata.Array.chunk_key meta idx in
         if IO_chain.is_just_sharding chain
-        then IO_chain.partial_encode ~fill_value t chunk_key chain repr pairs
-        else Store.is_member t chunk_key >>= function
+        then IO_chain.partial_encode ~fill_value t chunk_key chain repr pairs else 
+        Store.is_member t chunk_key >>= function
         | false ->
           let arr = Ndarray.create repr.datatype repr.shape fill_value in
           List.iter (update_ndarray ~arr) pairs;
@@ -179,14 +179,14 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
         | true -> Store.erase t key
       in
       let* meta = metadata t node in
+      let* meta' = IO.lift (Metadata.Array.update_shape meta new_shape) in
       let old_shape = Metadata.Array.shape meta in
-      if List.(length new_shape <> length old_shape) then IO.error `Invalid_resize_shape else
       let s = StrSet.of_list (Metadata.Array.chunk_indices meta old_shape)
       and s' = StrSet.of_list (Metadata.Array.chunk_indices meta new_shape) in
       let xs = StrSet.(diff s s' |> elements) in  (* unreachable chunks after reshaping *)
       let prefix = Node.Array.to_key node ^ "/" in
       let* () = IO.fold_left (remove ~t ~meta ~prefix) (Ok ()) xs in
-      Store.set t (Node.Array.to_metakey node) Metadata.Array.(encode @@ update_shape meta new_shape)
+      Store.set t (Node.Array.to_metakey node) Metadata.Array.(encode meta')
 
     let rename t node str =
       let key = Node.Array.to_key node in

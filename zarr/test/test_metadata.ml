@@ -39,8 +39,7 @@ let test_array_metadata :
   (match Metadata.Array.decode got with
   | Ok meta' -> assert_equal ~cmp:Metadata.Array.(=) meta meta'
   | Error _ -> assert_failure "Decoding a valid array metadata string should not fail.");
-  let meta' = Metadata.Array.update_shape meta (10 :: shape) in
-  assert_equal ~msg:"should not be equal" false Metadata.Array.(meta' = meta);
+  assert_equal (Error `Invalid_resize_shape) (Metadata.Array.update_shape meta (10 :: shape));
   let show_int_list = [%show: int list] in
   assert_equal ~printer:show_int_list shape (Metadata.Array.shape meta);
   assert_equal ~printer:show_int_list chunks (Metadata.Array.chunk_shape meta);
@@ -58,11 +57,14 @@ let test_array_metadata :
   let attrs = `Assoc [("questions", `String "answer")] in
   assert_equal ~printer:Yojson.Safe.show attrs Metadata.Array.(attributes @@ update_attributes meta attrs);
   let new_shape = [20; 10; 6] in
-  assert_equal ~printer:show_int_list new_shape Metadata.Array.(shape @@ update_shape meta new_shape);
+  let meta' = match Metadata.Array.update_shape meta new_shape with
+    | Error _ -> assert_failure "resizing array with appropriate shape should not fail."
+    | Ok m -> m
+  in
+  assert_equal ~msg:"should not be equal" false Metadata.Array.(meta' = meta);
+  assert_equal ~printer:show_int_list new_shape Metadata.Array.(shape meta');
   assert_equal (Ok fv) Metadata.Array.(fill_value meta datatype);
-  assert_equal
-    (Error `Invalid_datatype)
-    (Metadata.Array.fill_value meta bad_datatype);
+  assert_equal (Error `Invalid_datatype) (Metadata.Array.fill_value meta bad_datatype);
   match Metadata.Array.decode {|{"bad_json":0}|} with
   | Ok _ -> assert_failure "parsing a bad json array should not be allowed."
   | Error _ -> ()

@@ -1,6 +1,10 @@
 open Extensions
 
-type error = [ `Parse_error of string | `Invalid_datatype | `Invalid_dimension_names ]
+type error =
+  [ `Parse_error of string
+  | `Invalid_datatype
+  | `Invalid_dimension_names
+  | `Invalid_resize_shape ]
 
 module FillValue = struct
   type t =
@@ -296,7 +300,9 @@ module Array = struct
   let chunk_indices t shape = RegularGrid.indices t.chunk_grid shape
   let encode t = Yojson.Safe.to_string (to_yojson t)
   let update_attributes t attrs = {t with attributes = attrs}
-  let update_shape t shape = {t with shape = Shape.create shape}
+  let update_shape t new_shape =
+    if List.(length (shape t) <> length new_shape) then Error `Invalid_resize_shape else
+    Ok {t with shape = Shape.create new_shape}
   
   let decode s = Result.map_error (fun e -> `Parse_error e) @@ of_yojson (Yojson.Safe.from_string s)
 

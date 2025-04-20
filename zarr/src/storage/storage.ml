@@ -36,16 +36,12 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
 
     (* This recursively creates parent group nodes if they don't exist.*)
     let rec create ?(attrs=`Null) t node =
-      let maybe_create ~attrs t node = function
-        | true -> IO.return_unit
-        | false ->
-          let meta = Metadata.Group.(update_attributes default attrs) in
-          let* () = Store.set t (Node.Group.to_metakey node) (Metadata.Group.encode meta) in
-          match Node.Group.parent node with
-          | None -> IO.return_unit
-          | Some p -> create t p
-      in
-      exists t node >>= maybe_create ~attrs t node
+      exists t node >>= function
+      | true -> IO.return_unit
+      | false ->
+        let meta = Metadata.Group.(update_attributes default attrs) in
+        let* () = Store.set t (Node.Group.to_metakey node) (Metadata.Group.encode meta) in
+        Option.fold ~none:IO.return_unit ~some:(create t) (Node.Group.parent node)
 
     let metadata t node =
       let* x = Store.get t (Node.Group.to_metakey node) in

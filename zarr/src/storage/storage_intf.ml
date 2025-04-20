@@ -13,9 +13,7 @@ module type S = sig
       representing all nodes in store [t]. The first element of the pair
       is a list of all array nodes, and the second element is a list of
       all group nodes. This operation returns a pair of empty lists if
-      store [t] is empty.
-
-      @raise Parse_error if any node has invalid [node_type] metadata.*)
+      store [t] is empty. *)
 
   val clear : t -> (unit, [> `Zarr of error]) result io
   (** [clear t] clears the store [t] by deleting all nodes.
@@ -52,8 +50,8 @@ module type S = sig
     val create :
       ?overwrite:bool ->
       ?sep:[< `Dot | `Slash > `Slash ] ->
-      ?dimension_names:string option list ->
       ?attributes:Yojson.Safe.t ->
+      ?dimension_names:string option list ->
       codecs:Codecs.codec list ->
       shape:int list ->
       chunks:int list ->
@@ -61,7 +59,13 @@ module type S = sig
       'a ->
       Node.Array.t ->
       t ->
-      (unit, [> `Zarr of error | Codecs.error | `Invalid_grid_chunk_shape | `Node_already_exists of string]) result io
+      (unit,
+       [>
+       | `Zarr of error
+       | Codecs.error
+       | `Invalid_dimension_names
+       | `Invalid_grid_chunk_shape
+       | `Node_already_exists of string]) result io
     (** [create ~sep ~dimension_names ~attributes ~codecs ~shape ~chunks kind fill node t]
         creates an array node in store [t] where:
         - Separator [sep] is used in the array's chunk key encoding.

@@ -95,13 +95,13 @@ module Make (E: sig type t end) (M : Storage.S with type 'a io := 'a and type er
     let* got = Array.read store anode slice Int in
     assert_equal exp got;
 
-    assert_equal (Error `Invalid_data_type) (Array.read store anode slice Ndarray.Char);
+    assert_equal (Error `Invalid_datatype) (Array.read store anode slice Ndarray.Char);
     let badslice = [R (0, 20); I 10; F; F] in
     assert_equal (Error `Invalid_array_slice) (Array.read store anode badslice Ndarray.Int);
     assert_equal (Error `Invalid_array_slice) (Array.write store anode badslice exp);
     assert_equal (Error `Invalid_array_slice) (Array.write store anode [R (0, 20); F; F] exp);
     let badarray = Ndarray.init Float64 [21; 1; 30] (Fun.const 0.) in
-    assert_equal (Error `Invalid_data_type) (Array.write store anode slice badarray);
+    assert_equal (Error `Invalid_datatype) (Array.write store anode slice badarray);
 
     let child = fold_result (Node.Group.of_path "/some/child/group") in
     let* () = Group.create store child in

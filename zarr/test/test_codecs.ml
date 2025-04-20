@@ -6,12 +6,12 @@ let decode_chain ~shape ~str ~msg = begin match Chain.of_yojson shape @@ Yojson.
   | Ok _ -> assert_failure "Impossible to decode an unsupported codec.";
   | Error s -> assert_equal ~printer:Fun.id msg s end
 
-let bytes_encode_decode (type a) (decoded_repr : a array_repr) (fill_value : a) =
+let bytes_encode_decode (type a) (decoded_repr : a array_info) (fill_value : a) =
     List.iter
       (fun bytes_codec ->
         let chain = [bytes_codec] in
         let c = Result.get_ok (Chain.create decoded_repr.shape chain) in
-        let arr = Ndarray.create decoded_repr.kind decoded_repr.shape fill_value in
+        let arr = Ndarray.create decoded_repr.datatype decoded_repr.shape fill_value in
         let decoded = Chain.decode c decoded_repr (Chain.encode c arr) in
         assert_equal arr decoded)
       [`Bytes LE; `Bytes BE]
@@ -19,7 +19,7 @@ let bytes_encode_decode (type a) (decoded_repr : a array_repr) (fill_value : a) 
 let tests = [
 "test codec chain" >:: (fun _ ->
   let shape = [10; 15; 10] in
-  let kind = Ndarray.Int16 in
+  let datatype = Ndarray.Int16 in
   let fill_value = 10 in
   let shard_cfg =
     {chunk_shape = [2; 5; 5]
@@ -35,9 +35,9 @@ let tests = [
   assert_equal (Error `Array_to_bytes_invariant) (Chain.create shape chain);
   let chain = [`Transpose [2; 1; 0]; `ShardingIndexed shard_cfg; `Crc32c; `Zstd (0, false)] in
   let c = Result.get_ok (Chain.create shape chain) in
-  let arr = Ndarray.create kind shape fill_value in
+  let arr = Ndarray.create datatype shape fill_value in
   let encoded = Chain.encode c arr in
-  assert_equal arr (Chain.decode c {shape; kind} encoded);
+  assert_equal arr (Chain.decode c {shape; datatype} encoded);
   decode_chain ~shape ~str:"[]" ~msg:"Must be exactly one array->bytes codec.";
   decode_chain
     ~shape
@@ -247,7 +247,7 @@ let tests = [
     ;{|{"name": "gzip", "configuration": {"level": 1}}|}];
 
   let shape = [10; 15; 10] in
-  let kind = Ndarray.Float64 in
+  let datatype = Ndarray.Float64 in
   let cfg =
     {chunk_shape = [3; 5; 5]
     ;index_location = Start
@@ -262,9 +262,9 @@ let tests = [
 
   let chain = [`ShardingIndexed {cfg with chunk_shape = [5; 3; 5]}] in
   let c = Result.get_ok (Chain.create shape chain) in
-  let arr = Ndarray.create kind shape (-10.) in
+  let arr = Ndarray.create datatype shape (-10.) in
   let encoded = Chain.encode c arr in
-  assert_equal arr (Chain.decode c {shape; kind} encoded);
+  assert_equal arr (Chain.decode c {shape; datatype} encoded);
 
   (* test correctness of decoding nested sharding codecs.*)
   let str =
@@ -338,15 +338,15 @@ let tests = [
     [0; 1; 2; 3; 4; 5; 6; 7; 8; 9];
 
   (* test encoding/decoding for various compression levels *)
-  let kind = Ndarray.Complex64 in
+  let datatype = Ndarray.Complex64 in
   let fill_value = Complex.one in
-  let arr = Ndarray.create kind shape fill_value in
+  let arr = Ndarray.create datatype shape fill_value in
   let chain = [`Bytes LE] in
   List.iter
     (fun level ->
       let c = Result.get_ok (Chain.create shape (chain @ [`Gzip level])) in
       let encoded = Chain.encode c arr in
-      assert_equal arr @@ Chain.decode c {shape; kind} encoded)
+      assert_equal arr @@ Chain.decode c {shape; datatype} encoded)
     [L0; L1; L2; L3; L4; L5; L6; L7; L8; L9])
 ;
 
@@ -386,7 +386,7 @@ let tests = [
     (fun (level, checksum) ->
       let c = Result.get_ok (Chain.create shape [`Bytes LE; `Zstd (level, checksum)]) in
       let encoded = Chain.encode c arr in
-      assert_equal arr @@ Chain.decode c {shape; kind = Ndarray.Int} encoded)
+      assert_equal arr @@ Chain.decode c {shape; datatype = Ndarray.Int} encoded)
     [(-131072, false); (-131072, true); (0, false); (0, true)])
 ;
 
@@ -404,32 +404,32 @@ let tests = [
     ~msg:"Must be exactly one array->bytes codec.";
   
   (* test encoding/decoding of Char *)
-  bytes_encode_decode {shape; kind = Ndarray.Char} '?';
+  bytes_encode_decode {shape; datatype = Ndarray.Char} '?';
   (* test encoding/decoding of Bool *)
-  bytes_encode_decode {shape; kind = Ndarray.Bool} false;
-  bytes_encode_decode {shape; kind = Ndarray.Bool} true;
+  bytes_encode_decode {shape; datatype = Ndarray.Bool} false;
+  bytes_encode_decode {shape; datatype = Ndarray.Bool} true;
   (* test encoding/decoding of int8 *)
-  bytes_encode_decode {shape; kind = Ndarray.Int8} 0;
+  bytes_encode_decode {shape; datatype = Ndarray.Int8} 0;
   (* test encoding/decoding of uint8 *)
-  bytes_encode_decode {shape; kind = Ndarray.Uint8} 0;
+  bytes_encode_decode {shape; datatype = Ndarray.Uint8} 0;
   (* test encoding/decoding of int16 *)
-  bytes_encode_decode {shape; kind = Ndarray.Int16} 0;
+  bytes_encode_decode {shape; datatype = Ndarray.Int16} 0;
   (* test encoding/decoding of uint16 *)
-  bytes_encode_decode {shape; kind = Ndarray.Uint16} 0;
+  bytes_encode_decode {shape; datatype = Ndarray.Uint16} 0;
   (* test encoding/decoding of int32 *)
-  bytes_encode_decode {shape; kind = Ndarray.Int32} 0l;
+  bytes_encode_decode {shape; datatype = Ndarray.Int32} 0l;
   (* test encoding/decoding of int64 *)
-  bytes_encode_decode {shape; kind = Ndarray.Int64} 0L;
+  bytes_encode_decode {shape; datatype = Ndarray.Int64} 0L;
   (* test encoding/decoding of float32 *)
-  bytes_encode_decode {shape; kind = Ndarray.Float32} 0.0;
+  bytes_encode_decode {shape; datatype = Ndarray.Float32} 0.0;
   (* test encoding/decoding of float64 *)
-  bytes_encode_decode {shape; kind = Ndarray.Float64} 0.0;
+  bytes_encode_decode {shape; datatype = Ndarray.Float64} 0.0;
   (* test encoding and decoding of Complex32 *)
-  bytes_encode_decode {shape; kind = Ndarray.Complex32} Complex.zero;
+  bytes_encode_decode {shape; datatype = Ndarray.Complex32} Complex.zero;
   (* test encoding/decoding of complex64 *)
-  bytes_encode_decode {shape; kind = Ndarray.Complex64} Complex.zero;
+  bytes_encode_decode {shape; datatype = Ndarray.Complex64} Complex.zero;
   (* test encoding/decoding of int *)
-  bytes_encode_decode {shape; kind = Ndarray.Int} Int.max_int;
+  bytes_encode_decode {shape; datatype = Ndarray.Int} Int.max_int;
   (* test encoding/decoding of int *)
-  bytes_encode_decode {shape; kind = Ndarray.Nativeint} Nativeint.max_int)
+  bytes_encode_decode {shape; datatype = Ndarray.Nativeint} Nativeint.max_int)
 ]

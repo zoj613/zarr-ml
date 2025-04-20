@@ -3,8 +3,8 @@ open OUnit2
 module M = Zarr.Ndarray
 
 let run_test :
-  type a. a Zarr.Codecs.array_repr -> a -> int -> unit = fun repr fv is ->
-  let x = M.create repr.kind repr.shape fv in
+  type a. a Zarr.Codecs.array_info -> a -> int -> unit = fun repr fv is ->
+  let x = M.create repr.datatype repr.shape fv in
 
   assert_equal repr.shape (M.shape x);
   let num_elt = List.fold_left Int.mul 1 repr.shape in
@@ -13,7 +13,7 @@ let run_test :
   assert_equal is (M.dtype_size @@ M.data_type x);
   assert_equal (List.length repr.shape) (M.ndims x);
 
-  let y = M.init repr.kind repr.shape (Fun.const fv) in
+  let y = M.init repr.datatype repr.shape (Fun.const fv) in
   assert_equal x y;
   M.fill y fv;
   assert_equal x y;
@@ -25,33 +25,33 @@ let run_test :
 let tests = [
 "test char ndarray" >:: (fun _ ->
   let shape = [2; 5; 3] in
-  run_test {shape; kind = M.Char} '?' 1;
+  run_test {shape; datatype = M.Char} '?' 1;
 
-  run_test {shape; kind = M.Bool} false 1;
+  run_test {shape; datatype = M.Bool} false 1;
 
-  run_test {shape; kind = M.Int8} 0 1;
+  run_test {shape; datatype = M.Int8} 0 1;
 
-  run_test {shape; kind = M.Uint8} 0 1;
+  run_test {shape; datatype = M.Uint8} 0 1;
 
-  run_test {shape; kind = M.Int16} 0 2;
+  run_test {shape; datatype = M.Int16} 0 2;
 
-  run_test {shape; kind = M.Uint16} 0 2;
+  run_test {shape; datatype = M.Uint16} 0 2;
 
-  run_test {shape; kind = M.Int32} Int32.max_int 4;
+  run_test {shape; datatype = M.Int32} Int32.max_int 4;
 
-  run_test {shape; kind = M.Int64} Int64.max_int 8;
+  run_test {shape; datatype = M.Int64} Int64.max_int 8;
 
-  run_test {shape; kind = M.Float32} Float.neg_infinity 4;
+  run_test {shape; datatype = M.Float32} Float.neg_infinity 4;
 
-  run_test {shape; kind = M.Float64} Float.neg_infinity 8;
+  run_test {shape; datatype = M.Float64} Float.neg_infinity 8;
 
-  run_test {shape; kind = M.Complex32} Complex.zero 8;
+  run_test {shape; datatype = M.Complex32} Complex.zero 8;
 
-  run_test {shape; kind = M.Complex64} Complex.zero 16;
+  run_test {shape; datatype = M.Complex64} Complex.zero 16;
 
-  run_test {shape; kind = M.Int} Int.max_int @@ Sys.word_size / 8;
+  run_test {shape; datatype = M.Int} Int.max_int @@ Sys.word_size / 8;
 
-  run_test {shape; kind = M.Nativeint} Nativeint.max_int @@ Sys.word_size / 8
+  run_test {shape; datatype = M.Nativeint} Nativeint.max_int @@ Sys.word_size / 8
 )
 ;
 "test map, iter and fold" >:: (fun _ ->

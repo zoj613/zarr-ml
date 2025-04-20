@@ -53,7 +53,7 @@ and shard_config =
 
 (** The type summarizing the decoded/encoded representation of a Zarr array
     or chunk. *)
-type 'a array_repr = {kind : 'a Ndarray.dtype; shape : int list}
+type 'a array_info = {datatype : 'a Ndarray.dtype; shape : int list}
 
 (** A module containing functions to encode/decode an array chunk using a
     predefined set of codecs. *)
@@ -71,7 +71,7 @@ module Chain : sig
 
   (** [decode t repr x] decodes the byte string [x] using codec chain [t]
       and decoded representation type [repr]. *)
-  val decode : t -> 'a array_repr -> string -> 'a Ndarray.t
+  val decode : t -> 'a array_info -> string -> 'a Ndarray.t
 
   (** [x = y] returns true if chain [x] is equal to chain [y],
       and false otherwise. *)
@@ -97,7 +97,7 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) : si
     Store.t ->
     Types.key ->  (* shard key *)
     Chain.t ->
-    'a array_repr ->
+    'a array_info ->
     (Types.chunk_coord * 'a) list ->
     (unit, [> `Zarr of Store.error ]) result IO.t
 
@@ -106,7 +106,7 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) : si
     Store.t ->
     Types.key ->  (* shard key *)
     Chain.t ->
-    'a array_repr ->
+    'a array_info ->
     (int * Types.chunk_coord) list ->
     ((int * 'a) list, [> `Zarr of Store.error ]) result IO.t
 end

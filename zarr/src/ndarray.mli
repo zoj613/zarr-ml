@@ -100,7 +100,7 @@ module Indexing : sig
     | R of int * int
     | R' of int * int * int
   type t
-  type error = [ `Invalid_array_slice | `Invalid_data_type ]
+  type error = [ `Invalid_array_slice ]
 
   (*val slice_of_coords : int list list -> index list
       [slice_of_coords c] takes a list of array coordinates and returns

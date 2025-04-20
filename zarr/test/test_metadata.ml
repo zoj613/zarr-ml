@@ -32,12 +32,9 @@ let test_array_metadata :
   b Ndarray.dtype ->
   a ->
   unit
-  = fun ?dimension_names ~shape ~chunks kind bad_kind fv ->
+  = fun ?dimension_names ~shape ~chunks datatype bad_datatype fv ->
   let codecs = Result.get_ok (Codecs.Chain.create chunks [`Bytes LE]) in
-  let meta = Result.get_ok @@ match dimension_names with
-    | Some d -> Metadata.Array.create ~codecs ~shape ~dimension_names:d kind fv chunks
-    | None -> Metadata.Array.create ~codecs ~shape kind fv chunks
-  in
+  let meta = Result.get_ok (Metadata.Array.create ~codecs ~shape ?dimension_names datatype fv chunks) in
   let got = Metadata.Array.encode meta in
   (match Metadata.Array.decode got with
   | Ok meta' -> assert_equal ~cmp:Metadata.Array.(=) meta meta'
@@ -62,10 +59,10 @@ let test_array_metadata :
   assert_equal ~printer:Yojson.Safe.show attrs Metadata.Array.(attributes @@ update_attributes meta attrs);
   let new_shape = [20; 10; 6] in
   assert_equal ~printer:show_int_list new_shape Metadata.Array.(shape @@ update_shape meta new_shape);
-  assert_bool "Using the correct kind must not fail this op" Metadata.Array.(is_valid_kind meta kind);
-  assert_bool "Float32 is the only valid kind for this metadata" (not @@ Metadata.Array.is_valid_kind meta bad_kind);
-  assert_equal fv Metadata.Array.(fillvalue_of_kind meta kind);
-  assert_raises (Failure "kind is not compatible with node's fill value.") (fun () -> Metadata.Array.fillvalue_of_kind meta bad_kind);
+  assert_equal (Ok fv) Metadata.Array.(fill_value meta datatype);
+  assert_equal
+    (Error `Invalid_datatype)
+    (Metadata.Array.fill_value meta bad_datatype);
   match Metadata.Array.decode {|{"bad_json":0}|} with
   | Ok _ -> assert_failure "parsing a bad json array should not be allowed."
   | Error _ -> ()
@@ -82,10 +79,10 @@ let test_scalar_array_metadata () =
   assert_equal ~printer:show_int_list [] (Metadata.Array.chunk_shape meta);
   let show_int_list_tuple = [%show: int list * int list] in
   assert_equal ~printer:show_int_list_tuple ([], []) (Metadata.Array.index_coord_pair meta []);
-  assert_equal ~printer:[%show: int list list] [[]] (Metadata.Array.chunk_indices meta [])
-  (*assert_raises
-    (Metadata.Parse_error "dimension_names length and array dimensionality must be equal.")
-    (fun () -> Metadata.Array.create ~codecs ~dimension_names:[Some ""] ~shape:[] Float32 0.0 []) *)
+  assert_equal ~printer:[%show: int list list] [[]] (Metadata.Array.chunk_indices meta []);
+  assert_equal
+    (Error `Invalid_dimension_names)
+    (Metadata.Array.create ~codecs ~dimension_names:[Some ""] ~shape:[] Float32 0.0 [])
 
 (* test decoding an ill-formed array metadata with an expected error message.*)
 let decode_bad_array_metadata ~str ~msg = assert_equal (Error (`Parse_error msg )) (Metadata.Array.decode str)

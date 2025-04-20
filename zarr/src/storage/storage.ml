@@ -81,9 +81,9 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
     let delete t node = Store.erase_prefix t (Node.Array.to_key node ^ "/")
 
     (* This recursively creates parent group nodes if they don't exist.*)
-    let create ?(overwrite=false) ?(sep=`Slash) ?(dimension_names=[]) ?(attributes=`Null) ~codecs ~shape ~chunks kind fv node t =
+    let create ?(overwrite=false) ?(sep=`Slash) ?(attributes=`Null) ?dimension_names ~codecs ~shape ~chunks kind fv node t =
       let write_metadata_json () =
-        let create c = Metadata.Array.create ~sep ~codecs:c ~dimension_names ~attributes ~shape kind fv chunks in
+        let create c = Metadata.Array.create ?dimension_names ~sep ~codecs:c ~attributes ~shape kind fv chunks in
         let maybe_metadata = Result.bind (Codecs.Chain.create chunks codecs) create in
         let* x = IO.lift (Result.map Metadata.Array.encode maybe_metadata) in
         let* () = Store.set t (Node.Array.to_metakey node) x in
@@ -112,7 +112,7 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
         then IO_chain.partial_encode ~fill_value t chunk_key chain repr pairs
         else Store.is_member t chunk_key >>= function
         | false ->
-          let arr = Ndarray.create repr.kind repr.shape fill_value in
+          let arr = Ndarray.create repr.datatype repr.shape fill_value in
           List.iter (update_ndarray ~arr) pairs;
           Store.set t chunk_key (Codecs.Chain.encode chain arr)
         | true ->
@@ -122,21 +122,20 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
           Store.set t chunk_key (Codecs.Chain.encode chain arr)
       in
       let* meta = metadata t node in
+      let datatype = Ndarray.data_type x in
+      let* fill_value = IO.lift (Metadata.Array.fill_value meta datatype) in
       let shape = Metadata.Array.shape meta in
       let* slice = IO.lift (Indexing.create indices shape) in
       let slice_shape = Indexing.slice_shape slice in
       if Ndarray.shape x <> slice_shape then IO.error `Invalid_array_slice else
-      let kind = Ndarray.data_type x in
-      if not (Metadata.Array.is_valid_kind meta kind) then IO.error `Invalid_data_type else
       let coords = Indexing.coords_of_slice slice in
-      let m = List.fold_left2 (add_coord_value ~meta) CoordMap.empty coords (Ndarray.to_array x |> Array.to_list) in
-      let fill_value = Metadata.Array.fillvalue_of_kind meta kind
-      and repr = Codecs.{kind; shape = Metadata.Array.chunk_shape meta}
+      let m = List.fold_left2 (add_coord_value ~meta) CoordMap.empty coords (Ndarray.to_array x |> Array.to_list)
+      and repr = Codecs.{datatype; shape = Metadata.Array.chunk_shape meta}
       and prefix = Node.Array.to_key node ^ "/"
       and chain = Metadata.Array.codecs meta in
       IO.fold_left (update_chunk ~t ~meta ~prefix ~chain ~fill_value ~repr) (Ok ()) (CoordMap.bindings m)
 
-    let read (type a) t node indices (kind : a Ndarray.dtype) =
+    let read (type a) t node indices (datatype : a Ndarray.dtype) =
       let add_indexed_coord ~meta acc i y =
         let chunk_idx, c = Metadata.Array.index_coord_pair meta y in
         CoordMap.add_to_list chunk_idx (i, c) acc
@@ -154,22 +153,21 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
           xs @ List.map (fun (i, c) -> i, Ndarray.get arr c) pairs
       in
       let* meta = metadata t node in
-      if not (Metadata.Array.is_valid_kind meta kind) then IO.error `Invalid_data_type else
+      let* fill_value = IO.lift (Metadata.Array.fill_value meta datatype) in
       let shape = Metadata.Array.shape meta in
       let* slice = IO.lift (Indexing.create indices shape) in
       let slice_shape = Indexing.slice_shape slice in
-      let numel = List.fold_left Int.mul 1 slice_shape in
-      let coords = Indexing.coords_of_slice slice in
+      let numel = List.fold_left Int.mul 1 slice_shape
+      and coords = Indexing.coords_of_slice slice in
       let m = List.fold_left2 (add_indexed_coord ~meta) CoordMap.empty List.(init numel Fun.id) coords
       and chain = Metadata.Array.codecs meta
       and prefix = Node.Array.to_key node ^ "/"
-      and fill_value = Metadata.Array.fillvalue_of_kind meta kind
-      and repr = Codecs.{kind; shape = Metadata.Array.chunk_shape meta} in
+      and repr = Codecs.{datatype; shape = Metadata.Array.chunk_shape meta} in
       let+ ps = IO.fold_left (read_chunk ~t ~meta ~prefix ~chain ~fill_value ~repr) (Ok []) (CoordMap.bindings m) in
       (* sorting restores the C-order of the decoded array coordinates.*)
       let ps' = List.fast_sort (fun (x, _) (y, _) -> Int.compare x y) ps in
       let vs = List.map snd ps' in
-      Ndarray.of_array kind slice_shape (Array.of_list vs)
+      Ndarray.of_array datatype slice_shape (Array.of_list vs)
 
     module StrSet = Set.Make (struct
       type t = int list

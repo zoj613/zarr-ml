@@ -14,7 +14,7 @@ and internal_shard_config =
   ;index_location : loc}
 and ('a, 'b) chain = {a2a : arraytoarray list; a2b : 'a; b2b : 'b list}
 type arraytobytes = [ fixed_arraytobytes | variable_arraytobytes ]
-type 'a array_repr = {kind : 'a Ndarray.dtype; shape : int list}
+type 'a array_info = {datatype: 'a Ndarray.dtype; shape : int list}
 
 type error =
   [ `Array_to_bytes_invariant
@@ -191,7 +191,7 @@ module rec ArrayToBytes : sig
       Store.t ->
       Types.key ->
       t ->
-      'a array_repr ->
+      'a array_info ->
       (Types.chunk_coord * 'a) list ->
       (unit, [> `Zarr of Store.error ]) result IO.t
     val partial_decode :
@@ -199,14 +199,14 @@ module rec ArrayToBytes : sig
       Store.t ->
       Types.key ->
       t ->
-      'a array_repr ->
+      'a array_info ->
       (int * Types.chunk_coord) list ->
       ((int * 'a) list, [> `Zarr of Store.error ]) result IO.t
   end
   val parse : arraytobytes -> int list -> (unit, [> error]) result
   val encoded_size : int -> fixed_arraytobytes -> int
   val encode : arraytobytes -> 'a Ndarray.t -> string
-  val decode : arraytobytes -> 'a array_repr -> string -> 'a Ndarray.t
+  val decode : arraytobytes -> 'a array_info -> string -> 'a Ndarray.t
   val of_yojson : int list -> Yojson.Safe.t -> (arraytobytes, string) Stdlib.result
   val to_yojson : arraytobytes -> Yojson.Safe.t
 end = struct
@@ -243,13 +243,18 @@ end = struct
          chunk represented by the associated key/index.*)
       let index_array = Ndarray.create Uint64 (chunk_per_shard @ [2]) Stdint.Uint64.max_int in
       let m = List.fold_left (add_binding ~shard_grid) CoordMap.empty coord_elem_pairs in
-      let shardsize, offset_bytes_pairs = CoordMap.fold (update_innerchunk ~shard_params ~index_array ~fill_value repr.kind) m (initial_offset, []) in
+      let f = update_innerchunk ~shard_params ~index_array ~fill_value repr.datatype in
+      let shardsize, offset_data_pairs = CoordMap.fold f m (initial_offset, []) in
       let indexbytes = ShardingIndexed.encode_index_chain shard_params.index_codecs index_array in
       (* write all resultant (offset, bytes) pairs into the bytes of the new shard
          taking note to append/prepend the bytes of the shard's index array.*)
       match shard_params.index_location with
-      | Start -> Store.set_partial_values store shard_key ((0, indexbytes) :: List.rev offset_bytes_pairs)
-      | End -> Store.set_partial_values store shard_key (List.rev @@ (shardsize, indexbytes) :: offset_bytes_pairs)
+      | Start ->
+        let offset_data_pairs' = (0, indexbytes) :: List.rev offset_data_pairs in
+        Store.set_partial_values store shard_key offset_data_pairs'
+      | End ->
+        let offset_data_pairs' = List.rev ((shardsize, indexbytes) :: offset_data_pairs) in
+        Store.set_partial_values store shard_key offset_data_pairs'
 
     (* function to partially write new elements to one or more inner chunks of
        an existing shard using the sharding indexed codec. *)
@@ -327,7 +332,7 @@ end = struct
          offset and number-of-bytes values updated accordingly.*)
       let shard_size'', indexed_innerchunks'' =
         ListLabels.fold_left
-          ~f:(update_empty_innerchunk ~shard_params ~index_array ~fill_value repr.kind)
+          ~f:(update_empty_innerchunk ~shard_params ~index_array ~fill_value repr.datatype)
           ~init:(shard_size', [])
           empty
       in
@@ -407,7 +412,7 @@ end
 and Bytes' : sig
   val encoded_size : int -> int
   val encode : 'a Ndarray.t -> endianness -> string
-  val decode : string -> 'a array_repr -> endianness -> 'a Ndarray.t
+  val decode : string -> 'a array_info -> endianness -> 'a Ndarray.t
   val of_yojson : Yojson.Safe.t -> (endianness, string) Stdlib.result
   val to_yojson : endianness -> Yojson.Safe.t
 end = struct
@@ -437,9 +442,9 @@ end = struct
     | Int -> Ndarray.iteri (set_int buf) x; Bytes.unsafe_to_string buf
     | Nativeint -> Ndarray.iteri (set_nativeint buf) x; Bytes.unsafe_to_string buf
 
-  let decode (type a) (str : string) (decoded : a array_repr) e : a Ndarray.t =
+  let decode (type a) (str : string) (decoded : a array_info) e : a Ndarray.t =
     let open (val endian_module e) in
-    let k, shape = decoded.kind, decoded.shape in
+    let k, shape = decoded.datatype, decoded.shape in
     let buf = Bytes.unsafe_of_string str in
     match k, Ndarray.dtype_size k with
     | Char, _ -> Ndarray.init k shape (get_char buf)
@@ -479,11 +484,11 @@ and ShardingIndexed : sig
   type t = internal_shard_config
   val parse : t -> int list -> (unit, [> error]) result
   val encode : t -> 'a Ndarray.t -> string
-  val decode : t -> 'a array_repr -> string -> 'a Ndarray.t
+  val decode : t -> 'a array_info -> string -> 'a Ndarray.t
   val of_yojson : int list -> Yojson.Safe.t -> (t, string) Stdlib.result
   val to_yojson : t -> Yojson.Safe.t
   val encode_innerchunk : (arraytobytes, bytestobytes) chain -> 'a Ndarray.t -> string
-  val decode_innerchunk : (arraytobytes, bytestobytes) chain -> 'a array_repr -> string -> 'a Ndarray.t
+  val decode_innerchunk : (arraytobytes, bytestobytes) chain -> 'a array_info -> string -> 'a Ndarray.t
   val decode_index : t -> int list -> string -> Stdint.uint64 Ndarray.t * string
   val index_size : (fixed_arraytobytes, fixed_bytestobytes) chain -> int list -> int
   val encode_index_chain : (fixed_arraytobytes, fixed_bytestobytes) chain -> Stdint.uint64 Ndarray.t -> string
@@ -533,9 +538,9 @@ end = struct
       let k, c = RegularGrid.index_coord_pair grid coord in
       CoordMap.add_to_list k (c, Ndarray.get arr coord) acc
     in
-    let update_inner_chunk ~t ~shard_idx ~kind i pairs (ofs, xs) =
+    let update_inner_chunk ~t ~shard_idx ~datatype i pairs (ofs, xs) =
       let v = Array.of_list (List.map snd pairs) in
-      let x' = Ndarray.of_array kind t.chunk_shape v in
+      let x' = Ndarray.of_array datatype t.chunk_shape v in
       let b = encode_innerchunk t.codecs x' in
       let nb = Stdint.Uint64.of_int (String.length b) in
       Ndarray.set shard_idx (i @ [0]) ofs;
@@ -546,10 +551,10 @@ end = struct
     let cps = List.map2 (/) shard_shape t.chunk_shape in
     let shard_idx = Ndarray.create Uint64 (cps @ [2]) Stdint.Uint64.max_int in
     let grid = Result.get_ok (RegularGrid.create ~array_shape:shard_shape t.chunk_shape) in
-    let kind = Ndarray.data_type x in
+    let datatype = Ndarray.data_type x in
     let slice = Result.get_ok (Indexing.create [] shard_shape) in
     let m = List.fold_right (add_coord ~grid ~arr:x) (Indexing.coords_of_slice slice) CoordMap.empty in
-    let _, xs = CoordMap.fold (update_inner_chunk ~t ~shard_idx ~kind) m (Stdint.Uint64.zero, []) in
+    let _, xs = CoordMap.fold (update_inner_chunk ~t ~shard_idx ~datatype) m (Stdint.Uint64.zero, []) in
     let idx_bytes = encode_index_chain t.index_codecs shard_idx in
     match t.index_location with
     | Start -> String.concat String.empty (idx_bytes :: List.rev xs)
@@ -565,7 +570,7 @@ end = struct
     let shape' = List.fold_left ArrayToArray.encoded_repr shape t.a2a in
     let y = List.fold_right BytesToBytes.decode (t.b2b :> bytestobytes list) x in
     let arr = match t.a2b with
-      | `Bytes e -> Bytes'.decode y {shape=shape'; kind=Uint64} e in
+      | `Bytes e -> Bytes'.decode y {shape=shape'; datatype=Uint64} e in
     match t.a2a with
     | [] -> arr
     | `Transpose o :: _ -> ArrayToArray.Transpose.decode o arr
@@ -582,7 +587,7 @@ end = struct
     in
     decode_index_chain t.index_codecs (chunks_per_shard @ [2]) index_data, chunk_data
 
-  let decode (type a) (t : t) (repr : a array_repr) (b : string) =
+  let decode (type a) (t : t) (repr : a array_info) (b : string) =
     let add_indexed_coord ~grid acc i coord =
       let k, c = RegularGrid.index_coord_pair grid coord in
       CoordMap.add_to_list k (i, c) acc
@@ -603,7 +608,7 @@ end = struct
     let pairs = CoordMap.fold (read_inner_chunk ~t ~idx_arr ~inner_repr ~chunk_bytes) m [] in
     let sorted_pairs = List.fast_sort (fun (x, _) (y, _) -> Int.compare x y) pairs in
     let vs = List.map snd sorted_pairs in
-    Ndarray.of_array inner_repr.kind repr.shape (Array.of_list vs)
+    Ndarray.of_array inner_repr.datatype repr.shape (Array.of_list vs)
 
   let chain_to_yojson : (arraytobytes, bytestobytes) chain -> Yojson.Safe.t = fun chain ->
     let a2a = List.map ArrayToArray.to_yojson chain.a2a in
@@ -785,9 +790,9 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
 
   let partial_encode ~fill_value store chunk_key t repr pairs = match t.a2b with
     | `ShardingIndexed config -> M.partial_encode ~fill_value store chunk_key config repr pairs
-    | `Bytes _ -> failwith "bytes codec does not support partial encoding." 
+    | `Bytes _ -> failwith "bytes codec does not support partial encoding."  (* path that's never reached *)
 
   let partial_decode ~fill_value store chunk_key t repr pairs = match t.a2b with
     | `ShardingIndexed config -> M.partial_decode ~fill_value store chunk_key config repr pairs
-    | `Bytes _ -> failwith "bytes codec does not support partial decoding."
+    | `Bytes _ -> failwith "bytes codec does not support partial decoding."  (* path that's never reached *)
 end

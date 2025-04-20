@@ -5,7 +5,10 @@
     array and group metadata. Both types are stored under the key
     [zarr.json] within the prefix of a group or array.*)
 
-type error = [ `Parse_error of string (** when parsing a metadata JSON document fails. *) ]
+type error =
+  [ `Parse_error of string  (** when parsing a metadata JSON document fails. *)
+  | `Invalid_dimension_names  (** when dimension_names array is not the same length as an array's dimensionality. *)
+  | `Invalid_datatype ]
 
 module Array : sig
   (** A module which contains functionality to work with a parsed JSON
@@ -16,27 +19,23 @@ module Array : sig
 
   val create :
     ?sep:[< `Dot | `Slash > `Slash ] ->
-    ?dimension_names:string option list ->
     ?attributes:Yojson.Safe.t ->
+    ?dimension_names:string option list ->
     codecs:Codecs.Chain.t ->
     shape:int list ->
     'a Ndarray.dtype ->
     'a ->
     int list ->
-      (t, [> Extensions.error]) result
+      (t, [> `Invalid_dimension_names | `Invalid_grid_chunk_shape ]) result
   (** [create ~codecs ~shape kind fv cshp] Creates a new array metadata
       document with codec chain [codecs], shape [shape], fill value [fv],
-      data type [kind] and chunk shape [cshp].
-
-      @raise Failure if shape and chunks are incompatible. *)
+      data type [kind] and chunk shape [cshp]. *)
 
   val encode : t -> string
   (** [encode t] returns a byte string representing a JSON Zarr array metadata. *)
 
-  val decode : string -> (t, [> error]) result
-  (** [decode s] decodes a bytes string [s] into a {!ArrayMetadata.t} type.
-
-      @raise Parse_error if metadata string is invalid. *)
+  val decode : string -> (t, [> `Parse_error of string ]) result
+  (** [decode s] decodes a bytes string [s] into a {!ArrayMetadata.t} type.*)
 
   val shape : t -> int list
   (** [shape t] returns the shape of the zarr array represented by metadata type [t]. *)
@@ -44,14 +43,9 @@ module Array : sig
   val chunk_shape : t -> int list
   (** [chunk_shape t] returns the shape a chunk in this zarr array. *)
 
-  val is_valid_kind : t -> 'a Ndarray.dtype -> bool
-  (** [is_valid_kind t kind] checks if [kind] is a valid Bigarray kind that
-      matches the data type of the zarr array represented by this metadata type. *)
-
-  val fillvalue_of_kind : t -> 'a Ndarray.dtype -> 'a
-  (** [fillvalue_of_kind t kind] returns the fill value of uninitialized
-      chunks in this zarr array  given [kind]. Raises Failure if the kind
-      is not compatible with this array's fill value. *)
+  val fill_value : t -> 'a Ndarray.dtype -> ('a, [> `Invalid_datatype ]) result
+  (** [fill_value t d] returns the fill value used for uninitialized chunks in
+      this zarr array given array datatype [d]. *)
 
   val attributes : t -> Yojson.Safe.t
   (** [attributes t] Returns a Yojson type containing user attributes assigned
@@ -103,10 +97,8 @@ module Group : sig
   val encode : t -> string
   (** [encode t] returns a byte string representing a JSON Zarr group metadata. *)
 
-  val decode : string -> (t, [> error]) result
-  (** [decode s] decodes a bytes string [s] into a {!t} type.
-
-      @raise Parse_error if metadata string is invalid. *)
+  val decode : string -> (t, [> `Parse_error of string ]) result
+  (** [decode s] decodes a bytes string [s] into a {!t} type. *)
 
   val update_attributes : t -> Yojson.Safe.t -> t
   (** [update_attributes t json] returns a new metadata type with an updated

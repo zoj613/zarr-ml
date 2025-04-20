@@ -1,6 +1,6 @@
 open Extensions
 
-type error = [ `Parse_error of string ]
+type error = [ `Parse_error of string | `Invalid_datatype | `Invalid_dimension_names ]
 
 module FillValue = struct
   type t =
@@ -17,7 +17,7 @@ module FillValue = struct
     | FloatComplex of Complex.t  (* complex number represented using floats in the metadata json. *)
     | StringComplex of string * string * Complex.t
 
-  let rec create : type a. a Ndarray.dtype -> a -> t = fun kind x -> match kind with
+  let rec create : type a. a Ndarray.dtype -> a -> t = fun datatype x -> match datatype with
     | Ndarray.Char -> Char x
     | Ndarray.Bool -> Bool x
     | Ndarray.Int8 -> Int x
@@ -221,20 +221,22 @@ module Array = struct
     ;storage_transformers : Yojson.Safe.t list}
 
   let create
-    ?(sep=`Slash) ?(dimension_names=[]) ?(attributes=`Null) ~codecs ~shape kind fv chunks =
-    Result.bind (RegularGrid.create ~array_shape:shape chunks) @@ fun chunk_grid ->
-    Ok
-    {codecs
-    ;chunk_grid
-    ;attributes
-    ;dimension_names
-    ;zarr_format = 3
-    ;shape = Shape.create shape
-    ;node_type = NodeType.Array
-    ;storage_transformers = []
-    ;fill_value = FillValue.create kind fv
-    ;data_type = Datatype.of_kind kind
-    ;chunk_key_encoding = ChunkKeyEncoding.create sep}
+    ?(sep=`Slash) ?(attributes=`Null) ?dimension_names ~codecs ~shape datatype fill_value chunks =
+    match dimension_names with
+    | Some x when List.length x <> List.length shape -> Error `Invalid_dimension_names
+    | x -> Result.bind (RegularGrid.create ~array_shape:shape chunks) @@ fun chunk_grid ->
+      Ok
+      {codecs
+      ;chunk_grid
+      ;attributes
+      ;zarr_format = 3
+      ;storage_transformers = []
+      ;node_type = NodeType.Array
+      ;shape = Shape.create shape
+      ;fill_value = FillValue.create datatype fill_value
+      ;data_type = Datatype.of_array_datatype datatype
+      ;chunk_key_encoding = ChunkKeyEncoding.create sep
+      ;dimension_names = Option.fold ~none:[] ~some:Fun.id x}
 
   let to_yojson : t -> Yojson.Safe.t = fun t ->
     let l =
@@ -299,44 +301,27 @@ module Array = struct
   
   let decode s = Result.map_error (fun e -> `Parse_error e) @@ of_yojson (Yojson.Safe.from_string s)
 
-  let is_valid_kind (type a) t (kind : a Ndarray.dtype) = match kind, t.data_type with
-    | Ndarray.Char, Datatype.Char
-    | Ndarray.Bool, Datatype.Bool
-    | Ndarray.Int8, Datatype.Int8
-    | Ndarray.Uint8, Datatype.Uint8
-    | Ndarray.Int16, Datatype.Int16
-    | Ndarray.Uint16, Datatype.Uint16
-    | Ndarray.Int32, Datatype.Int32
-    | Ndarray.Int64, Datatype.Int64
-    | Ndarray.Uint64, Datatype.Uint64
-    | Ndarray.Float32, Datatype.Float32
-    | Ndarray.Float64, Datatype.Float64
-    | Ndarray.Complex32, Datatype.Complex32
-    | Ndarray.Complex64, Datatype.Complex64
-    | Ndarray.Int, Datatype.Int
-    | Ndarray.Nativeint, Datatype.Nativeint -> true
-    | _ -> false
-
-  let fillvalue_of_kind (type a) t (kind : a Ndarray.dtype) : a = match kind, t.fill_value with
-    | Ndarray.Char, FillValue.Char c -> c
-    | Ndarray.Bool, FillValue.Bool b -> b
-    | Ndarray.Int8, FillValue.Int i -> i
-    | Ndarray.Uint8, FillValue.Int i -> i
-    | Ndarray.Int16, FillValue.Int i -> i
-    | Ndarray.Uint16, FillValue.Int i -> i
-    | Ndarray.Int32, FillValue.Int i -> Int32.of_int i
-    | Ndarray.Int, FillValue.Int i -> i
-    | Ndarray.Int64, FillValue.Int i -> Int64.of_int i
-    | Ndarray.Int64, FillValue.Intlit (_, i) -> Stdint.Uint64.to_int64 i
-    | Ndarray.Uint64, FillValue.Int i -> Stdint.Uint64.of_int i 
-    | Ndarray.Uint64, FillValue.Intlit (_, i) -> i 
-    | Ndarray.Nativeint, FillValue.Int i -> Nativeint.of_int i
-    | Ndarray.Nativeint, FillValue.Intlit (_, i) -> Stdint.Uint64.to_nativeint i
-    | Ndarray.Float32, FillValue.Float f -> f 
-    | Ndarray.Float64, FillValue.Float f -> f 
-    | Ndarray.Complex32, FillValue.FloatComplex f -> f
-    | Ndarray.Complex64, FillValue.FloatComplex f -> f
-    | _ -> failwith "kind is not compatible with node's fill value."
+  let fill_value (type a) t (datatype : a Ndarray.dtype) : (a, [> `Invalid_datatype ]) result = 
+    match t.data_type, datatype, t.fill_value with
+    | Datatype.Char, Ndarray.Char, FillValue.Char c -> Ok c
+    | Datatype.Bool, Ndarray.Bool, FillValue.Bool b -> Ok b
+    | Datatype.Int8, Ndarray.Int8, FillValue.Int i -> Ok i
+    | Datatype.Uint8, Ndarray.Uint8, FillValue.Int i -> Ok i
+    | Datatype.Int16, Ndarray.Int16, FillValue.Int i -> Ok i
+    | Datatype.Uint16, Ndarray.Uint16, FillValue.Int i -> Ok i
+    | Datatype.Int32, Ndarray.Int32, FillValue.Int i -> Ok (Int32.of_int i)
+    | Datatype.Int, Ndarray.Int, FillValue.Int i -> Ok i
+    | Datatype.Int64, Ndarray.Int64, FillValue.Int i -> Ok (Int64.of_int i)
+    | Datatype.Int64, Ndarray.Int64, FillValue.Intlit (_, i) -> Ok (Stdint.Uint64.to_int64 i)
+    | Datatype.Uint64, Ndarray.Uint64, FillValue.Int i -> Ok (Stdint.Uint64.of_int i)
+    | Datatype.Uint64, Ndarray.Uint64, FillValue.Intlit (_, i) -> Ok i 
+    | Datatype.Nativeint, Ndarray.Nativeint, FillValue.Int i -> Ok (Nativeint.of_int i)
+    | Datatype.Nativeint, Ndarray.Nativeint, FillValue.Intlit (_, i) -> Ok (Stdint.Uint64.to_nativeint i)
+    | Datatype.Float32, Ndarray.Float32, FillValue.Float f -> Ok f 
+    | Datatype.Float64, Ndarray.Float64, FillValue.Float f -> Ok f 
+    | Datatype.Complex32, Ndarray.Complex32, FillValue.FloatComplex f -> Ok f
+    | Datatype.Complex64, Ndarray.Complex64, FillValue.FloatComplex f -> Ok f
+    | _ -> Error `Invalid_datatype
 end
 
 module Group = struct

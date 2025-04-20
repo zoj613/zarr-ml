@@ -166,7 +166,7 @@ module Indexing = struct
   type index' = L of int list | R' of int * int * int
   type t = index' list
 
-  type error = [ `Invalid_array_slice | `Invalid_data_type ]
+  type error = [ `Invalid_array_slice ]
 
   (* this is copied from the Owl project so we skip testing it. *)
   let[@coverage off] check_slice_definition axis shp =

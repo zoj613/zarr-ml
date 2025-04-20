@@ -91,7 +91,7 @@ module Datatype = struct
 
   let ( = ) : t -> t -> bool = fun x y -> x = y
 
-  let of_kind : type a. a Ndarray.dtype -> t = function
+  let of_array_datatype : type a. a Ndarray.dtype -> t = function
     | Ndarray.Char -> Char
     | Ndarray.Bool -> Bool
     | Ndarray.Int8 -> Int8

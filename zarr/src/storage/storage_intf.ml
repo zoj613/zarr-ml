@@ -104,8 +104,8 @@ module type S = sig
     (** [read t n s k] reads an n-dimensional array of size determined
         by slice [s] from array node [n]. *)
 
-    val reshape : t -> Node.Array.t -> int list -> (unit, [> `Zarr of error | Metadata.error | `Invalid_resize_shape]) result io
-    (** [reshape t n shape] resizes array node [n] of store [t] into new
+    val resize : t -> Node.Array.t -> int list -> (unit, [> `Zarr of error | Metadata.error | `Invalid_resize_shape]) result io
+    (** [resize t n shape] resizes array node [n] of store [t] into new
         size [shape]. Note that when the resizing involves shrinking an array
         along any dimensions, any old unreachable chunks that fall outside of
         the array's new shape are deleted from the store. *)

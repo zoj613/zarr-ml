@@ -95,7 +95,7 @@ let group_paths = List.map Node.Group.to_path g in (*- : string list = ["/"; "/s
 (* get child nodes of group_node .*)
 let* a, g = FilesystemStore.Group.children store group_node in
 (* resize an existing array. *)
-let* () = FilesystemStore.Array.reshape store array_node [25; 32; 10] in
+let* () = FilesystemStore.Array.resize store array_node [25; 32; 10] in
 (* check if a node exists inside a store. *)
 let* exists = FilesystemStore.Array.exists store shard_node in
 (* get a metadata object that can be used to query a group/array's properties.

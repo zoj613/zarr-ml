@@ -170,7 +170,7 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
       let compare : t -> t -> int = Stdlib.compare
     end)
 
-    let reshape t node new_shape =
+    let resize t node new_shape =
       let remove ~t ~meta ~prefix acc v =
         let* () = IO.lift acc in
         let key = prefix ^ Metadata.Array.chunk_key meta v in

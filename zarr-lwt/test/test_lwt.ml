@@ -90,7 +90,7 @@ module Make (E: sig type t end) (M : Storage.S with type 'a io := 'a Lwt.t and t
     let* got = Array.rename store anode' "arrnode" in
     assert_equal anode got;
     let nshape = [25; 32; 10] in
-    let* () = Array.reshape store anode nshape in
+    let* () = Array.resize store anode nshape in
     let* meta = Array.metadata store anode in
     assert_equal ~printer:[%show : int list] nshape (Metadata.Array.shape meta);
 

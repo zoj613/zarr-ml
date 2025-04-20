@@ -59,21 +59,21 @@ module Ndarray = Ndarray
     open Zarr.Indexing
     open Zarr.Codecs
     open Zarr_lwt.Storage
-    open FilesystemStore.Deferred.Syntax
+    open IO.Syntax
 
     let _ =
       Lwt_main.run begin
-        let store = FilesystemStore.create "testdata.zarr" in
+        let* store = FilesystemStore.create "testdata.zarr" in
         let group_node = Node.Group.root in
         let* () = FilesystemStore.Group.create group_node in
-        let array_node = ArrayNode.(group_node / "name") in
+        let array_node = Result.get_ok (ArrayNode.(group_node / "name")) in
         let* () = FilesystemStore.Array.create
           ~codecs:[`Bytes BE] ~shape:[|100; 100; 50|] ~chunks:[|10; 15; 20|]
           Ndarray.Float32 Float.neg_infinity array_node store in
-        let slice = [|R [|0; 20|]; I 10; L [||]|] in
+        let slice = [R (0, 20); I 10; F] in
         let* x = FilesystemStore.Array.read store array_node slice Ndarray.Float32 in
-        let x' = Ndarray.map (fun _ -> Random.int 11 |> Float.of_int) x
-        in FilesystemStore.Array.write store array_node slice x'
+        let x' = Ndarray.map (fun _ -> Random.int 11 |> Float.of_int) x in
+        FilesystemStore.Array.write store array_node slice x'
       end
     ]} *)
 

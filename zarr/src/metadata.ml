@@ -296,7 +296,6 @@ module Array = struct
   let chunk_indices t shape = RegularGrid.indices t.chunk_grid shape
   let encode t = Yojson.Safe.to_string (to_yojson t)
   let update_attributes t attrs = {t with attributes = attrs}
-  (* FIXME: must ensure the dimensions of the array remain unchanged. *)
   let update_shape t shape = {t with shape = Shape.create shape}
   
   let decode s = Result.map_error (fun e -> `Parse_error e) @@ of_yojson (Yojson.Safe.from_string s)

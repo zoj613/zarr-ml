@@ -108,10 +108,10 @@ module Make (E: sig type t end) (M : Storage.S with type 'a io := 'a and type er
       (Result.bind Node.Array.(gnode / "fakearray") (fun g -> Array.rename store g "somename"));
 
     let nshape = [25; 32; 10] in
-    let* () = Array.reshape store anode nshape in
+    let* () = Array.resize store anode nshape in
     let* meta = Array.metadata store anode in
     assert_equal ~printer:[%show : int list] nshape (Metadata.Array.shape meta);
-    assert_equal (Error `Invalid_resize_shape) (Array.reshape store anode [25; 10]);
+    assert_equal (Error `Invalid_resize_shape) (Array.resize store anode [25; 10]);
     match Result.bind Node.Array.(gnode / "fakegroup") (Array.metadata store) with
     | Ok _ -> assert_failure "requesting metadata of non-existant nodes should not work.";
     | Error _ -> ();

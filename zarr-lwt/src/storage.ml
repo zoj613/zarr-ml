@@ -118,7 +118,7 @@ module FilesystemStore = struct
 
     let rec walk t acc dir =
       let accumulate ~t x a =
-        if x = "." || x  = ".." then Lwt.return a else
+        if String.(equal x "." || equal x "..") then Lwt.return a else 
         match Filename.concat dir x with
         | p when Sys.is_directory p -> walk t a p
         | p -> Lwt.return (Result.map (List.cons (fspath_to_key t p)) a)
@@ -130,7 +130,7 @@ module FilesystemStore = struct
         | p when Sys.is_directory p -> Either.right @@ (fspath_to_key t p) ^ "/"
         | p -> Either.left (fspath_to_key t p)
       in
-      let predicate x = if x = "." || x = ".." then false else true in
+      let predicate x = if String.(equal x  "." || equal x  "..") then false else true in
       let dir = key_to_fspath t prefix in
       let relevant = Lwt_stream.filter predicate (Lwt_unix.files_of_directory dir) in
       Lwt_result.ok (Lwt.map (List.partition_map (choose ~t ~dir)) (Lwt_stream.to_list relevant))

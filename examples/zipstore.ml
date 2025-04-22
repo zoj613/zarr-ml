@@ -199,7 +199,7 @@ let _ =
   let test_functionality store = 
     let* xs, _ = ZipStore.hierarchy store in
     let anode = List.hd @@ List.filter
-      (fun node -> Node.Array.to_path node = "/some/group/name") xs in
+      (fun node -> String.equal (Node.Array.to_path node) "/some/group/name") xs in
     let slice = [R (0, 20); I 10; F] in
     let* x = ZipStore.Array.read store anode slice Char in
     let x' = Zarr.Ndarray.map (fun _ -> Random.int 256 |> Char.chr) x in

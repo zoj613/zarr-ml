@@ -26,8 +26,7 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
       | `Unknown -> IO.error (`Parse_error (Printf.sprintf "invalid node_type in %s" key))
       | (`Array | `Group) as kind ->
         let path = if String.equal key "zarr.json"
-          then "/"
-          else "/" ^ StringLabels.(sub ~pos:0 ~len:(length key - 10) key) in
+          then "/" else Filename.chop_suffix ("/" ^ key) "/zarr.json" in
         IO.lift (Result.bind acc (choose path kind))
     in
     Store.list t >>= IO.fold_left (maybe_add ~t) (Ok ([], []))
@@ -65,7 +64,7 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
         match node_kind data with
         | `Unknown -> IO.error (`Parse_error (Printf.sprintf "invalid node_type in %s" key))
         | (`Array | `Group) as kind ->
-          let path = "/" ^ Filename.chop_suffix prefix "/" in
+          let path = Filename.chop_suffix ("/" ^ prefix) "/" in
           IO.lift (Result.bind acc (choose path kind))
       in
       let xs = Ok ([], []) in

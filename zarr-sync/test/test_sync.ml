@@ -202,12 +202,16 @@ let test_filesystem_store = "filesystem store tests" >:: (fun _ ->
   (* inject a bad metadata document to test correct parsing of bad child
      nodes when discovering children of a group. *)
   let dname = tmp_dir ^ "/badnode" in
-  let fname = Filename.concat dname "zarr.json" in
   Sys.mkdir dname 0o700;
+  Out_channel.with_open_bin (tmp_dir ^ "/zarr.json") (Fun.flip Out_channel.output_string {|{"zarr_format":3,"node_type":"unknown"}|});
+  let fname = Filename.concat dname "zarr.json" in
   Out_channel.with_open_bin fname (Fun.flip Out_channel.output_string {|{"zarr_format":3,"node_type":"unknown"}|});
   assert_equal
     (Error (`Parse_error "invalid node_type in badnode/zarr.json"))
     (FilesystemStore.hierarchy s);
+  assert_equal
+    (Error (`Parse_error "invalid node_type in badnode/zarr.json"))
+    (FilesystemStore.Group.children s Node.Group.root);
   Sys.(remove fname; rmdir dname);
 )
 

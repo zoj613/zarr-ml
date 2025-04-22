@@ -77,7 +77,7 @@ module Make (IO : Types.IO) : S with type 'a io := 'a IO.t = struct
       let add ~size ~prefix key _ ((l, r) as acc) =
         if not (String.starts_with ~prefix key) then acc else
         if not (String.contains_from key size '/') then key :: l, r else
-        l, StrSet.add String.(sub key 0 @@ 1 + index_from key size '/') r
+        l, StrSet.add StringLabels.(sub ~pos:0 ~len:(1 + index_from key size '/') key) r
       in
       let size = String.length prefix in
       let m = Atomic.get t in

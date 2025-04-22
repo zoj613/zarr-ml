@@ -81,7 +81,7 @@ end = struct
         if not (String.starts_with ~prefix key) then acc else
         let n = String.length prefix in
         if not (String.contains_from key n '/') then key :: l, r else
-        l, S.add String.(sub key 0 @@ 1 + index_from key n '/') r
+        l, S.add StringLabels.(sub ~pos:0 ~len:(1 + index_from key n '/') key) r
       in
       let zip = Atomic.get t.atomic_ref in 
       let ks, ps = Zipc.fold (accumulate ~prefix) zip ([], S.empty) in

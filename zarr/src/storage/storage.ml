@@ -8,23 +8,27 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
   open IO.Infix
   open IO.Syntax
 
-  let node_kind t metakey =
-    let* x = Store.get t metakey in
-    match Yojson.Safe.(Util.member "node_type" @@ from_string x) with
-    | `String "array" -> IO.return `Array
-    | `String "group" -> IO.return `Group
-    | _ -> IO.error (`Parse_error (Printf.sprintf "invalid node_type in %s" metakey))
+  let node_kind metadata =
+    match Yojson.Safe.(Util.member "node_type" @@ from_string metadata) with
+    | `String "array" -> `Array
+    | `String "group" -> `Group
+    | _ -> `Unknown
 
-  let choose path left right = function
-    | `Array -> IO.lift (Result.map (fun x -> x :: left, right) (Node.Array.of_path path))
-    | `Group -> IO.lift (Result.map (fun x -> left, x :: right) (Node.Group.of_path path))
+  let choose path kind (left, right) = match kind with
+    | `Array -> Result.map (fun x -> x :: left, right) (Node.Array.of_path path)
+    | `Group -> Result.map (fun x -> left, x :: right) (Node.Group.of_path path)
 
   let hierarchy t =
-    let maybe_add ~t acc = function
-      | "zarr.json" as key -> IO.lift acc >>= fun (l, r) -> node_kind t key >>= choose "/" l r
-      | key -> match Filename.chop_suffix_opt ~suffix:"/zarr.json" ("/" ^ key) with
-        | None -> IO.lift acc
-        | Some path -> IO.lift acc >>= fun (l, r) -> node_kind t key >>= choose path l r
+    let maybe_add ~t acc key =
+      if not (String.ends_with ~suffix:"zarr.json" key) then IO.lift acc else
+      let* data = Store.get t key in
+      match node_kind data with
+      | `Unknown -> IO.error (`Parse_error (Printf.sprintf "invalid node_type in %s" key))
+      | (`Array | `Group) as kind ->
+        let path = if String.equal key "zarr.json"
+          then "/"
+          else "/" ^ StringLabels.(sub ~pos:0 ~len:(length key - 10) key) in
+        IO.lift (Result.bind acc (choose path kind))
     in
     Store.list t >>= IO.fold_left (maybe_add ~t) (Ok ([], []))
 
@@ -47,27 +51,29 @@ module Make (IO : Types.IO) (Store : Types.Store with type 'a io = 'a IO.t) = st
       let* x = Store.get t (Node.Group.to_metakey node) in
       IO.lift (Metadata.Group.decode x)
 
-    let rename t node str =
-      let key = Node.Group.to_key node in
-      exists t node >>= function
-      | false -> IO.error (`Key_not_found key)
+    let rename t node str = exists t node >>= function
+      | false -> IO.error (`Key_not_found (Node.Group.to_key node))
       | true ->
         let* node' = IO.lift (Node.Group.rename node str) in
-        let* () = Store.rename t key (Node.Group.to_key node') in
+        let* () = Store.rename t (Node.Group.to_key node) (Node.Group.to_key node') in
         IO.return node'
 
     let children t node =
       let add_node ~t acc prefix =
-        let path = "/" ^ Filename.chop_suffix prefix "/" in
-        let* k = node_kind t (prefix ^ "zarr.json") in
-        IO.bind (IO.lift acc) (fun (l, r) -> choose path l r k)
+        let key = prefix ^ "zarr.json" in
+        let* data = Store.get t key  in
+        match node_kind data with
+        | `Unknown -> IO.error (`Parse_error (Printf.sprintf "invalid node_type in %s" key))
+        | (`Array | `Group) as kind ->
+          let path = "/" ^ Filename.chop_suffix prefix "/" in
+          IO.lift (Result.bind acc (choose path kind))
       in
-      let xs = ([], []) in
+      let xs = Ok ([], []) in
       exists t node >>= function
-      | false -> IO.return xs
+      | false -> IO.lift xs
       | true ->
         let* _, ps = Store.list_dir t (Node.Group.to_prefix node) in
-        IO.fold_left (add_node ~t) (Ok xs) ps
+        IO.fold_left (add_node ~t) xs ps
   end
   
   module Array = struct

@@ -278,7 +278,7 @@ module AmazonS3Store = struct
     let add prefix (l, r) (c : S3.content) =
       let size = String.length prefix in
       if not (String.contains_from c.key size '/') then c.key :: l, r else
-      l, M.add String.(sub c.key 0 @@ 1 + index_from c.key size '/') r
+      l, M.add StringLabels.(sub ~pos:0 ~len:(1 + index_from c.key size '/') c.key) r
 
     let rec partition_keys prefix ((l, r) as acc) cont =
       let more (xs, rest) = partition_keys prefix (List.fold_left (add prefix) acc xs) rest in

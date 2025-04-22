@@ -6,15 +6,15 @@ let group_node = [
   let n = Result.get_ok @@ Node.Group.(root / "somename") in
   (* test node invariants *)
   List.iter
-    (fun x -> assert_equal (Error `Node_invariant) (Node.Group.create n x))
+    (fun x -> assert_equal (Error (`Node_invariant x)) (Node.Group.create n x))
     [""; "na/me"; "...."; "__name"];
   (* creation from string path *)
   let r = Result.get_ok (Node.Group.of_path "/") in
   assert_equal ~printer:Node.Group.show Node.Group.root r;
-  List.iter
-    (fun x -> assert_equal (Error `Node_invariant) (Node.Group.of_path x))
-    ["/some/..."; "/root/__name"; "/sd/"];
-  List.iter (fun x -> assert_equal (Error `Invalid_path) (Node.Group.of_path x)) [""; "na/meas"];
+  List.iter2
+    (fun x y -> assert_equal (Error (`Node_invariant y)) (Node.Group.of_path x))
+    ["/some/..."; "/root/__name"; "/sd/"] ["..."; "__name"; ""];
+  List.iter (fun x -> assert_equal (Error (`Invalid_path x)) (Node.Group.of_path x)) [""; "na/meas"];
   (* node name tests *)
   let n =  Result.get_ok (Node.Group.of_path "/some/dir/moredirs/path/pname") in
   assert_equal "pname" (Node.Group.name n);
@@ -48,7 +48,7 @@ let group_node = [
   assert_equal ~printer:string_of_bool false Node.Group.(is_child_group root root);
   (* rename tests *)
   assert_equal (Error `Cannot_rename_root) Node.Group.(rename root "somename");
-  assert_equal (Error `Node_invariant) Node.Group.(rename n "?illegal/");
+  assert_equal (Error (`Node_invariant "?illegal/")) Node.Group.(rename n "?illegal/");
   let n' = Result.get_ok @@ Node.Group.rename n "newname" in
   assert_bool "" Node.Group.(name n' <> name n);
   (* stringify tests *)
@@ -64,14 +64,15 @@ let array_node = [
   | Error _ -> assert_failure "creating '/somename' should not fail"
   | Ok _ -> ();
   (* test node invariants *)
+  assert_equal (Ok Node.Array.root) (Node.Array.of_path "/");
   List.iter
-    (fun x -> assert_equal (Error `Node_invariant) (Node.Array.create Node.Group.root x))
+    (fun x -> assert_equal (Error (`Node_invariant x)) (Node.Array.create Node.Group.root x))
     [""; "na/me"; "...."; "__name"];
   (* creation from string path *)
-  List.iter
-    (fun x -> assert_equal (Error `Node_invariant) (Node.Array.of_path x))
-    ["/"; "/some/..."; "/root/__name"; "/sd/"];
-  List.iter (fun x -> assert_equal (Error `Invalid_path) (Node.Array.of_path x)) [""; "na/meas"];
+  List.iter2
+    (fun x y -> assert_equal (Error (`Node_invariant y)) (Node.Array.of_path x))
+    ["/some/..."; "/root/__name"; "/sd/"] ["..."; "__name"; ""];
+  List.iter (fun x -> assert_equal (Error (`Invalid_path x)) (Node.Array.of_path x)) [""; "na/meas"];
   (* node name tests *)
   let s = "/some/dir/moredirs/path/pname" in
   let n = Result.get_ok (Node.Array.of_path s) in
@@ -101,7 +102,7 @@ let array_node = [
   assert_equal true Node.Array.(is_parent m Node.Group.root);
   (* rename tests *)
   assert_equal (Error `Cannot_rename_root) Node.Array.(rename root "somename");
-  assert_equal (Error `Node_invariant) Node.Array.(rename n "?illegal/");
+  assert_equal (Error (`Node_invariant "?illegal/")) Node.Array.(rename n "?illegal/");
   let n' = Result.get_ok (Node.Array.rename n "newname") in
   assert_bool "" Node.Array.(name n' <> name n);
   (* stringify tests *)

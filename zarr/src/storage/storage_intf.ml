@@ -8,7 +8,14 @@ module type S = sig
   type error
   (** The store error type. *)
 
-  val hierarchy : t -> (Node.Array.t list * Node.Group.t list, [> `Zarr of error | Node.error | Metadata.error]) result io
+  val hierarchy :
+    t ->
+    (Node.Array.t list * Node.Group.t list,
+     [> `Zarr of error
+     | `Parse_error of string
+     | `Invalid_path of string
+     | `Node_invariant of string ])
+    result io
   (** [hierarchy t] returns [p] where [p] is a pair of lists
       representing all nodes in store [t]. The first element of the pair
       is a list of all array nodes, and the second element is a list of
@@ -20,15 +27,30 @@ module type S = sig
       If the store is already empty, this is a no-op. *)
 
   module Group : sig
-    val create : ?attrs:Yojson.Safe.t -> t -> Node.Group.t -> (unit, [> `Zarr of error]) result io
+    val create :
+      ?attrs:Yojson.Safe.t ->
+      t ->
+      Node.Group.t ->
+      (unit, [> `Zarr of error]) result io
     (** [create ?attrs t node] creates a group node in store [t]
         containing attributes [attrs]. This is a no-op if [node]
         is already a member of this store. *)
 
-    val metadata : t -> Node.Group.t -> (Metadata.Group.t, [> `Zarr of error | Metadata.error ]) result io
+    val metadata :
+      t ->
+      Node.Group.t ->
+      (Metadata.Group.t, [> `Zarr of error | `Parse_error of string ]) result io
     (** [metadata node t] returns the metadata of group node [node].*)
 
-    val children : t -> Node.Group.t -> (Node.Array.t list * Node.Group.t list, [> `Zarr of error | Metadata.error | Node.error ]) result io
+    val children :
+      t ->
+      Node.Group.t ->
+      (Node.Array.t list * Node.Group.t list,
+       [> `Zarr of error
+       | `Parse_error of string
+       | `Invalid_path of string
+       | `Node_invariant of string ])
+      result io
     (** [children t n] returns a tuple of child nodes of group node [n].
         This operation returns a pair of empty lists if node [n] has no
         children or is not a member of store [t]. *)
@@ -42,7 +64,16 @@ module type S = sig
     (** [exists t n] returns [true] if group node [n] is a member
         of store [t] and [false] otherwise. *)
 
-    val rename : t -> Node.Group.t -> string -> (Node.Group.t, [> `Zarr of error | Node.error | `Key_not_found of string ]) result io
+    val rename :
+      t ->
+      Node.Group.t ->
+      string ->
+      (Node.Group.t,
+       [> `Zarr of error
+       | `Key_not_found of string
+       | `Node_invariant of string
+       | `Cannot_rename_root ])
+      result io
     (** [rename t g name] changes the name of group node [g] in store [t] to [name].*)
   end
 
@@ -60,12 +91,12 @@ module type S = sig
       Node.Array.t ->
       t ->
       (unit,
-       [>
-       | `Zarr of error
-       | Codecs.error
+       [> `Zarr of error
        | `Invalid_dimension_names
        | `Invalid_grid_chunk_shape
-       | `Node_already_exists of string]) result io
+       | `Node_already_exists of string
+       | Codecs.error ])
+      result io
     (** [create ~sep ~dimension_names ~attributes ~codecs ~shape ~chunks kind fill node t]
         creates an array node in store [t] where:
         - Separator [sep] is used in the array's chunk key encoding.
@@ -75,7 +106,10 @@ module type S = sig
         - The array has shape [shape] and chunk shape [chunks].
         - The array has data kind [kind] and fill value [fv]. *)
 
-    val metadata : t -> Node.Array.t -> (Metadata.Array.t, [> `Zarr of error | Metadata.error ]) result io
+    val metadata :
+      t ->
+      Node.Array.t ->
+      (Metadata.Array.t, [> `Zarr of error | `Parse_error of string ]) result io
     (** [metadata node t] returns the metadata of array node [node]. *)
 
     val delete : t -> Node.Array.t -> (unit, [> `Zarr of error]) result io
@@ -91,7 +125,12 @@ module type S = sig
       Node.Array.t ->
       Ndarray.Indexing.index list ->
       'a Ndarray.t ->
-      (unit, [> `Zarr of error | Metadata.error | Ndarray.Indexing.error]) result io
+      (unit,
+       [> `Zarr of error
+       | `Parse_error of string
+       | `Invalid_datatype
+       | `Invalid_array_slice ])
+      result io
     (** [write t n s x] writes n-dimensional array [x] to the slice [s]
         of array node [n] in store [t]. *)
 
@@ -100,17 +139,39 @@ module type S = sig
       Node.Array.t ->
       Ndarray.Indexing.index list ->
       'a Ndarray.dtype ->
-      ('a Ndarray.t, [> `Zarr of error | Metadata.error | Ndarray.Indexing.error]) result io
+      ('a Ndarray.t,
+       [> `Zarr of error
+       | `Parse_error of string
+       | `Invalid_datatype
+       | `Invalid_array_slice ])
+      result io
     (** [read t n s k] reads an n-dimensional array of size determined
         by slice [s] from array node [n]. *)
 
-    val resize : t -> Node.Array.t -> int list -> (unit, [> `Zarr of error | Metadata.error | `Invalid_resize_shape]) result io
+    val resize :
+      t ->
+      Node.Array.t ->
+      int list ->
+      (unit,
+       [> `Zarr of error
+       | `Invalid_resize_shape
+       | `Parse_error of string ])
+      result io
     (** [resize t n shape] resizes array node [n] of store [t] into new
         size [shape]. Note that when the resizing involves shrinking an array
         along any dimensions, any old unreachable chunks that fall outside of
         the array's new shape are deleted from the store. *)
 
-    val rename : t -> Node.Array.t -> string -> (Node.Array.t, [> `Zarr of error | Node.error | `Key_not_found of string ]) result io
+    val rename :
+      t ->
+      Node.Array.t ->
+      string ->
+      (Node.Array.t,
+       [> `Zarr of error
+       | `Key_not_found of string
+       | `Node_invariant of string
+       | `Cannot_rename_root ])
+      result io
     (** [rename t n name] changes the name of array node [n] in store [t] to [name]. *)
   end
 end

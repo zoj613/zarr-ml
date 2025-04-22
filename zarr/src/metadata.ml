@@ -300,11 +300,11 @@ module Array = struct
   let chunk_indices t shape = RegularGrid.indices t.chunk_grid shape
   let encode t = Yojson.Safe.to_string (to_yojson t)
   let update_attributes t attrs = {t with attributes = attrs}
+  let decode s = Result.map_error (fun e -> `Parse_error e) (of_yojson @@ Yojson.Safe.from_string s)
+
   let update_shape t new_shape =
     if List.(length (shape t) <> length new_shape) then Error `Invalid_resize_shape else
     Ok {t with shape = Shape.create new_shape}
-  
-  let decode s = Result.map_error (fun e -> `Parse_error e) @@ of_yojson (Yojson.Safe.from_string s)
 
   let fill_value (type a) t (datatype : a Ndarray.dtype) : (a, [> `Invalid_datatype ]) result = 
     match t.data_type, datatype, t.fill_value with
